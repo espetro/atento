@@ -92,6 +92,32 @@ describe("defuddle extractor (test set B)", () => {
     }
   });
 
+  it("exposes video signals from the page head", async () => {
+    const url = "https://video.example.dev/reel/1";
+    const html = `<!doctype html><html><head>
+      <meta property="og:type" content="video.other">
+      <meta name="twitter:card" content="player">
+    </head><body><article><p>Some caption text here for the reel.</p></article></body></html>`;
+    const extractor = createDefuddleExtractor({ fetch: htmlFetcher({ [url]: html }) });
+    const result = await extractor.extract(url);
+    expect(result.meta?.["ogType"]).toBe("video.other");
+    expect(result.meta?.["twitterCard"]).toBe("player");
+    expect(result.meta?.["videoObject"]).toBeUndefined();
+  });
+
+  it("marks a schema.org VideoObject page", async () => {
+    const url = "https://video.example.dev/watch/2";
+    const html = `<!doctype html><html><head>
+      <script type="application/ld+json">${JSON.stringify({
+        "@type": "VideoObject",
+        name: "A clip",
+      })}</script>
+    </head><body><article><p>Some caption text here for the clip.</p></article></body></html>`;
+    const extractor = createDefuddleExtractor({ fetch: htmlFetcher({ [url]: html }) });
+    const result = await extractor.extract(url);
+    expect(result.meta?.["videoObject"]).toBe(true);
+  });
+
   it("returns needsBrowser=true on fetch failure instead of throwing", async () => {
     const extractor = createDefuddleExtractor({
       fetch: async () => {
