@@ -14,7 +14,7 @@
  *   - deferred links whose reason says the host blocked the request.
  * A host with a saved profile does not need a login, so it is not pending.
  */
-import { WALLED_GARDENS, type Store } from '@linkinbox/core'
+import { listHostsNeedingLogin, type Store } from '@linkinbox/core'
 
 /** One host that still needs a login. */
 export interface PendingLogin {
@@ -47,64 +47,29 @@ export interface PendingLogins {
  */
 export type LoadPendingLogins = (store: Store) => Promise<PendingLogins>
 
-/** The reason recorded for a host that is behind a login wall. */
-export const LOGIN_WALL_REASON = 'login_wall'
-
-/** The reason recorded for a host that merely needs the browser renderer. */
-export const NEEDS_BROWSER_REASON = 'needs_browser'
-
 /**
- * Temporary query: group the links parked on a login wall by host and count
- * them. Replaced by `listHostsNeedingLogin` from packages/core once it
- * lands.
+ * Pending logins from the core source of truth: hosts with links parked on a
+ * login wall plus flagged hosts without a profile, minus hosts that already
+ * have a saved profile.
  */
 export async function queryPendingLogins(store: Store): Promise<PendingLogins> {
-  const parked = await store.listByStates(['needs_browser', 'deferred'])
-  const profileHosts = new Set((await store.listProfiles()).map((p) => p.host))
+  const profiles = await store.listProfiles()
+  const profileHosts = new Set(profiles.map((p) => p.host))
 
-  const grouped = new Map<string, { links: number; lastSeenAt: Date; reason: string }>()
-  for (const link of parked) {
-    const reason = reasonOf(link.state, link.stateData, hostOfLink(link.url, link.stateData))
-    if (reason === null) continue
-    const host = hostOfLink(link.url, link.stateData)
-    if (!host) continue
-    const seen = link.updatedAt ?? link.createdAt
-    const current = grouped.get(host)
-    if (!current) {
-      grouped.set(host, { links: 1, lastSeenAt: seen, reason })
-      continue
-    }
-    current.links += 1
-    if (seen > current.lastSeenAt) current.lastSeenAt = seen
-    // A login wall is the stronger signal: keep it over the plain
-    // needs_browser reason.
-    if (reason === LOGIN_WALL_REASON) current.reason = LOGIN_WALL_REASON
-  }
-
-  const pending: PendingLogin[] = []
-  for (const [host, info] of grouped) {
-    // A host with a saved profile is done: the user already logged in.
-    if (profileHosts.has(host)) continue
-    pending.push({
-      host,
-      linkCount: info.links,
-      lastSeenAt: info.lastSeenAt,
-      reason: info.reason,
-    })
-  }
-
-  // Ordered by the number of waiting links, descending; the host name breaks
-  // ties so the order is stable.
+  const pending: PendingLogin[] = (await listHostsNeedingLogin(store))
+    .filter((h) => !profileHosts.has(h.host))
+    .map((h) => ({
+      host: h.host,
+      linkCount: h.linkCount,
+      lastSeenAt: new Date(h.lastSeenAt ?? 0),
+      reason: h.reason,
+    }))
+  // Most waiting links first; the host name breaks ties so the order is stable.
   pending.sort((a, b) => b.linkCount - a.linkCount || a.host.localeCompare(b.host))
 
-  const done: DoneLogin[] = []
-  for (const profile of await store.listProfiles()) {
-    done.push({
-      host: profile.host,
-      profileAgeDays: profileAgeDays(profile.updatedAt),
-    })
-  }
-  done.sort((a, b) => a.host.localeCompare(b.host))
+  const done: DoneLogin[] = profiles
+    .map((p) => ({ host: p.host, profileAgeDays: profileAgeDays(p.updatedAt) }))
+    .sort((a, b) => a.host.localeCompare(b.host))
 
   return { pending, done }
 }
@@ -116,47 +81,7 @@ export function profileAgeDays(updatedAt: Date, now: Date = new Date()): number 
 }
 
 /**
- * The reason a parked link needs a login, or null when the link is waiting
- * for something else (a rate limit, a backoff) and no login is involved.
- */
-function reasonOf(
-  state: string,
-  stateData: Record<string, unknown> | null,
-  host: string,
-): string | null {
-  if (state === 'needs_browser') {
-    return isWalledGarden(host) ? LOGIN_WALL_REASON : NEEDS_BROWSER_REASON
-  }
-  if (state === 'deferred') {
-    const raw = stateData?.['reason']
-    if (typeof raw !== 'string') return null
-    if (!raw.startsWith('blocked:')) return null
-    const detail = raw.slice('blocked:'.length).trim()
-    return detail === '' ? LOGIN_WALL_REASON : detail
-  }
-  return null
-}
-
-/** True when the host is one of the walled gardens with a login wall. */
-function isWalledGarden(host: string): boolean {
-  const bare = host.replace(/^www\./, '')
-  return WALLED_GARDENS.some((g) => g.replace(/^www\./, '') === bare)
-}
-
-/** The host of a parked link: the state payload first, then the url. */
-function hostOfLink(url: string, stateData: Record<string, unknown> | null): string {
-  const fromState = stateData?.['host']
-  if (typeof fromState === 'string' && fromState.trim() !== '') return fromState.trim().toLowerCase()
-  try {
-    return new URL(url).host.toLowerCase()
-  } catch {
-    return ''
-  }
-}
-
-/**
- * The default dependency: the temporary query. Replace the body with
- * `listHostsNeedingLogin(store)` from packages/core when it lands.
+ * The default dependency, backed by `listHostsNeedingLogin` in packages/core.
  */
 export const loadPendingLogins: LoadPendingLogins = async (store) => queryPendingLogins(store)
 
