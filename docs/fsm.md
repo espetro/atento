@@ -20,7 +20,7 @@ Every persisted link sits in exactly one state. The state is stored as the discr
 | `errored` | A stage failed, the link carries the error and the attempts. |
 | `deleted` | Terminal tombstone. Nothing leaves this state. |
 
-The processing states `extracting` and `enriching` carry a lease, a `startedAt` timestamp. A `LEASE_EXPIRED` event returns a stranded item to its queue, so a killed process never strands a link.
+The processing states `extracting` and `enriching` carry a lease, a `startedAt` timestamp. A `LEASE_EXPIRED` event returns a stranded item to its queue. Every stage run reclaims expired leases before selecting work (`store.reclaimExpiredLeases(cutoff)`), so a killed process never strands a link.
 
 ## Events
 
