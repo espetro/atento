@@ -69,6 +69,10 @@ export async function ingest(
         tags: raw.tags ?? null,
         status: 'inbox',
         needsBrowser: false,
+        // FSM: a freshly ingested link starts in the `created` state, the
+        // head of the extraction queue.
+        state: 'created',
+        stateData: {},
       })
       if (existing) duplicates += 1
       linkIds.push(link.id)

@@ -46,23 +46,23 @@ function linkInput(overrides: Partial<LinkInput> = {}): LinkInput {
 describe('SqliteStore', () => {
   it('migrates idempotently and records schema version', async () => {
     const store = await openStore({ path: join(dir, 'test.db') })
-    expect(await store.schemaVersion()).toBe('1')
+    expect(await store.schemaVersion()).toBe('2')
     await store.migrate() // second run must not throw
-    expect(await store.schemaVersion()).toBe('1')
+    expect(await store.schemaVersion()).toBe('2')
     await store.close()
   })
 
   it('records applied migrations and does not reapply them', async () => {
     const dbPath = join(dir, 'migrations.db')
     const store = await openStore({ path: dbPath })
-    expect(store.appliedMigrations()).toEqual(['0001_initial'])
+    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm'])
     await store.migrate()
-    expect(store.appliedMigrations()).toEqual(['0001_initial'])
+    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm'])
     await store.close()
 
     // reopening an existing database keeps the same migration set
     const reopened = await openStore({ path: dbPath })
-    expect(reopened.appliedMigrations()).toEqual(['0001_initial'])
+    expect(reopened.appliedMigrations()).toEqual(['0001_initial', '0002_fsm'])
     expect(await reopened.countLinks()).toBe(0)
     await reopened.close()
   })
@@ -126,16 +126,21 @@ describe('SqliteStore', () => {
     await store.close()
   })
 
-  it('updateStatus archives in bulk and deleteLinks removes exactly the given ids', async () => {
+  it('updateStatus archives in bulk and deleteLinks tombstones the given ids', async () => {
     const store = await openStore({ path: ':memory:' })
     const a = await store.upsertLink(linkInput({ urlHash: 'a' }))
     const b = await store.upsertLink(linkInput({ urlHash: 'b' }))
     const c = await store.upsertLink(linkInput({ urlHash: 'c' }))
     expect(await store.updateStatus([a.id, b.id], 'archived')).toBe(2)
     expect((await store.getLink(a.id))?.status).toBe('archived')
+    expect((await store.getLink(a.id))?.state).toBe('archived')
     expect((await store.getLink(c.id))?.status).toBe('inbox')
+    // FSM semantics: delete leaves a tombstone row, the row is not removed.
     expect(await store.deleteLinks([c.id])).toBe(1)
-    expect(await store.getLink(c.id)).toBeNull()
+    const tomb = await store.getLink(c.id)
+    expect(tomb?.state).toBe('deleted')
+    expect(tomb?.status).toBe('deleted')
+    expect(tomb?.urlHash).toBe('c')
     await store.close()
   })
 

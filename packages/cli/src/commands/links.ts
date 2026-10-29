@@ -7,9 +7,13 @@ import {
   listLinks,
   getLink,
   triage,
+  restore,
+  linkHistory,
+  LINK_STATES,
   type LinkField,
   type Status,
   type TriageAction,
+  type LinkStateName,
 } from '@linkinbox/core'
 import type { CliContext } from '../context.js'
 import { renderTable, shortDate } from '../render.js'
@@ -19,6 +23,8 @@ const ACTIONS: TriageAction[] = ['read_now', 'schedule', 'archive', 'discard']
 
 export interface ListOptions {
   status?: string
+  /** FSM state filter (overrides --status). */
+  state?: string
   category?: string
   stale?: boolean
   json?: boolean
@@ -33,12 +39,20 @@ export async function runList(ctx: CliContext, opts: ListOptions): Promise<void>
   if (status && !STATUSES.includes(status)) {
     throw new Error(`unknown status "${status}"; expected one of ${STATUSES.join(', ')}`)
   }
+  let state: LinkStateName | undefined
+  if (opts.state !== undefined) {
+    if (!LINK_STATES.includes(opts.state as LinkStateName)) {
+      throw new Error(`unknown state "${opts.state}"; expected one of ${LINK_STATES.join(', ')}`)
+    }
+    state = opts.state as LinkStateName
+  }
   const fields = opts.fields
     ? (opts.fields.split(',').map((f) => f.trim()) as LinkField[])
     : undefined
 
   const rows = await listLinks(ctx.store, {
     status,
+    state,
     category: opts.category,
     stale: opts.stale === true,
     q: opts.q,
@@ -80,6 +94,8 @@ export async function runShow(ctx: CliContext, id: number, json: boolean): Promi
     'tags',
     'note',
     'status',
+    'state',
+    'stateData',
     'category',
     'priority',
     'action',
@@ -109,6 +125,14 @@ export async function runShow(ctx: CliContext, id: number, json: boolean): Promi
   if (typeof content === 'string' && content !== '') {
     console.log('\n--- extracted content ---')
     console.log(content)
+  }
+
+  const history = await linkHistory(ctx.store, id)
+  if (history.length > 0) {
+    console.log('\n--- history ---')
+    for (const h of history) {
+      console.log(`${h.at.toISOString()}  ${h.event.padEnd(16)} ${h.fromState} -> ${h.toState}`)
+    }
   }
 }
 
@@ -191,6 +215,19 @@ export function applyFilter(rows: Record<string, unknown>[], filter?: string): R
   )
 }
 
+/** restore <ids...>: move archived/discarded/errored links back to the inbox. */
+export async function runRestore(ctx: CliContext, ids: number[]): Promise<void> {
+  const result = await restore(ctx.store, ids)
+  console.log(
+    `${result.updated} link${result.updated === 1 ? '' : 's'} restored to inbox`,
+  )
+  if (result.missing.length > 0) console.log(`missing: ${result.missing.join(', ')}`)
+  if (result.blocked.length > 0) {
+    console.log(`blocked (deleted or not restorable): ${result.blocked.join(', ')}`)
+    process.exitCode = 1
+  }
+}
+
 export function registerLinkCommands(
   program: Command,
   deps: { ctx: () => Promise<CliContext> },
@@ -199,6 +236,7 @@ export function registerLinkCommands(
     .command('list')
     .description('list links')
     .option('--status <status>', 'filter by status (inbox, scheduled, archived, discarded)')
+    .option(`--state <state>`, `filter by FSM state (${LINK_STATES.join('|')})`)
     .option('--category <category>', 'filter by category')
     .option('--stale', 'only links whose expiry has passed')
     .option('--json', 'print json')
@@ -223,6 +261,19 @@ export function registerLinkCommands(
       const ctx = await deps.ctx()
       try {
         await runShow(ctx, Number(id), opts.json === true)
+      } finally {
+        await ctx.close()
+      }
+    })
+
+  program
+    .command('restore')
+    .description('restore archived, discarded or errored links to the inbox (never deleted)')
+    .argument('<ids...>')
+    .action(async (ids: string[]) => {
+      const ctx = await deps.ctx()
+      try {
+        await runRestore(ctx, ids.map((id) => Number(id)))
       } finally {
         await ctx.close()
       }

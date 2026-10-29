@@ -10,6 +10,7 @@ import type {
   Profile,
   ProfileInput,
 } from './types.js'
+import type { LinkEvent, LinkState, LinkStateName } from './fsm/index.js'
 
 /**
  * Repository layer. Hides the storage engine (drizzle/sqlite today, maybe pg
@@ -38,6 +39,35 @@ export interface Store {
     needsBrowser: boolean,
     extractedAt?: Date,
   ): Promise<number>
+
+  /**
+   * FSM: apply one event atomically with a compare-and-set on the current
+   * state. All state changes go through here; nothing else writes states.
+   * `expected` defaults to the state currently recorded on the link.
+   */
+  applyEvent(
+    linkId: number,
+    event: LinkEvent,
+    expected?: LinkStateName,
+  ): Promise<TransitionOutcome>
+
+  /** Append-only event history for one link, oldest first. */
+  getHistory(linkId: number): Promise<LinkHistoryEntry[]>
+
+  /** Count of links per state name (state histogram). */
+  countByState(): Promise<Record<LinkStateName, number>>
+
+  /** All links currently in one of the given FSM states. */
+  listByStates(states: LinkStateName[], limit?: number): Promise<Link[]>
+
+  /** FSM state of one link (parsed and zod-validated). */
+  getState(id: number): Promise<LinkState | null>
+
+  /**
+   * Return every leased link whose lease expired before `cutoff` to its
+   * queue state. A killed process never strands a link.
+   */
+  reclaimExpiredLeases(cutoff: Date): Promise<number>
 
   // runs
   startRun(stage: string, inputCount: number, startedAt?: Date): Promise<Run>
@@ -74,6 +104,8 @@ export interface Store {
 
 export interface LinkFilter {
   status?: Status
+  /** When true, `status` filters on the FSM state instead of the legacy column. */
+  byState?: boolean
   category?: string
   staleAsOf?: Date
   limit?: number
@@ -96,3 +128,40 @@ export const SOURCES = {
 } as const satisfies Record<string, string>
 
 export type { RawLink, Link, Enrichment, Status, Run, Metric, Profile, ProfileInput }
+
+/** Outcome of Store.applyEvent: the new state, or a typed error. */
+export type TransitionOutcome =
+  | { ok: true; state: LinkState; from: LinkStateName }
+  | { ok: false; error: Illegal | Stale }
+
+/** The transition is not legal from the link's current state. */
+export interface Illegal {
+  code: 'ILLEGAL_TRANSITION'
+  from: LinkStateName
+  event: string
+  message: string
+}
+
+/** Another writer changed the state between read and write (lost CAS race). */
+export interface Stale {
+  code: 'STALE_STATE'
+  from: LinkStateName
+  expected?: LinkStateName
+  message: string
+}
+
+/** One row of the append-only link_events table. */
+export interface LinkHistoryEntry {
+  id: number
+  linkId: number
+  fromState: string
+  toState: string
+  event: string
+  data: Record<string, unknown> | null
+  at: Date
+}
+
+/** Build a URL hash (sha256 hex of the normalized url). Kept for importers. */
+export function urlHashOf(url: string): string {
+  return createHash('sha256').update(url).digest('hex')
+}

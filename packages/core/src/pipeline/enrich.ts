@@ -1,5 +1,4 @@
 import type { Store } from '../store.js'
-import type { Link } from '../types.js'
 import type { StageResult, StageOptions, LinkOutcome, EnrichFn } from './types.js'
 import { STAGES, noopLogger } from './types.js'
 import { recordRunMetrics } from './ingest.js'
@@ -10,13 +9,16 @@ export interface EnrichOptions extends StageOptions {
   enrich: EnrichFn
   /** Cap the number of links processed in this run. */
   limit?: number
-  /** Only enrich links in these statuses. Default: inbox. */
-  statuses?: Link['status'][]
   /**
    * TTL config used when the enrichment carries no expires_at: the link then
    * expires ttl_days_for_category(category) days from now.
    */
   ttl?: TtlConfig
+  /**
+   * How long a lease may be held before another runner reclaims it. Default:
+   * 30 minutes.
+   */
+  leaseMs?: number
 }
 
 export interface EnrichResult extends StageResult {
@@ -25,22 +27,30 @@ export interface EnrichResult extends StageResult {
 }
 
 /**
- * Enrich stage: one injected structured-output call per link lacking
- * enrichment. Records the enrichment plus its derived expiry on the link, and
- * token/cost metrics on the run. Model identity comes from the injected
- * function; nothing here knows about providers.
+ * Enrich stage: claim `extracted` links by atomically transitioning them to
+ * `enriching`, call the injected structured-output function, then record the
+ * outcome as one FSM event. Model identity comes from the injected function;
+ * nothing here knows about providers.
  */
 export async function enrich(store: Store, options: EnrichOptions): Promise<EnrichResult> {
   const logger = options.logger ?? noopLogger
   const now = options.now ?? (() => new Date())
   const startedAt = now()
 
-  const statuses = options.statuses ?? (['inbox'] as Link['status'][])
-  const candidates = await store.listLinks({ status: statuses[0] })
-  const pending = candidates
+  // Candidates: links that still need enrichment. `extracted` has content and
+  // waits for the model, `created` was never extracted, `inbox` was enriched
+  // before but lost its enrichment (or was seeded without one).
+  // Reclaim leases from a previous run that died.
+  const leaseMs = options.leaseMs ?? 30 * 60 * 1000
+  await store.reclaimExpiredLeases(new Date(startedAt.getTime() - leaseMs))
+
+  const extracted = await store.listByStates(['extracted'])
+  const created = await store.listByStates(['created'])
+  const inbox = await store.listByStates(['inbox'])
+  const batch = [...extracted, ...created, ...inbox]
     .filter((l) => l.enrichment === null)
-    .filter((l) => statuses.includes(l.status))
-    .slice(0, options.limit ?? Number.POSITIVE_INFINITY)
+    .slice(0, options.limit ?? undefined)
+  const pending = batch
 
   const run = await store.startRun(STAGES.enrich, pending.length, startedAt)
   logger.info('enrich run {runId} started with {inputCount} links', {
@@ -59,6 +69,21 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
 
   for (const link of pending) {
     let modelId = 'unknown'
+    const claim = await store.applyEvent(link.id, {
+      type: 'ENRICH_STARTED',
+      at: now().toISOString(),
+    })
+    if (!claim.ok) {
+      outcomes.push({
+        linkId: link.id,
+        url: link.url,
+        ok: true,
+        skipped: true,
+        error: 'already claimed',
+      })
+      continue
+    }
+
     try {
       const result = await options.enrich(link)
       if (result.ok) {
@@ -71,6 +96,16 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
           const days = ttlDaysForCategory(options.ttl, enrichment.category)
           const expiresAt = new Date(now().getTime() + days * 24 * 60 * 60 * 1000)
           await store.setExpiry(link.id, expiresAt, enrichment.expiry_reason, now())
+        }
+        const done = await store.applyEvent(link.id, {
+          type: 'ENRICHED',
+          at: now().toISOString(),
+        })
+        if (!done.ok) {
+          errorCount += 1
+          bump(errorsByModel, 'error')
+          outcomes.push({ linkId: link.id, url: link.url, ok: false, error: done.error.message })
+          continue
         }
         okCount += 1
         tokensIn += result.tokensIn
@@ -103,6 +138,11 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
         modelId = 'error'
         errorCount += 1
         bump(errorsByModel, 'error')
+        await store.applyEvent(link.id, {
+          type: 'ENRICH_FAILED',
+          error: result.error,
+          at: now().toISOString(),
+        })
         logger.error('enrichment failed for {url}: {error}', { url: link.url, error: result.error })
         outcomes.push({ linkId: link.id, url: link.url, ok: false, error: result.error })
       }
@@ -110,6 +150,11 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
       const error = err instanceof Error ? err.message : String(err)
       errorCount += 1
       bump(errorsByModel, modelId)
+      await store.applyEvent(link.id, {
+        type: 'ENRICH_FAILED',
+        error,
+        at: now().toISOString(),
+      })
       logger.error('enrichment threw for {url}: {error}', { url: link.url, error })
       outcomes.push({ linkId: link.id, url: link.url, ok: false, error })
     }
@@ -159,7 +204,7 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
     inputCount: pending.length,
     okCount,
     errorCount,
-    skippedCount: 0,
+    skippedCount: batch.length - pending.length,
     durationMs,
     tokensIn,
     tokensOut,

@@ -174,9 +174,15 @@ describe('test set D: sweep and prune over a seeded sqlite database', () => {
         await runPrune(ctx, ttl, { now: NOW, apply: true, confirm: async () => 'y' })
       })
       expect(accepted.stdout).toContain('deleted 1 link(s)')
+      // FSM semantics: prune tombstones the row instead of removing it, so
+      // the row is still there but in the terminal deleted state.
       const left = await db.store.listLinks({})
-      expect(left).toHaveLength(3)
-      expect(left.map((l) => l.url)).not.toContain('https://example.com/old')
+      expect(left).toHaveLength(4)
+      const tomb = left.find((l) => l.url === 'https://example.com/old')
+      expect(tomb?.state).toBe('deleted')
+      expect(tomb?.status).toBe('deleted')
+      expect(tomb?.extractedContent).toBeNull()
+      expect(tomb?.enrichment).toBeNull()
     } finally {
       await db.cleanup()
     }

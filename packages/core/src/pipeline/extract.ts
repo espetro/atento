@@ -1,5 +1,4 @@
 import type { Store } from '../store.js'
-import type { Link } from '../types.js'
 import type { StageResult, StageOptions, LinkOutcome, ExtractFn } from './types.js'
 import { STAGES, noopLogger } from './types.js'
 import { recordRunMetrics } from './ingest.js'
@@ -9,8 +8,12 @@ export interface ExtractOptions extends StageOptions {
   extract: ExtractFn
   /** Cap the number of links processed in this run. */
   limit?: number
-  /** Only extract links in these statuses. Default: inbox. */
-  statuses?: Link['status'][]
+  /**
+   * How long a lease may be held before another runner reclaims it. Leases
+   * older than this are returned to the `created` queue before the batch is
+   * selected. Default: 30 minutes.
+   */
+  leaseMs?: number
 }
 
 export interface ExtractResult extends StageResult {
@@ -19,32 +22,29 @@ export interface ExtractResult extends StageResult {
 }
 
 /**
- * Extract stage: run extraction on inbox links lacking content.
+ * Extract stage: claim `created` links by atomically transitioning them to
+ * `extracting` (the compare-and-set guarantees a link is never claimed by two
+ * runners), run extraction, then record the outcome as one FSM event.
  *
  * A link whose extraction cannot run locally (walled garden, missing browser
- * profile, network failure) is flagged `needs_browser` instead of crashing the
- * stage: the link is counted as ok-with-flag so the run stays green and the
- * user can fix the profile and re-run.
+ * profile, network failure) moves to `needs_browser` instead of crashing the
+ * stage: the link is counted as ok-with-flag so the run stays green.
  */
-export async function extract(
-  store: Store,
-  options: ExtractOptions,
-): Promise<ExtractResult> {
+export async function extract(store: Store, options: ExtractOptions): Promise<ExtractResult> {
   const logger = options.logger ?? noopLogger
   const now = options.now ?? (() => new Date())
   const startedAt = now()
 
-  const statuses = options.statuses ?? (['inbox'] as Link['status'][])
-  const candidates = await store.listLinks({ status: statuses[0] })
-  const pending = candidates
-    .filter((l) => l.extractedContent === null || l.extractedContent.trim() === '')
-    .filter((l) => statuses.includes(l.status))
-    .slice(0, options.limit ?? Number.POSITIVE_INFINITY)
+  // Reclaim leases from a previous run that died, so a killed process never
+  // strands a link.
+  const leaseMs = options.leaseMs ?? 30 * 60 * 1000
+  await store.reclaimExpiredLeases(new Date(startedAt.getTime() - leaseMs))
 
-  const run = await store.startRun(STAGES.extract, pending.length, startedAt)
+  const batch = await store.listByStates(['created'], options.limit)
+  const run = await store.startRun(STAGES.extract, batch.length, startedAt)
   logger.info('extract run {runId} started with {inputCount} links', {
     runId: run.id,
-    inputCount: pending.length,
+    inputCount: batch.length,
   })
 
   const outcomes: LinkOutcome[] = []
@@ -55,8 +55,25 @@ export async function extract(
   const needsBrowserByExtractor = new Map<string, number>()
   const extractionsByExtractor = new Map<string, number>()
 
-  for (const link of pending) {
+  for (const link of batch) {
     let extractor = 'unknown'
+    // Atomic claim: two concurrent runners race here, one wins, the loser
+    // gets a typed STALE_STATE/ILLEGAL_TRANSITION and skips the link.
+    const claim = await store.applyEvent(link.id, {
+      type: 'EXTRACT_STARTED',
+      at: now().toISOString(),
+    })
+    if (!claim.ok) {
+      outcomes.push({
+        linkId: link.id,
+        url: link.url,
+        ok: true,
+        skipped: true,
+        error: 'already claimed',
+      })
+      continue
+    }
+
     try {
       const result = await options.extract(link.url)
       extractor = result.extractor ?? 'unknown'
@@ -64,11 +81,13 @@ export async function extract(
       const needsBrowser = result.needsBrowser === true || markdown.trim() === ''
       if (needsBrowser) {
         needsBrowserCount += 1
-        // A page we cannot read is not a hard failure (the link is flagged,
-        // not lost) but it is counted against the extractor that gave up so
-        // the metrics show which one is weak.
         bump(needsBrowserByExtractor, extractor)
         await store.setExtractedContent(link.id, markdown, true, now())
+        await store.applyEvent(link.id, {
+          type: 'NEEDS_BROWSER',
+          host: hostOf(link.url),
+          at: now().toISOString(),
+        })
         logger.warn('extraction needs a browser for {url} (link {linkId}, extractor {extractor})', {
           url: link.url,
           linkId: link.id,
@@ -87,6 +106,17 @@ export async function extract(
 
       await store.setExtractedContent(link.id, markdown, false, now())
       bump(extractionsByExtractor, extractor)
+      const done = await store.applyEvent(link.id, {
+        type: 'EXTRACTED',
+        chars: markdown.length,
+        at: now().toISOString(),
+      })
+      if (!done.ok) {
+        errorCount += 1
+        bump(errorsByExtractor, extractor)
+        outcomes.push({ linkId: link.id, url: link.url, ok: false, error: done.error.message })
+        continue
+      }
       okCount += 1
       logger.info('extracted {url} (link {linkId}, {chars} chars, extractor {extractor})', {
         url: link.url,
@@ -105,8 +135,18 @@ export async function extract(
       const error = err instanceof Error ? err.message : String(err)
       errorCount += 1
       bump(errorsByExtractor, extractor)
+      const failed = await store.applyEvent(link.id, {
+        type: 'EXTRACT_FAILED',
+        error,
+        at: now().toISOString(),
+      })
       logger.error('extraction failed for {url}: {error}', { url: link.url, error })
-      outcomes.push({ linkId: link.id, url: link.url, ok: false, error })
+      outcomes.push({
+        linkId: link.id,
+        url: link.url,
+        ok: false,
+        error: failed.ok ? error : failed.error.message,
+      })
     }
   }
 
@@ -116,7 +156,7 @@ export async function extract(
     startedAt,
     okCount,
     errorCount,
-    inputCount: pending.length,
+    inputCount: batch.length,
     now,
   })
   await store.addMetric({
@@ -125,46 +165,50 @@ export async function extract(
     key: 'needs_browser',
     value: needsBrowserCount,
   })
-
-  for (const [extractor, count] of errorsByExtractor) {
-    await store.addMetric({
-      timestamp: now(),
-      stage: STAGES.extract,
-      key: 'errors',
-      value: count,
-      tags: { extractor },
-    })
-  }
-  for (const [extractor, count] of needsBrowserByExtractor) {
+  for (const [name, count] of needsBrowserByExtractor) {
     await store.addMetric({
       timestamp: now(),
       stage: STAGES.extract,
       key: 'needs_browser',
       value: count,
-      tags: { extractor },
+      tags: { extractor: name },
     })
   }
-  for (const [extractor, count] of extractionsByExtractor) {
+  for (const [name, count] of extractionsByExtractor) {
     await store.addMetric({
       timestamp: now(),
       stage: STAGES.extract,
       key: 'extractions',
       value: count,
-      tags: { extractor },
+      tags: { extractor: name },
+    })
+  }
+  for (const [name, count] of errorsByExtractor) {
+    await store.addMetric({
+      timestamp: now(),
+      stage: STAGES.extract,
+      key: 'errors',
+      value: count,
+      tags: { extractor: name },
     })
   }
 
   const durationMs = now().getTime() - startedAt.getTime()
-  await store.finishRun(run.id, { okCount, errorCount, durationMs })
-  logger.info(
-    'extract run {runId} finished: {okCount} ok, {errorCount} errors, {needsBrowserCount} need a browser',
-    { runId: run.id, okCount, errorCount, needsBrowserCount },
-  )
+  await store.finishRun(run.id, {
+    okCount,
+    errorCount,
+    durationMs,
+  })
+  logger.info('extract run {runId} finished: {okCount} ok, {errorCount} errors', {
+    runId: run.id,
+    okCount,
+    errorCount,
+  })
 
   return {
     stage: STAGES.extract,
     runId: run.id,
-    inputCount: pending.length,
+    inputCount: batch.length,
     okCount,
     errorCount,
     skippedCount: 0,
@@ -175,6 +219,14 @@ export async function extract(
     outcomes,
     warnings: [],
     needsBrowserCount,
+  }
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return ''
   }
 }
 

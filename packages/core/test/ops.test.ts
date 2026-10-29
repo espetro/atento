@@ -250,7 +250,13 @@ describe('ops.prune', () => {
     const plan = await prune(store, ttl, { now: NOW })
     const deleted = await applyPrune(store, plan)
     expect(deleted).toBe(1)
-    expect(store.links).toHaveLength(0)
+    // FSM semantics: prune moves the link to the terminal deleted state and
+    // keeps the tombstone row, so the row still exists but is marked deleted.
+    expect(store.links).toHaveLength(1)
+    expect(store.links[0]?.state).toBe('deleted')
+    expect(store.links[0]?.status).toBe('deleted')
+    expect(store.links[0]?.enrichment).toBeNull()
+    expect(store.links[0]?.extractedContent).toBeNull()
   })
 })
 
@@ -411,6 +417,20 @@ describe('ops snapshots', () => {
             "tokensOut": 0,
           },
         ],
+        "states": {
+          "archived": 0,
+          "created": 0,
+          "deferred": 0,
+          "deleted": 0,
+          "discarded": 0,
+          "enriching": 0,
+          "errored": 0,
+          "extracted": 0,
+          "extracting": 0,
+          "inbox": 0,
+          "needs_browser": 0,
+          "scheduled": 0,
+        },
         "until": "2026-10-29T12:00:00.000Z",
       }
     `)
