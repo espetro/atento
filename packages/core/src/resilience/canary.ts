@@ -47,10 +47,13 @@ export function trialOf(state: HostState | null, now: number, ttlMs = DEFAULT_FL
       active: false,
     }
   }
-  const expired =
-    state.trialState === 'flagged' &&
-    state.trialAt !== null &&
-    now - state.trialAt >= ttlMs
+  // The flag lives at least as long as the breaker's cooldown, so a host is
+  // never re-probed while its breaker is still open.
+  const breakerOpen =
+    state.breakerState === 'open' && state.openedUntil !== null && now < state.openedUntil
+  const flagExpired =
+    state.trialState === 'flagged' && state.trialAt !== null && now - state.trialAt >= ttlMs
+  const expired = flagExpired && !breakerOpen
   return {
     host: state.key,
     state: expired ? 'unknown' : state.trialState,

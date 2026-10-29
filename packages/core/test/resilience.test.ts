@@ -22,10 +22,12 @@ import {
 } from '../src/resilience/breaker.js'
 import {
   gateHost,
+  hostPolicy,
   isWalledGarden,
   jitteredInterval,
   limitForHost,
   minIntervalMs,
+  pacingSignalMs,
   remainingBudget,
   DEFAULT_LIMITS,
   LLM_LIMIT,
@@ -250,13 +252,37 @@ describe('circuit breaker transitions', () => {
 
 describe('rate limiter: walled garden spacing and daily cap', () => {
   const host = 'x.com'
-  const limit = limitForHost(DEFAULT_LIMITS, host, false)
+  // x.com is no longer a hardcoded walled garden: the strict limits apply
+  // when the host is flagged by the canary or listed in the config.
+  const limits = {
+    ...DEFAULT_LIMITS,
+    walledGardens: ['x.com'],
+  }
+  const limit = limitForHost(limits, host, false)
 
-  it('walled gardens get the conservative limits', () => {
+  it('flagged or config-listed hosts get the conservative limits', () => {
     expect(limit).toEqual(WALLED_GARDEN_LIMIT)
-    expect(isWalledGarden(DEFAULT_LIMITS, 'x.com', false)).toBe(true)
+    // A config override forces strict.
+    expect(isWalledGarden(limits, 'x.com', false)).toBe(true)
+    // An unknown host with no profile is ordinary.
     expect(isWalledGarden(DEFAULT_LIMITS, 'example.com', false)).toBe(false)
+    // A saved profile forces strict.
     expect(isWalledGarden(DEFAULT_LIMITS, 'example.com', true)).toBe(true)
+    // A flagged canary forces strict.
+    expect(isWalledGarden(DEFAULT_LIMITS, 'example.com', false, 'flagged')).toBe(true)
+    // Login gating forces strict and browser routing.
+    expect(isWalledGarden(DEFAULT_LIMITS, 'example.com', false, 'unknown', true)).toBe(true)
+  })
+
+  it('the skip-list is honoured before anything else', () => {
+    const cfg = { ...DEFAULT_LIMITS, skipHosts: ['gemini.google.com', '*.duckduckgo.com'] }
+    expect(hostPolicy(cfg, 'gemini.google.com').skipped).toBe(true)
+    expect(hostPolicy(cfg, 'duckduckgo.com').skipped).toBe(true)
+    expect(hostPolicy(cfg, 'mail.duckduckgo.com').skipped).toBe(true)
+    expect(hostPolicy(cfg, 'example.com').skipped).toBe(false)
+    // A skip-listed host is never strict, even when config-listed.
+    const both = { ...cfg, walledGardens: ['gemini.google.com'] }
+    expect(hostPolicy(both, 'gemini.google.com')).toMatchObject({ skipped: true, strict: false })
   })
 
   it('jitter stays within +-30 percent and the floor is deterministic', () => {
@@ -335,7 +361,7 @@ describe('rate limiter: walled garden spacing and daily cap', () => {
 
   it('config overrides win over defaults', () => {
     const l = limitForHost(
-      { ...DEFAULT_LIMITS, hosts: { 'x.com': { intervalMs: 1000, dailyCap: 5 } } },
+      { ...limits, hosts: { 'x.com': { intervalMs: 1000, dailyCap: 5 } } },
       'x.com',
       false,
     )
@@ -352,6 +378,27 @@ describe('rate limiter: walled garden spacing and daily cap', () => {
     const state = { ...emptyHostState(host), windowStart: 0, windowCount: 10 }
     expect(remainingBudget(state, limit, 1000)).toBe(WALLED_GARDEN_LIMIT.dailyCap - 10)
     expect(remainingBudget(state, limit, 25 * 60 * 60 * 1000)).toBe(WALLED_GARDEN_LIMIT.dailyCap)
+  })
+
+  it('pacing signals extend the host spacing', () => {
+    // A realistic epoch, so the X-RateLimit-Reset unix timestamp is above
+    // the "is this a timestamp or a delta" threshold.
+    const now = Date.parse('2026-01-01T00:00:00Z')
+    // Retry-After in seconds.
+    expect(pacingSignalMs({ 'retry-after': '30' }, now, 0)).toBe(30_000)
+    // Retry-After as an HTTP date.
+    const date = new Date(now + 45_000).toUTCString()
+    expect(pacingSignalMs({ 'retry-after': date }, now, 0)).toBe(45_000)
+    // X-RateLimit-Reset as a unix timestamp (seconds).
+    expect(pacingSignalMs({ 'x-ratelimit-reset': String(Math.floor(now / 1000) + 20) }, now, 0)).toBe(20_000)
+    // X-RateLimit-Reset as a delta (small values).
+    expect(pacingSignalMs({ 'x-ratelimit-reset': '10' }, now, 0)).toBe(10_000)
+    // X-RateLimit-Remaining: 0 falls back to the host spacing.
+    expect(pacingSignalMs({ 'x-ratelimit-remaining': '0' }, now, 60_000)).toBe(60_000)
+    // The strongest signal wins; no headers means no extension.
+    expect(pacingSignalMs({ 'retry-after': '5', 'x-ratelimit-remaining': '0' }, now, 60_000)).toBe(60_000)
+    expect(pacingSignalMs(undefined, now, 60_000)).toBe(0)
+    expect(pacingSignalMs({}, now, 60_000)).toBe(0)
   })
 })
 
