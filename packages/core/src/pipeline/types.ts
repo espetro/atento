@@ -32,6 +32,14 @@ export type ExtractFn = (url: string) => Promise<{
   title?: string
   needsBrowser?: boolean
   extractor?: string
+  /**
+   * True when the host refused the session (login wall, captcha, unusual
+   * activity). The stage opens the host's circuit breaker and defers the
+   * rest of that host's batch.
+   */
+  blocked?: boolean
+  /** Short reason for the block, e.g. "login_wall". */
+  blockReason?: string
 }>
 
 /** Stage names, used as the `stage` column in `runs` and `metrics`. */

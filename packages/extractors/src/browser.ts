@@ -19,6 +19,30 @@ export interface BrowserExtractorOptions {
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 
+/**
+ * Markers of a login wall or a block page. When one of these shows up the
+ * extraction is not "low yield": the host is refusing the session, so the
+ * caller must stop hammering it.
+ */
+const LOGIN_WALL_MARKERS = [
+  "sign in to continue",
+  "log in to continue",
+  "please log in",
+  "login required",
+  "captcha",
+  "verify you are human",
+  "unusual activity",
+  "suspended",
+  "account locked",
+  "rate limit exceeded",
+];
+
+/** True when the text looks like a login wall or a block page. */
+export function isLoginWall(text: string): boolean {
+  const lower = text.toLowerCase();
+  return LOGIN_WALL_MARKERS.some((marker) => lower.includes(marker));
+}
+
 function defaultExec(
   file: string,
   args: string[],
@@ -56,8 +80,15 @@ export function profileDirForHost(url: string, profilesDir?: string): string {
 /**
  * agent-browser subprocess extractor:
  *   agent-browser --profile <dir> read <url>
+ *
+ * The browser always runs headless and always with the saved profile for the
+ * host: an interactive browser would let the account be used by accident and
+ * the headless flag keeps the session reproducible.
+ *
  * Never throws: missing profile or failing command yields
- * needsBrowser=true with empty markdown so the router can flag the link.
+ * needsBrowser=true with empty markdown so the router can flag the link. A
+ * login wall is reported through `meta.blocked` so the pipeline can open the
+ * host's circuit breaker instead of retrying.
  */
 export function createBrowserExtractor(options: BrowserExtractorOptions = {}): Extractor {
   const command = options.command ?? "agent-browser";
@@ -70,24 +101,36 @@ export function createBrowserExtractor(options: BrowserExtractorOptions = {}): E
     async extract(url: string): Promise<ExtractResult> {
       const profileDir = profileDirForHost(url, options.profilesDir);
       if (!exists(profileDir)) {
-        return { markdown: "", needsBrowser: true };
+        return { markdown: "", needsBrowser: true, meta: { missingProfile: true } };
       }
       try {
         const result = await exec(
           command,
-          ["--profile", profileDir, "read", url],
+          ["--headless", "--profile", profileDir, "read", url],
           { timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS },
         );
         if (result.code !== 0) {
-          return { markdown: "", needsBrowser: true };
+          return {
+            markdown: "",
+            needsBrowser: true,
+            meta: { exitCode: result.code, stderr: result.stderr.slice(0, 200) },
+          };
         }
         const markdown = result.stdout.trim();
         if (!markdown) {
-          return { markdown: "", needsBrowser: true };
+          return { markdown: "", needsBrowser: true, meta: { emptyPage: true } };
+        }
+        if (isLoginWall(markdown)) {
+          // The host refused the session: the caller must stop, not retry.
+          return {
+            markdown: "",
+            needsBrowser: true,
+            meta: { blocked: true, reason: "login_wall" },
+          };
         }
         return { markdown };
       } catch {
-        return { markdown: "", needsBrowser: true };
+        return { markdown: "", needsBrowser: true, meta: { failed: true } };
       }
     },
   };

@@ -29,11 +29,14 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
 
   return async (url: string) => {
     const result = await router.extract(url)
+    const meta = result.meta ?? {}
     return {
       markdown: result.markdown,
       title: result.title,
       needsBrowser: result.needsBrowser === true,
       extractor: result.route,
+      blocked: meta['blocked'] === true,
+      blockReason: typeof meta['reason'] === 'string' ? meta['reason'] : undefined,
     }
   }
 }

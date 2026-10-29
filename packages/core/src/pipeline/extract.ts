@@ -4,6 +4,7 @@ import { STAGES, noopLogger } from './types.js'
 import { recordRunMetrics } from './ingest.js'
 import {
   DEFAULT_MAX_BATCH,
+  breakerReport,
   type GuardDeps,
   guardRun,
 } from '../resilience/index.js'
@@ -172,7 +173,40 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
           (result.value as { route?: string }).route ??
           'unknown',
       )
-      const raw = result.value as { markdown?: string; needsBrowser?: boolean }
+      const raw = result.value as {
+        markdown?: string
+        needsBrowser?: boolean
+        blocked?: boolean
+        blockReason?: string
+      }
+      // A login wall or captcha: the host refused the session. Open its
+      // breaker so the rest of the batch stops hammering it, and defer.
+      if (raw.blocked === true) {
+        deferredCount += 1
+        blockedHosts.add(host)
+        const reason = `blocked:${raw.blockReason ?? 'login_wall'}`
+        const waitMs = await openBreakerForHost(guard, host, now().getTime())
+        retryAfter = Math.max(retryAfter, waitMs)
+        const decision = await deferOrError(store, link, 'extract', reason, waitMs, maxAttempts, now())
+        logger.warn('extraction blocked on {host} (link {linkId}): run `linkinbox login {host}`', {
+          host,
+          linkId: link.id,
+        })
+        if (decision.errored) {
+          errorCount += 1
+          bump(errorsByExtractor, extractor)
+          outcomes.push({ linkId: link.id, url: link.url, ok: false, error: reason })
+        } else {
+          outcomes.push({
+            linkId: link.id,
+            url: link.url,
+            ok: true,
+            skipped: true,
+            error: `deferred: ${reason}`,
+          })
+        }
+        continue
+      }
       const markdown = raw.markdown ?? ''
       const needsBrowser = raw.needsBrowser === true || markdown.trim() === ''
       if (needsBrowser) {
@@ -332,6 +366,30 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
     deferredCount,
     retryAfter,
   }
+}
+
+/**
+ * Open the host's circuit breaker after a hard block and return how long the
+ * caller must wait before probing again.
+ */
+async function openBreakerForHost(
+  guard: GuardDeps | undefined,
+  host: string,
+  now: number,
+): Promise<number> {
+  if (!guard) return 0
+  const report = await breakerReport(
+    {
+      load: (key) => guard.getHostState(key),
+      save: (state) => guard.saveHostState(state),
+      clock: guard.clock,
+      profile: guard.config.breaker,
+    },
+    host,
+    'failure',
+    { retryable: false, block: true, reason: 'login_wall' },
+  )
+  return report.state.openedUntil !== null ? Math.max(0, report.state.openedUntil - now) : 0
 }
 
 /** Attempts burned so far, read from the link's FSM history. */

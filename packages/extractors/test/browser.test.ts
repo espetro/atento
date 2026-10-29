@@ -18,7 +18,8 @@ describe("browser extractor", () => {
       profileExists: () => false,
     });
     const result = await extractor.extract("https://x.com/user/status/123");
-    expect(result).toEqual({ markdown: "", needsBrowser: true });
+    expect(result.markdown).toBe("");
+    expect(result.needsBrowser).toBe(true);
   });
 
   it("spawns agent-browser with an args array (never a shell string)", async () => {
@@ -36,6 +37,7 @@ describe("browser extractor", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.file).toBe("agent-browser");
     expect(calls[0]!.args).toEqual([
+      "--headless",
       "--profile",
       join("/tmp/fake-profiles", "example.dev"),
       "read",
@@ -51,7 +53,8 @@ describe("browser extractor", () => {
       profileExists: () => true,
     });
     const result = await extractor.extract("https://x.com/post/1");
-    expect(result).toEqual({ markdown: "", needsBrowser: true });
+    expect(result.markdown).toBe("");
+    expect(result.needsBrowser).toBe(true);
   });
 
   it("returns needsBrowser=true when the command throws (binary missing)", async () => {
@@ -62,7 +65,8 @@ describe("browser extractor", () => {
       profileExists: () => true,
     });
     const result = await extractor.extract("https://x.com/post/1");
-    expect(result).toEqual({ markdown: "", needsBrowser: true });
+    expect(result.markdown).toBe("");
+    expect(result.needsBrowser).toBe(true);
   });
 
   it("returns needsBrowser=true on empty stdout", async () => {
@@ -71,6 +75,31 @@ describe("browser extractor", () => {
       profileExists: () => true,
     });
     const result = await extractor.extract("https://x.com/post/1");
-    expect(result).toEqual({ markdown: "", needsBrowser: true });
+    expect(result.markdown).toBe("");
+    expect(result.needsBrowser).toBe(true);
+  });
+});
+
+describe("browser extractor: login wall detection", () => {
+  it("flags a login wall as a block so the caller can open the breaker", async () => {
+    const extractor = createBrowserExtractor({
+      exec: execOk("Sign in to continue to see this post"),
+      profileExists: () => true,
+    });
+    const result = await extractor.extract("https://x.com/post/1");
+    expect(result.needsBrowser).toBe(true);
+    expect(result.markdown).toBe("");
+    expect(result.meta?.["blocked"]).toBe(true);
+    expect(result.meta?.["reason"]).toBe("login_wall");
+  });
+
+  it("flags an empty page as a block", async () => {
+    const extractor = createBrowserExtractor({
+      exec: execOk("   "),
+      profileExists: () => true,
+    });
+    const result = await extractor.extract("https://x.com/post/2");
+    expect(result.needsBrowser).toBe(true);
+    expect(result.meta?.["emptyPage"]).toBe(true);
   });
 });
