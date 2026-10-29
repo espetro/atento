@@ -25,7 +25,7 @@ exports[`transition table: exhaustive matrix > snapshots the full state x event 
     "ENRICH_FAILED": "IllegalTransition",
     "ENRICH_STARTED": "enriching",
     "EXPIRE": "archived",
-    "EXTRACTED": "IllegalTransition",
+    "EXTRACTED": "extracted",
     "EXTRACT_FAILED": "IllegalTransition",
     "EXTRACT_STARTED": "extracting",
     "LEASE_EXPIRED": "IllegalTransition",
@@ -127,7 +127,7 @@ exports[`transition table: exhaustive matrix > snapshots the full state x event 
     "LEASE_EXPIRED": "IllegalTransition",
     "NEEDS_BROWSER": "IllegalTransition",
     "RESTORE": "IllegalTransition",
-    "RETRY": "IllegalTransition",
+    "RETRY": "created",
     "TRIAGE": "archived",
   },
   "extracting": {

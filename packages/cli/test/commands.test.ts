@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
 import { capture, insertLink, tempDb, type TempDb } from './helpers.js'
 import { createContext, type CliContext } from '../src/context.js'
-import { runList, runShow, runTriage, applyFilter } from '../src/commands/links.js'
+import { runList, runShow, runTriage, applyFilter, runRetryHeadless } from '../src/commands/links.js'
 import { runLoginClear, runLoginList, profileDirFor } from '../src/commands/login.js'
 import { loadConfig, resolveDbPath, configDir } from '../src/config.js'
 
@@ -255,5 +255,65 @@ describe('cli config', () => {
     expect(config.ttl.default_days).toBe(30)
     expect(config.ttl.delete_after_days).toBe(365)
     expect(config.dbPath).toBe('/tmp/does-not-exist-cfg/links.db')
+  })
+})
+
+describe('cli retry --headless', () => {
+  it('requeues a captured link for headless extraction', async () => {
+    const db = await tempDb()
+    try {
+      const link = await insertLink(db.store, 'https://example.com/captured')
+      await db.store.setExtractedContent(link.id, 'captured body', false, new Date())
+      await db.store.applyEvent(link.id, {
+        type: 'EXTRACTED',
+        chars: 'captured body'.length,
+        at: new Date().toISOString(),
+      }, 'created')
+      expect((await db.store.getLink(link.id))?.state).toBe('extracted')
+
+      const ctx = await contextFor(db)
+      const out = await capture(() => runRetryHeadless(ctx, { ids: [link.id], headless: true }))
+      expect(out.stdout).toContain('requeued for headless extraction')
+      expect((await db.store.getLink(link.id))?.state).toBe('created')
+    } finally {
+      await db.cleanup()
+    }
+  })
+
+  it('refuses to run without --headless', async () => {
+    const db = await tempDb()
+    try {
+      const link = await insertLink(db.store, 'https://example.com/no-headless')
+      await db.store.setExtractedContent(link.id, 'body', false, new Date())
+      await db.store.applyEvent(link.id, {
+        type: 'EXTRACTED',
+        chars: 'body'.length,
+        at: new Date().toISOString(),
+      }, 'created')
+      const ctx = await contextFor(db)
+      await expect(
+        runRetryHeadless(ctx, { ids: [link.id], headless: false }),
+      ).rejects.toThrow(/--headless/)
+      expect((await db.store.getLink(link.id))?.state).toBe('extracted')
+    } finally {
+      await db.cleanup()
+    }
+  })
+
+  it('reports missing and blocked ids', async () => {
+    const db = await tempDb()
+    try {
+      const link = await insertLink(db.store, 'https://example.com/blocked-retry')
+      await db.store.applyEvent(link.id, {
+        type: 'DELETE',
+        at: new Date().toISOString(),
+      }, 'created')
+      const ctx = await contextFor(db)
+      const out = await capture(() => runRetryHeadless(ctx, { ids: [link.id, 999999], headless: true }))
+      expect(out.stdout).toContain('missing: 999999')
+      expect(out.stdout).toContain('blocked')
+    } finally {
+      await db.cleanup()
+    }
   })
 })

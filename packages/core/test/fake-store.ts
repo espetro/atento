@@ -83,6 +83,8 @@ export class FakeStore implements Store {
       confidence: input.confidence ?? null,
       readMinutes: input.readMinutes ?? null,
       needsBrowser: input.needsBrowser ?? false,
+      captured: input.captured ?? false,
+      capturedAt: input.capturedAt ?? null,
       createdAt: input.createdAt ?? now,
       updatedAt: input.updatedAt ?? now,
     }
@@ -309,6 +311,23 @@ export class FakeStore implements Store {
     link.needsBrowser = needsBrowser
     link.extractedAt = extractedAt ?? new Date()
     link.updatedAt = extractedAt ?? new Date()
+    return 1
+  }
+
+  async updateTitle(id: number, title: string, updatedAt?: Date): Promise<number> {
+    const link = this.links.find((l) => l.id === id)
+    if (!link) return 0
+    link.title = title
+    link.updatedAt = updatedAt ?? new Date()
+    return 1
+  }
+
+  async markCaptured(id: number, capturedAt: Date, updatedAt?: Date): Promise<number> {
+    const link = this.links.find((l) => l.id === id)
+    if (!link) return 0
+    link.captured = true
+    link.capturedAt = capturedAt
+    link.updatedAt = updatedAt ?? new Date()
     return 1
   }
 

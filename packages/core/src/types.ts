@@ -57,6 +57,14 @@ export interface Link {
   confidence: number | null
   readMinutes: number | null
   needsBrowser: boolean
+  /**
+   * True when the content came from a client-side capture (the user's own
+   * logged-in session), not from the headless pipeline. Captured content
+   * outranks anything the pipeline fetched itself.
+   */
+  captured: boolean
+  /** When the content was captured (client-side captures only). */
+  capturedAt: Date | null
   createdAt: Date
   updatedAt: Date
 }
@@ -114,6 +122,8 @@ export type LinkInput = Omit<
   | 'expiryReason'
   | 'state'
   | 'stateData'
+  | 'captured'
+  | 'capturedAt'
 > & {
   id?: number
   createdAt?: Date
@@ -134,4 +144,8 @@ export type LinkInput = Omit<
   action?: Enrichment['action'] | null
   confidence?: number | null
   readMinutes?: number | null
+  /** Client-side capture marker: content came from the user's own session. */
+  captured?: boolean
+  /** When the capture happened (client-side captures only). */
+  capturedAt?: Date | null
 }

@@ -69,6 +69,8 @@ export async function ingest(
         tags: raw.tags ?? null,
         status: 'inbox',
         needsBrowser: false,
+        captured: false,
+        capturedAt: null,
         // FSM: a freshly ingested link starts in the `created` state, the
         // head of the extraction queue.
         state: 'created',

@@ -353,6 +353,50 @@ export async function restore(
   return { requested: unique, updated, missing, blocked }
 }
 
+export interface RetryHeadlessResult {
+  /** Links that were requeued for headless extraction. */
+  updated: number[]
+  /** Ids that do not exist. */
+  missing: number[]
+  /** Ids that exist but cannot be requeued from their current state. */
+  blocked: number[]
+}
+
+/**
+ * Re-trigger headless extraction for one or more links. This is an explicit,
+ * never-automatic action: a captured link normally skips the headless extract
+ * step entirely, and this is the escape hatch for when the user wants the
+ * pipeline to fetch the page itself.
+ *
+ * The link goes back to the `created` queue with a RETRY event, which is the
+ * state the extract stage claims.
+ */
+export async function retryHeadless(
+  store: Store,
+  ids: number[],
+  now: Date = new Date(),
+): Promise<RetryHeadlessResult> {
+  const unique = [...new Set(ids)]
+  const updated: number[] = []
+  const missing: number[] = []
+  const blocked: number[] = []
+  for (const id of unique) {
+    const link = await store.getLink(id)
+    if (!link) {
+      missing.push(id)
+      continue
+    }
+    const outcome = await store.applyEvent(id, {
+      type: 'RETRY',
+      stage: 'extract',
+      at: now.toISOString(),
+    })
+    if (outcome.ok) updated.push(id)
+    else blocked.push(id)
+  }
+  return { updated, missing, blocked }
+}
+
 /** Append-only transition history for one link. */
 export async function linkHistory(
   store: Store,

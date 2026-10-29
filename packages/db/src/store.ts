@@ -334,6 +334,23 @@ export class SqliteStore implements Store {
     return 1
   }
 
+  async updateTitle(id: number, title: string, updatedAt?: Date): Promise<number> {
+    const r = this.db
+      .update(links)
+      .set({ title, updatedAt: updatedAt ?? new Date() })
+      .where(eq(links.id, id))
+      .run()
+    return r.changes
+  }
+
+  async markCaptured(id: number, capturedAt: Date, updatedAt?: Date): Promise<number> {
+    const r = this.db
+      .update(links)
+      .set({ captured: true, capturedAt, updatedAt: updatedAt ?? new Date() })
+      .where(eq(links.id, id))
+      .run()
+    return r.changes
+  }
 
   /**
    * FSM: apply one event atomically. The state change is a compare-and-set
@@ -795,6 +812,8 @@ function toRow(input: LinkInput, now: Date): typeof links.$inferInsert {
     action: input.enrichment?.action ?? null,
     confidence: input.enrichment?.confidence ?? null,
     needsBrowser: input.needsBrowser ?? false,
+    captured: input.captured ?? false,
+    capturedAt: input.capturedAt ?? null,
     state: input.state ?? 'created',
     stateData: input.stateData ?? null,
     createdAt: input.createdAt ?? now,
@@ -824,6 +843,8 @@ function fromRow(row: LinkRow): Link {
     confidence: row.confidence ?? null,
     readMinutes: row.readMinutes ?? null,
     needsBrowser: row.needsBrowser,
+    captured: row.captured,
+    capturedAt: row.capturedAt ?? null,
     state: row.state,
     stateData: (row.stateData as Record<string, unknown> | null) ?? null,
     createdAt: row.createdAt,

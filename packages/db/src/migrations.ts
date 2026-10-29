@@ -194,6 +194,16 @@ ALTER TABLE host_state ADD COLUMN login_gated INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE host_state ADD COLUMN rate_limited_until INTEGER;
 `,
   },
+  {
+    name: '0005_capture',
+    sql: `
+-- Client-side capture ingest: content already extracted in the user's own
+-- logged-in session and POSTed to the capture endpoint. The marker skips the
+-- headless extract step in the pipeline.
+ALTER TABLE links ADD COLUMN captured INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE links ADD COLUMN captured_at INTEGER;
+`,
+  },
 ]
 
 const META_TABLE = `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`

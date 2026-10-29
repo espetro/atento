@@ -48,6 +48,9 @@ const TABLE: StateTable = {
     },
     // The expiry passed before the link was ever processed: archive it.
     EXPIRE: (_s, _e, at) => ({ state: 'archived', archivedAt: at.toISOString(), reason: 'expired' }),
+    // Client capture: content arrived already extracted from the user's own
+    // session, so the headless extract step is skipped entirely.
+    EXTRACTED: (_s, e) => ({ state: 'extracted', chars: e.chars }),
     DELETE: (_s, _e, at) => ({ state: 'deleted', deletedAt: at.toISOString() }),
   },
 
@@ -80,6 +83,9 @@ const TABLE: StateTable = {
       startedAt: at.toISOString(),
       attempt: e.attempt ?? 1,
     }),
+    // An explicit `retry --headless`: back to the extraction queue so the
+    // headless extractor runs again over the captured link.
+    RETRY: () => ({ state: 'created' }),
     TRIAGE: (_s, e, at) => {
       switch (e.action) {
         // The content exists but was never enriched: `read_now` keeps it

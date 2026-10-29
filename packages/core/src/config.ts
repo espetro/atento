@@ -13,6 +13,11 @@ import {
   WALLED_GARDEN_LIMIT,
   type LimitsConfig,
 } from './resilience/index.js'
+import {
+  DEFAULT_CAPTURE_CONFIG,
+  captureFromToml,
+  type CaptureConfig,
+} from './capture.js'
 
 /**
  * Parse the `[ttl]` table out of raw TOML text. The only TOML the pipeline
@@ -105,6 +110,11 @@ export function parseMediaConfig(tomlText: string): MediaConfig {
   return mediaFromToml(parseToml(tomlText) as TomlTable)
 }
 
-export { DEFAULT_LIMITS, ORDINARY_LIMIT, WALLED_GARDEN_LIMIT }
+/** Parse the `[capture]` table out of raw TOML text. */
+export function parseCaptureConfig(tomlText: string): CaptureConfig {
+  return captureFromToml(parseToml(tomlText) as TomlTable)
+}
 
-export type { LimitsConfig }
+export { DEFAULT_LIMITS, ORDINARY_LIMIT, WALLED_GARDEN_LIMIT, DEFAULT_CAPTURE_CONFIG }
+
+export type { LimitsConfig, CaptureConfig }
