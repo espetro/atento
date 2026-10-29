@@ -89,6 +89,65 @@ export function projectLink(link: Link, fields?: LinkField[]): LinkProjection {
   return out
 }
 
+/**
+ * The fields the web UI's `LinkSummary` type needs, as a projection field list.
+ * `why_it_matters` comes from the enrichment blob, the rest are flattened
+ * columns.
+ */
+export const UI_SUMMARY_FIELDS: LinkField[] = [
+  'id',
+  'url',
+  'title',
+  'status',
+  'category',
+  'priority',
+  'action',
+  'expiresAt',
+  'expiryReason',
+  'readMinutes',
+  'enrichment',
+]
+
+/** The UI summary fields plus the detail-only ones (`LinkDetail`). */
+export const UI_DETAIL_FIELDS: LinkField[] = [
+  ...UI_SUMMARY_FIELDS,
+  'extracted_content',
+  'confidence',
+]
+
+/**
+ * Shape one projected link the way the UI types expect: snake_case field
+ * names (`expires_at`, `expiry_reason`, `read_minutes`), the enrichment
+ * fields lifted to the top level (`why_it_matters`) and no nulls where the
+ * UI types demand a value.
+ */
+export function shapeForUi(
+  link: LinkProjection,
+  options: { keepEnrichment?: boolean } = {},
+): LinkProjection {
+  const enrichment = (link['enrichment'] ?? {}) as Record<string, unknown>
+  const out: Record<string, unknown> = { ...link }
+  out['why_it_matters'] = (enrichment['why_it_matters'] as string | undefined) ?? ''
+  if (options.keepEnrichment) out['enrichment'] = enrichment
+  else delete out['enrichment']
+  out['expires_at'] = link['expiresAt'] ?? null
+  out['expiry_reason'] = link['expiryReason'] ?? null
+  out['read_minutes'] = link['readMinutes'] ?? 0
+  delete out['expiresAt']
+  delete out['expiryReason']
+  delete out['readMinutes']
+  if (out['category'] == null) out['category'] = ''
+  if (out['priority'] == null) out['priority'] = 'normal'
+  if (out['action'] == null) out['action'] = 'read_now'
+  if (out['title'] == null) out['title'] = ''
+  // Detail-only fields stay absent unless the projection asked for them.
+  if ('extracted_content' in link && out['extracted_content'] == null) {
+    out['extracted_content'] = ''
+  }
+  if ('confidence' in link && out['confidence'] == null) out['confidence'] = 0
+  return out
+}
+
 /** Filter accepted by ops.listLinks (a superset of the store filter). */
 export interface ListLinksOptions {
   status?: Status
