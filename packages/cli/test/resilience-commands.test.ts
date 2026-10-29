@@ -54,6 +54,11 @@ describe('resilience commands', () => {
         openedUntil: Date.now() + 6 * 60 * 60 * 1000,
         cooldownLevel: 1,
         lastError: 'http_429',
+        trialState: 'flagged',
+        trialReason: 'http_429',
+        trialAt: Date.now(),
+        loginGated: false,
+        rateLimitedUntil: null,
       })
       const out = await runProgram(db, ['status'])
       expect(out.stdout).toContain('x.com')
@@ -61,6 +66,7 @@ describe('resilience commands', () => {
       expect(out.stdout).toContain('reopens')
       expect(out.stdout).toContain('28/40 left')
       expect(out.stdout).toContain('last=http_429')
+      expect(out.stdout).toContain('trial=flagged:http_429')
       expect(out.stdout).toContain('llm: breaker=closed')
     } finally {
       await db.cleanup()

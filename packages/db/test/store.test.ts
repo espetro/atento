@@ -46,23 +46,23 @@ function linkInput(overrides: Partial<LinkInput> = {}): LinkInput {
 describe('SqliteStore', () => {
   it('migrates idempotently and records schema version', async () => {
     const store = await openStore({ path: join(dir, 'test.db') })
-    expect(await store.schemaVersion()).toBe('3')
+    expect(await store.schemaVersion()).toBe('4')
     await store.migrate() // second run must not throw
-    expect(await store.schemaVersion()).toBe('3')
+    expect(await store.schemaVersion()).toBe('4')
     await store.close()
   })
 
   it('records applied migrations and does not reapply them', async () => {
     const dbPath = join(dir, 'migrations.db')
     const store = await openStore({ path: dbPath })
-    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state'])
+    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial'])
     await store.migrate()
-    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state'])
+    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial'])
     await store.close()
 
     // reopening an existing database keeps the same migration set
     const reopened = await openStore({ path: dbPath })
-    expect(reopened.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state'])
+    expect(reopened.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial'])
     expect(await reopened.countLinks()).toBe(0)
     await reopened.close()
   })
@@ -204,5 +204,27 @@ describe('SqliteStore', () => {
     await store.upsertLink(linkInput({ urlHash: 'x' }))
     expect(await store.countLinks()).toBe(1)
     await store.close()
+  })
+
+  it('host trial state survives a reopen (restart persistence)', async () => {
+    const { emptyHostState, markFlagged } = await import('@linkinbox/core')
+    const dbPath = join(dir, 'trial.db')
+    const store = await openStore({ path: dbPath })
+    const now = Date.parse('2026-01-01T00:00:00Z')
+    const flagged = markFlagged(emptyHostState('gated.example'), now, 'http_429', { loginGated: true })
+    await store.saveHostState(flagged)
+    await store.saveHostState(markFlagged(emptyHostState('open.example'), now, 'x'))
+    await store.close()
+
+    const reopened = await openStore({ path: dbPath })
+    const state = await reopened.getHostState('gated.example')
+    expect(state?.trialState).toBe('flagged')
+    expect(state?.trialReason).toBe('http_429')
+    expect(state?.trialAt).toBe(now)
+    expect(state?.loginGated).toBe(true)
+    const open = await reopened.getHostState('open.example')
+    expect(open?.trialState).toBe('flagged')
+    expect(open?.loginGated).toBe(false)
+    await reopened.close()
   })
 })

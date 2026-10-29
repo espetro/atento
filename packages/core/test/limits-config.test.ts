@@ -44,3 +44,29 @@ interval_ms = "nope"
     expect(limits.hosts['example.com']).toEqual({})
   })
 })
+
+describe('limits config: skip hosts', () => {
+  it('reads skip_hosts as exact hosts and *.suffix wildcards', () => {
+    const limits = parseLimitsConfig(`
+[limits]
+skip_hosts = ["gemini.google.com", "*.duckduckgo.com"]
+`)
+    expect(limits.skipHosts).toEqual(['gemini.google.com', '*.duckduckgo.com'])
+  })
+
+  it('defaults to an empty skip list and empty walled gardens', () => {
+    const limits = parseLimitsConfig('')
+    expect(limits.skipHosts).toEqual([])
+    // No hardcoded walled gardens: the list ships empty and hosts are
+    // discovered by canary probing.
+    expect(limits.walledGardens).toEqual([])
+  })
+
+  it('reads walled_gardens as an optional manual override', () => {
+    const limits = parseLimitsConfig(`
+[limits]
+walled_gardens = ["example.com"]
+`)
+    expect(limits.walledGardens).toEqual(['example.com'])
+  })
+})

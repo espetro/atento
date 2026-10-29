@@ -17,11 +17,13 @@ const LOGIN_PATH = /(^|\/)(login|signin|sign-in|auth|accounts)(\/|$)/i
 /** Minimum article characters for a page to count as real content. */
 export const LOGIN_WALL_MIN_ARTICLE_CHARS = 200
 
-/** True when the final URL path looks like a login endpoint. */
+/** True when the final URL path (or an accounts/login subdomain) looks like a login endpoint. */
 export function isLoginPath(url: string): boolean {
   try {
     const parsed = new URL(url)
-    return LOGIN_PATH.test(parsed.pathname)
+    if (LOGIN_PATH.test(parsed.pathname)) return true
+    const labels = parsed.hostname.split('.')
+    return labels.some((label) => /^(login|signin|sign-in|accounts?)$/.test(label))
   } catch {
     return false
   }

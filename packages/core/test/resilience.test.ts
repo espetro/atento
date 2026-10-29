@@ -34,6 +34,7 @@ import {
   WALLED_GARDEN_LIMIT,
 } from '../src/resilience/limiter.js'
 import { createBoundedQueue } from '../src/resilience/queue.js'
+import { emptyHostState as emptyHostStateOf, type HostState } from '../src/resilience/types.js'
 import { emptyHostState, LLM_KEY } from '../src/resilience/types.js'
 
 /** Deterministic fake clock. */
@@ -437,5 +438,37 @@ describe('bounded queue backpressure', () => {
     })
     expect(peak).toBeLessThanOrEqual(3)
     expect(queue.size()).toBe(0)
+  })
+})
+
+describe('rate limiter: upstream pacing signals gate the host', () => {
+  it('a persisted rateLimitedUntil defers requests until it elapses', async () => {
+    const { limiterGate } = await import('../src/resilience/limiter.js')
+    const now = 10_000_000
+    let clock = now
+    const saved: HostState[] = []
+    const state = {
+      ...emptyHostStateOf('slow.example'),
+      rateLimitedUntil: now + 60_000,
+    }
+    const deps = {
+      load: async () => state,
+      save: async (s: HostState) => {
+        saved.push(s)
+      },
+      clock: () => clock,
+      random: () => 0,
+      config: DEFAULT_LIMITS,
+      hasProfile: async () => false,
+    }
+    const gate = await limiterGate(deps, 'slow.example')
+    expect(gate.admitted).toBe(false)
+    expect(gate.reason).toBe('rate_limited')
+    expect(gate.waitMs).toBe(60_000)
+    // After the signal expires the gate admits again.
+    clock = now + 60_001
+    const later = await limiterGate(deps, 'slow.example')
+    expect(later.admitted).toBe(true)
+    expect(saved).toHaveLength(1)
   })
 })
