@@ -17,10 +17,10 @@ export const DEFAULT_TTL_CONFIG: TtlConfig = {
   delete_after_days: 365,
 }
 
-interface TomlTable {
+export interface TomlTable {
   [key: string]: TomlValue
 }
-type TomlValue = string | number | boolean | TomlTable | TomlValue[]
+export type TomlValue = string | number | boolean | TomlTable | TomlValue[]
 
 /**
  * Extract and validate the `[ttl]` table from already-parsed TOML

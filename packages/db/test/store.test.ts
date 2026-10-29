@@ -52,6 +52,21 @@ describe('SqliteStore', () => {
     await store.close()
   })
 
+  it('records applied migrations and does not reapply them', async () => {
+    const dbPath = join(dir, 'migrations.db')
+    const store = await openStore({ path: dbPath })
+    expect(store.appliedMigrations()).toEqual(['0001_initial'])
+    await store.migrate()
+    expect(store.appliedMigrations()).toEqual(['0001_initial'])
+    await store.close()
+
+    // reopening an existing database keeps the same migration set
+    const reopened = await openStore({ path: dbPath })
+    expect(reopened.appliedMigrations()).toEqual(['0001_initial'])
+    expect(await reopened.countLinks()).toBe(0)
+    await reopened.close()
+  })
+
   it('enables WAL and busy_timeout on file databases', async () => {
     const dbPath = join(dir, 'wal.db')
     const store = await openStore({ path: dbPath })

@@ -2,7 +2,6 @@ import Database from 'better-sqlite3'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { eq, inArray, and, gte, lte, sql } from 'drizzle-orm'
 import {
-  SCHEMA_SQL,
   SCHEMA_VERSION,
   links,
   meta,
@@ -10,6 +9,7 @@ import {
   runs,
   type LinkRow,
 } from './schema.js'
+import { runMigrations } from './migrations.js'
 import type {
   Link,
   LinkFilter,
@@ -93,8 +93,21 @@ export class SqliteStore implements Store {
   }
 
   async migrate(): Promise<void> {
-    this.sqlite.exec(SCHEMA_SQL)
-    this.setMetaSync('schema_version', SCHEMA_VERSION)
+    const applied = runMigrations(this.sqlite)
+    if (applied.length > 0 || (await this.getMeta('schema_version')) === null) {
+      this.setMetaSync('schema_version', SCHEMA_VERSION)
+    }
+  }
+
+  /** Migration names recorded as applied on this database. */
+  appliedMigrations(): string[] {
+    return this.db
+      .select({ key: meta.key })
+      .from(meta)
+      .where(sql`${meta.key} LIKE 'migration:%'`)
+      .all()
+      .map((r) => r.key.slice('migration:'.length))
+      .sort()
   }
 
   async schemaVersion(): Promise<string> {
