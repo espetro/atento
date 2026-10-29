@@ -96,6 +96,8 @@ const TABLE: StateTable = {
 
   // needs_browser: parked until a browser fixes it; never blocks the queue.
   needs_browser: {
+    // The user completed a browser login: back to the extraction queue.
+    RETRY: () => ({ state: 'created' }),
     DELETE: (_s, _e, at) => ({ state: 'deleted', deletedAt: at.toISOString() }),
   },
 

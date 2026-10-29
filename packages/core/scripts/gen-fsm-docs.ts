@@ -16,9 +16,11 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url))
 /** The repo root, whether the script runs from src or from dist. */
-const repoRoot = here.includes(`${sep}dist${sep}`)
+const repoRoot = here.includes(`${sep}dist-scripts${sep}`)
   ? join(here, '..', '..', '..', '..')
-  : join(here, '..', '..', '..')
+  : here.includes(`${sep}dist${sep}`)
+    ? join(here, '..', '..', '..', '..')
+    : join(here, '..', '..', '..')
 const docsDir = join(repoRoot, 'docs')
 
 /** A minimal valid instance of each state. */
