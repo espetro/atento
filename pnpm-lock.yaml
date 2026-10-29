@@ -203,6 +203,9 @@ importers:
       '@linkinbox/db':
         specifier: workspace:*
         version: link:../db
+      '@linkinbox/enrich':
+        specifier: workspace:*
+        version: link:../enrich
       '@linkinbox/extractors':
         specifier: workspace:*
         version: link:../extractors

@@ -30,6 +30,7 @@
   "dependencies": {
     "@linkinbox/core": "workspace:*",
     "@linkinbox/db": "workspace:*",
+    "@linkinbox/enrich": "workspace:*",
     "@linkinbox/extractors": "workspace:*",
     "@linkinbox/importers": "workspace:*",
     "commander": "^15.0.0",

@@ -193,3 +193,39 @@ describe('enrich adapter', () => {
     expect(result.modelId).toBe('run-model')
   })
 })
+
+describe('createEnrichFn with the real enrich entry point shape', () => {
+  const link = { id: 1, url: 'https://example.com', extractedContent: 'body' } as never
+  const enrichment = { category: 'job', priority: 'low', action: 'archive', confidence: 0.5 } as never
+
+  it('builds the model from env, passes it as deps and maps usage', async () => {
+    const seen: unknown[] = []
+    const fn = await createEnrichFn({
+      env: { LINKINBOX_MODEL: 'm' },
+      load: async () => ({
+        createModelFromEnv: () => ({ modelId: 'm' }),
+        enrichLink: async (_l: unknown, deps: unknown) => {
+          seen.push(deps)
+          return { ok: true, enrichment, usage: { tokensIn: 7, tokensOut: 3 }, modelId: 'm' }
+        },
+      }),
+    })
+    const res = await fn(link)
+    expect(seen).toEqual([{ model: { modelId: 'm' } }])
+    expect(res).toMatchObject({ ok: true, tokensIn: 7, tokensOut: 3, modelId: 'm' })
+  })
+
+  it('reports missing model config as a per-link error', async () => {
+    const fn = await createEnrichFn({
+      load: async () => ({
+        createModelFromEnv: () => {
+          throw new Error('requires OPENAI_COMPAT_BASE_URL')
+        },
+        enrichLink: async () => ({ ok: true }),
+      }),
+    })
+    const res = await fn(link)
+    expect(res).toMatchObject({ ok: false })
+    expect((res as { error: string }).error).toContain('OPENAI_COMPAT_BASE_URL')
+  })
+})

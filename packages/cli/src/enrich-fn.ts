@@ -12,12 +12,15 @@ import type { EnrichFn, Enrichment, Link } from '@linkinbox/core'
 export interface EnrichAdapterOptions {
   /** Override the module loader (tests). */
   load?: () => Promise<unknown>
+  /** Environment holding the model config. Defaults to process.env. */
+  env?: NodeJS.ProcessEnv
 }
 
 interface EnrichModule {
   createEnrichFn?: (options?: unknown) => EnrichFn
   runEnrich?: (link: Link, options?: unknown) => Promise<unknown>
   enrichLink?: (link: Link, options?: unknown) => Promise<unknown>
+  createModelFromEnv?: (env?: NodeJS.ProcessEnv) => unknown
 }
 
 /** Shape returned by the enrich package before adaptation. */
@@ -27,6 +30,7 @@ type RawEnrichResult =
       enrichment: Enrichment
       tokensIn?: number
       tokensOut?: number
+      usage?: { tokensIn: number; tokensOut: number }
       costUsd?: number
       modelId?: string
       model?: string
@@ -66,8 +70,22 @@ export async function createEnrichFn(options: EnrichAdapterOptions = {}): Promis
 
   const run = mod.runEnrich ?? mod.enrichLink
   if (typeof run === 'function') {
+    // The model comes from OPENAI_COMPAT_BASE_URL / OPENAI_COMPAT_API_KEY /
+    // LINKINBOX_MODEL; a missing variable becomes a per-link error, not a crash.
+    let deps: unknown
+    let setupError: string | undefined
+    if (typeof mod.createModelFromEnv === 'function') {
+      try {
+        deps = { model: mod.createModelFromEnv(options.env ?? process.env) }
+      } catch (err) {
+        setupError = err instanceof Error ? err.message : String(err)
+      }
+    }
     return async (link: Link) => {
-      const raw = (await run(link)) as RawEnrichResult
+      if (setupError !== undefined) {
+        return { ok: false, error: `enrichment unavailable: ${setupError}` }
+      }
+      const raw = (await run(link, deps)) as RawEnrichResult
       return adaptResult(raw)
     }
   }
@@ -89,8 +107,8 @@ export function adaptResult(raw: RawEnrichResult): Awaited<ReturnType<EnrichFn>>
   return {
     ok: true,
     enrichment: raw.enrichment,
-    tokensIn: raw.tokensIn ?? 0,
-    tokensOut: raw.tokensOut ?? 0,
+    tokensIn: raw.tokensIn ?? raw.usage?.tokensIn ?? 0,
+    tokensOut: raw.tokensOut ?? raw.usage?.tokensOut ?? 0,
     ...(raw.costUsd !== undefined ? { costUsd: raw.costUsd } : {}),
     modelId: raw.modelId ?? raw.model ?? 'unknown',
   }
