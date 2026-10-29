@@ -1,0 +1,356 @@
+/**
+ * Shared operations layer. BOTH the CLI and the future MCP server call these
+ * functions; neither formats rows or builds queries itself. Projections are
+ * compact by default: `extracted_content` (the bulky field) is included only
+ * when `fields` asks for it.
+ */
+import type { Store, LinkFilter } from './store.js'
+import type { Link, Status, Enrichment } from './types.js'
+import { planSweep, planPrune, type SweepPlan, type PrunePlan } from './sweep.js'
+import type { TtlConfig } from './ttl.js'
+
+/** Fields a caller can request in a link projection. */
+export type LinkField =
+  | 'id'
+  | 'url'
+  | 'urlHash'
+  | 'title'
+  | 'source'
+  | 'addedAt'
+  | 'note'
+  | 'tags'
+  | 'extracted_content'
+  | 'extractedAt'
+  | 'enrichment'
+  | 'expiresAt'
+  | 'expiryReason'
+  | 'status'
+  | 'category'
+  | 'priority'
+  | 'action'
+  | 'confidence'
+  | 'readMinutes'
+  | 'needsBrowser'
+  | 'createdAt'
+  | 'updatedAt'
+
+/** Default projection: identity + triage state, no bulky content. */
+export const DEFAULT_LINK_FIELDS: LinkField[] = [
+  'id',
+  'url',
+  'title',
+  'status',
+  'category',
+  'priority',
+  'action',
+  'expiresAt',
+  'expiryReason',
+  'readMinutes',
+  'needsBrowser',
+]
+
+/** Compact link projection: only requested fields, extracted content opt-in. */
+export type LinkProjection = Record<string, unknown>
+
+function iso(d: Date | null): string | null {
+  return d === null ? null : d.toISOString()
+}
+
+/** Build a compact projection of one link. */
+export function projectLink(link: Link, fields?: LinkField[]): LinkProjection {
+  const wanted = new Set<LinkField>(fields && fields.length > 0 ? fields : DEFAULT_LINK_FIELDS)
+  const out: Record<string, unknown> = {}
+  for (const field of wanted) {
+    switch (field) {
+      case 'id': out.id = link.id; break
+      case 'url': out.url = link.url; break
+      case 'urlHash': out.urlHash = link.urlHash; break
+      case 'title': out.title = link.title; break
+      case 'source': out.source = link.source; break
+      case 'addedAt': out.addedAt = iso(link.addedAt); break
+      case 'note': out.note = link.note; break
+      case 'tags': out.tags = link.tags; break
+      case 'extracted_content': out.extracted_content = link.extractedContent; break
+      case 'extractedAt': out.extractedAt = iso(link.extractedAt); break
+      case 'enrichment': out.enrichment = link.enrichment; break
+      case 'expiresAt': out.expiresAt = iso(link.expiresAt); break
+      case 'expiryReason': out.expiryReason = link.expiryReason; break
+      case 'status': out.status = link.status; break
+      case 'category': out.category = link.category; break
+      case 'priority': out.priority = link.priority; break
+      case 'action': out.action = link.action; break
+      case 'confidence': out.confidence = link.confidence; break
+      case 'readMinutes': out.readMinutes = link.readMinutes; break
+      case 'needsBrowser': out.needsBrowser = link.needsBrowser; break
+      case 'createdAt': out.createdAt = iso(link.createdAt); break
+      case 'updatedAt': out.updatedAt = iso(link.updatedAt); break
+    }
+  }
+  return out
+}
+
+/** Filter accepted by ops.listLinks (a superset of the store filter). */
+export interface ListLinksOptions {
+  status?: Status
+  category?: string
+  /** Include only links whose expiresAt has passed as of now. */
+  stale?: boolean
+  /** Free-text query over url/title. */
+  q?: string
+  fields?: LinkField[]
+  limit?: number
+  offset?: number
+  now?: Date
+}
+
+/** List links as compact projections. */
+export async function listLinks(
+  store: Store,
+  options: ListLinksOptions = {},
+): Promise<LinkProjection[]> {
+  const now = options.now ?? new Date()
+  const filter: LinkFilter = {
+    status: options.status,
+    category: options.category,
+    staleAsOf: options.stale ? now : undefined,
+    offset: options.offset,
+  }
+  // When a text query is present the limit is applied after filtering, so the
+  // store must hand back everything the filter allows.
+  const links = await store.listLinks(options.q ? filter : { ...filter, limit: options.limit })
+  let out = links
+  if (options.q) {
+    const q = options.q.toLowerCase()
+    out = links.filter(
+      (l) => l.url.toLowerCase().includes(q) || (l.title ?? '').toLowerCase().includes(q),
+    )
+  }
+  if (options.limit !== undefined) out = out.slice(0, options.limit)
+  return out.map((l) => projectLink(l, options.fields))
+}
+
+/** Full record for one link. Extracted content included only when asked for. */
+export async function getLink(
+  store: Store,
+  id: number,
+  fields?: LinkField[],
+): Promise<LinkProjection | null> {
+  const link = await store.getLink(id)
+  if (!link) return null
+  return projectLink(link, fields)
+}
+
+export type TriageAction = Enrichment['action']
+
+/** Mapping from triage action to lifecycle status. */
+export const ACTION_TO_STATUS: Record<TriageAction, Status> = {
+  read_now: 'inbox',
+  schedule: 'scheduled',
+  archive: 'archived',
+  discard: 'discarded',
+}
+
+export interface TriageResult {
+  requested: number[]
+  updated: number
+  status: Status
+  missing: number[]
+}
+
+/**
+ * Apply a triage action to link ids. `read_now` keeps the link in the inbox
+ * (it flags intent), the rest move to their mapped status.
+ */
+export async function triage(
+  store: Store,
+  ids: number[],
+  action: TriageAction,
+): Promise<TriageResult> {
+  const status = ACTION_TO_STATUS[action]
+  const unique = [...new Set(ids)]
+  if (unique.length === 0) return { requested: [], updated: 0, status, missing: [] }
+  const updated = await store.updateStatus(unique, status)
+  const missing: number[] = []
+  for (const id of unique) {
+    if (!(await store.getLink(id))) missing.push(id)
+  }
+  return { requested: unique, updated, status, missing }
+}
+
+export type { SweepPlan, PrunePlan }
+
+export interface SweepOpsOptions {
+  now?: Date
+  /** Statuses to consider. Default: inbox + scheduled. */
+  statuses?: Status[]
+}
+
+/**
+ * Sweep: propose archiving stale links, grouped by category. Dry-run by
+ * construction; applying is the caller's decision (`applySweep`).
+ */
+export async function sweep(
+  store: Store,
+  ttl: TtlConfig,
+  options: SweepOpsOptions = {},
+): Promise<SweepPlan> {
+  const now = options.now ?? new Date()
+  const links = await store.listLinks({})
+  return planSweep(links, { now, ttl, statuses: options.statuses })
+}
+
+/** Execute a sweep plan: archive the stale ids. Never deletes. */
+export async function applySweep(
+  store: Store,
+  plan: SweepPlan,
+  now: Date = new Date(),
+): Promise<number> {
+  const ids = plan.groups.flatMap((g) => g.items.map((i) => i.linkId))
+  if (ids.length === 0) return 0
+  return store.updateStatus(ids, 'archived', now)
+}
+
+/** Prune proposal: the only delete path. No deletion happens here. */
+export async function prune(
+  store: Store,
+  ttl: TtlConfig,
+  options: SweepOpsOptions = {},
+): Promise<PrunePlan> {
+  const now = options.now ?? new Date()
+  const links = await store.listLinks({})
+  return planPrune(links, { now, ttl })
+}
+
+/** Execute a prune plan: hard-delete. Called only after user confirmation. */
+export async function applyPrune(store: Store, plan: PrunePlan): Promise<number> {
+  const ids = plan.items.map((i) => i.linkId)
+  if (ids.length === 0) return 0
+  return store.deleteLinks(ids)
+}
+
+/** Range strings accepted by metricsSummary: `24h`, `7d`, `30d`, `2w`. */
+export function parseRange(s: string): { ms: number; label: string } {
+  const m = /^(\d+)\s*(h|d|w)$/.exec(s.trim())
+  if (!m) throw new TypeError(`invalid range "${s}"; expected e.g. 24h, 7d, 30d`)
+  const n = Number(m[1])
+  const unit = m[2] as 'h' | 'd' | 'w'
+  const hours = unit === 'h' ? n : unit === 'd' ? n * 24 : n * 24 * 7
+  return { ms: hours * 60 * 60 * 1000, label: s.trim() }
+}
+
+export interface StageSummary {
+  stage: string
+  runs: number
+  input: number
+  ok: number
+  errors: number
+  avgDurationMs: number
+  tokensIn: number
+  tokensOut: number
+  costUsd: number
+  /** Error counts keyed by `<kind>:<name>`, e.g. `extractor:defuddle`. */
+  errorsByTag: Record<string, number>
+  /** Counts keyed by `<kind>:<name>` for the other tagged metrics. */
+  countsByTag: Record<string, number>
+}
+
+export interface MetricsSummary {
+  since: string
+  until: string
+  stages: StageSummary[]
+}
+
+/**
+ * Aggregate metrics over a time range, one row per stage. Derived from the
+ * `metrics` table so any Store implementation works.
+ *
+ * Aggregate counters are stored untagged (`errors`), per-source breakdowns
+ * are stored tagged (`errors` with `{importer|extractor|model}`). Only the
+ * untagged rows feed the totals so the two never double count.
+ */
+export async function metricsSummary(
+  store: Store,
+  range = '7d',
+  now: Date = new Date(),
+): Promise<MetricsSummary> {
+  const { ms } = parseRange(range)
+  const since = new Date(now.getTime() - ms)
+  const rows = await store.listMetrics({ since })
+
+  const byStage = new Map<string, StageSummary>()
+  const stageOf = (stage: string): StageSummary => {
+    let row = byStage.get(stage)
+    if (!row) {
+      row = {
+        stage,
+        runs: 0,
+        input: 0,
+        ok: 0,
+        errors: 0,
+        avgDurationMs: 0,
+        tokensIn: 0,
+        tokensOut: 0,
+        costUsd: 0,
+        errorsByTag: {},
+        countsByTag: {},
+      }
+      byStage.set(stage, row)
+    }
+    return row
+  }
+
+  const durations = new Map<string, number[]>()
+
+  for (const row of rows) {
+    const s = stageOf(row.stage)
+    switch (row.key) {
+      case 'input':
+        s.runs += 1
+        s.input += row.value
+        break
+      case 'ok':
+        s.ok += row.value
+        break
+      case 'errors':
+        if (row.tags && Object.keys(row.tags).length > 0) {
+          for (const [kind, name] of Object.entries(row.tags)) {
+            const key = `${kind}:${name}`
+            s.errorsByTag[key] = (s.errorsByTag[key] ?? 0) + row.value
+          }
+        } else {
+          s.errors += row.value
+        }
+        break
+      case 'duration_ms': {
+        const list = durations.get(row.stage) ?? []
+        list.push(row.value)
+        durations.set(row.stage, list)
+        break
+      }
+      case 'tokens_in': s.tokensIn += row.value; break
+      case 'tokens_out': s.tokensOut += row.value; break
+      case 'cost_usd': s.costUsd += row.value; break
+      default: {
+        // Any other tagged metric (needs_browser, extractions, ...) lands in
+        // countsByTag; untagged ones are ignored here.
+        if (row.tags && Object.keys(row.tags).length > 0) {
+          for (const [kind, name] of Object.entries(row.tags)) {
+            const key = `${row.key} ${kind}:${name}`
+            s.countsByTag[key] = (s.countsByTag[key] ?? 0) + row.value
+          }
+        }
+        break
+      }
+    }
+  }
+
+  for (const [stage, list] of durations) {
+    const s = byStage.get(stage)
+    if (s && list.length > 0) {
+      s.avgDurationMs = list.reduce((a, b) => a + b, 0) / list.length
+    }
+  }
+
+  const stages = [...byStage.values()].sort((a, b) => a.stage.localeCompare(b.stage))
+  return { since: since.toISOString(), until: now.toISOString(), stages }
+}

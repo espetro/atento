@@ -72,7 +72,7 @@ export function planSweep(links: Link[], opts: SweepOptions): SweepPlan {
     if (link.expiresAt === null) continue
     const t = link.expiresAt.getTime()
     if (t >= opts.now.getTime()) continue // not stale yet
-    const category = link.enrichment?.category ?? null
+    const category = link.category ?? link.enrichment?.category ?? null
     const key = category ?? 'uncategorized'
     let group = groups.get(key)
     if (!group) {
@@ -121,7 +121,7 @@ export function planPrune(links: Link[], opts: SweepOptions): PrunePlan {
       linkId: link.id,
       url: link.url,
       title: link.title,
-      category: link.enrichment?.category ?? null,
+      category: link.category ?? link.enrichment?.category ?? null,
       referenceDate: ref,
       ageDays: Math.floor((opts.now.getTime() - ref.getTime()) / DAY_MS),
     })

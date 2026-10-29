@@ -1,0 +1,179 @@
+/**
+ * Pipeline-running commands: import, extract, enrich, run.
+ * Each is a thin shell over the corresponding core stage.
+ */
+import type { Command } from 'commander'
+import { importFile } from '@linkinbox/importers'
+import { enrich, extract, ingest, pipelineLogger, type EnrichFn, type ExtractFn } from '@linkinbox/core'
+import type { CliContext } from '../context.js'
+
+export interface RunOutcome {
+  stage: string
+  inputCount: number
+  okCount: number
+  errorCount: number
+}
+
+function printStage(outcome: RunOutcome): void {
+  console.log(
+    `${outcome.stage}: ${outcome.okCount}/${outcome.inputCount} ok` +
+      (outcome.errorCount > 0 ? `, ${outcome.errorCount} errors` : ''),
+  )
+}
+
+/** import <file...>: run the matching importer per file, then the ingest stage. */
+export async function runImport(ctx: CliContext, files: string[], limit?: number): Promise<void> {
+  const logger = pipelineLogger('ingest')
+  const raws = []
+  for (const file of files) {
+    const result = await importFile(file)
+    for (const warning of result.warnings) ctx.logger.warn('importer warning: {warning}', { warning })
+    raws.push(...result.links)
+    console.log(`${file}: ${result.links.length} links via ${result.importer}`)
+  }
+  const outcome = await ingest(ctx.store, raws, { logger, limit })
+  printStage(outcome)
+  if (outcome.duplicates > 0) console.log(`(${outcome.duplicates} already known, no-op)`)
+}
+
+/** extract [--limit N]: extraction on inbox links lacking content. */
+export async function runExtract(
+  ctx: CliContext,
+  extractFn: ExtractFn,
+  limit?: number,
+): Promise<void> {
+  const outcome = await extract(ctx.store, {
+    extract: extractFn,
+    limit,
+    logger: pipelineLogger('extract'),
+  })
+  printStage(outcome)
+  if (outcome.needsBrowserCount > 0) {
+    console.log(
+      `(${outcome.needsBrowserCount} need a browser; run \`linkinbox login <host>\` and re-run)`,
+    )
+  }
+}
+
+/** enrich [--limit N]: one structured-output call per link lacking enrichment. */
+export async function runEnrich(ctx: CliContext, enrichFn: EnrichFn, limit?: number): Promise<void> {
+  const outcome = await enrich(ctx.store, {
+    enrich: enrichFn,
+    limit,
+    ttl: ctx.config.ttl,
+    logger: pipelineLogger('enrich'),
+  })
+  printStage(outcome)
+}
+
+export interface RunAllResult {
+  import?: RunOutcome
+  extract?: RunOutcome
+  enrich?: RunOutcome
+}
+
+/** run: ingest+extract+enrich in one pass. Import only when files are given. */
+export async function runAll(
+  ctx: CliContext,
+  files: string[],
+  extractFn: ExtractFn,
+  enrichFn: EnrichFn,
+  options: { limit?: number } = {},
+): Promise<RunAllResult> {
+  const result: RunAllResult = {}
+  if (files.length > 0) {
+    const logger = pipelineLogger('ingest')
+    const raws = []
+    for (const file of files) {
+      const imported = await importFile(file)
+      for (const warning of imported.warnings) {
+        ctx.logger.warn('importer warning: {warning}', { warning })
+      }
+      raws.push(...imported.links)
+    }
+    const outcome = await ingest(ctx.store, raws, { logger, limit: options.limit })
+    result.import = outcome
+    printStage(outcome)
+  }
+
+  const extractOutcome = await extract(ctx.store, {
+    extract: extractFn,
+    limit: options.limit,
+    logger: pipelineLogger('extract'),
+  })
+  result.extract = extractOutcome
+  printStage(extractOutcome)
+
+  const enrichOutcome = await enrich(ctx.store, {
+    enrich: enrichFn,
+    limit: options.limit,
+    ttl: ctx.config.ttl,
+    logger: pipelineLogger('enrich'),
+  })
+  result.enrich = enrichOutcome
+  printStage(enrichOutcome)
+  return result
+}
+
+export function registerPipelineCommands(
+  program: Command,
+  deps: {
+    ctx: () => Promise<CliContext>
+    extractFn: () => Promise<ExtractFn>
+    enrichFn: () => Promise<EnrichFn>
+  },
+): void {
+  program
+    .command('import')
+    .description('import links from files (markdown, json, url list, safari reading list)')
+    .argument('<files...>')
+    .option('--limit <n>', 'cap the number of links ingested', Number)
+    .action(async (files: string[], opts: { limit?: number }) => {
+      const ctx = await deps.ctx()
+      try {
+        await runImport(ctx, files, opts.limit)
+      } finally {
+        await ctx.close()
+      }
+    })
+
+  program
+    .command('extract')
+    .description('extract content for inbox links that lack it')
+    .option('--limit <n>', 'cap the number of links processed', Number)
+    .action(async (opts: { limit?: number }) => {
+      const ctx = await deps.ctx()
+      try {
+        await runExtract(ctx, await deps.extractFn(), opts.limit)
+      } finally {
+        await ctx.close()
+      }
+    })
+
+  program
+    .command('enrich')
+    .description('run enrichment (one structured-output call per link)')
+    .option('--limit <n>', 'cap the number of links processed', Number)
+    .action(async (opts: { limit?: number }) => {
+      const ctx = await deps.ctx()
+      try {
+        await runEnrich(ctx, await deps.enrichFn(), opts.limit)
+      } finally {
+        await ctx.close()
+      }
+    })
+
+  program
+    .command('run')
+    .description('ingest+extract+enrich in one pass (idempotent)')
+    .argument('[files...]')
+    .option('--limit <n>', 'cap the number of links processed per stage', Number)
+    .action(async (files: string[], opts: { limit?: number }) => {
+      const ctx = await deps.ctx()
+      try {
+        await runAll(ctx, files, await deps.extractFn(), await deps.enrichFn(), opts)
+      } finally {
+        await ctx.close()
+      }
+    })
+}
