@@ -129,9 +129,23 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
     }
 
     try {
+      let retriesThisLink = 0
       const raw = guardActive
-        ? await guardRun(guard as GuardDeps, LLM_KEY, () => options.enrich(link))
+        ? await guardRun(guard as GuardDeps, LLM_KEY, () => options.enrich(link), {
+            onRetry: () => {
+              retriesThisLink += 1
+            },
+          })
         : { kind: 'ok' as const, value: await options.enrich(link), attempts: 1 }
+      if (retriesThisLink > 0) {
+        await store.addMetric({
+          timestamp: now(),
+          stage: STAGES.enrich,
+          key: 'retries',
+          value: retriesThisLink,
+          tags: { host: LLM_KEY },
+        })
+      }
 
       if (raw.kind === 'defer') {
         deferredCount += 1
@@ -258,6 +272,25 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
       stage: STAGES.enrich,
       key: 'throttled',
       value: deferredCount,
+    })
+  }
+  // Per-host resilience metrics: the llm gateway is the only key here.
+  if (deferredCount > 0) {
+    await store.addMetric({
+      timestamp: now(),
+      stage: STAGES.enrich,
+      key: 'deferred',
+      value: deferredCount,
+      tags: { host: LLM_KEY },
+    })
+  }
+  if (breakerOpen) {
+    await store.addMetric({
+      timestamp: now(),
+      stage: STAGES.enrich,
+      key: 'breaker_open',
+      value: 1,
+      tags: { host: LLM_KEY },
     })
   }
 

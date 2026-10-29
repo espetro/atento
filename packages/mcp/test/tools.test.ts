@@ -255,3 +255,54 @@ describe('mcp tools', () => {
     }
   })
 })
+
+describe('mcp limits_status', () => {
+  it('reports per-host budget and breaker state without mutating anything', async () => {
+    const h = await createHarness()
+    try {
+      await h.store.saveHostState({
+        key: 'x.com',
+        lastRequestAt: Date.now() - 1000,
+        windowStart: Date.now() - 1000,
+        windowCount: 40,
+        consecutiveFailures: 2,
+        breakerState: 'open',
+        openedUntil: Date.now() + 3600_000,
+        cooldownLevel: 1,
+        lastError: 'http_429',
+      })
+      const res = await h.client.callTool({ name: 'limits_status', arguments: {} })
+      const { isError, data } = callJson(res)
+      expect(isError).toBe(false)
+      const x = data.hosts.find((h: { key: string }) => h.key === 'x.com')
+      expect(x.breakerState).toBe('open')
+      expect(x.dailyCap).toBe(40)
+      expect(x.remainingToday).toBe(0)
+      expect(x.reopensAt).toBeTruthy()
+      expect(data.hosts.some((h: { key: string }) => h.key === 'llm')).toBe(true)
+      // read-only: the state is unchanged
+      const after = await h.store.getHostState('x.com')
+      expect(after?.breakerState).toBe('open')
+    } finally {
+      await h.cleanup()
+    }
+  })
+
+  it('extract_run returns deferred info instead of throwing', async () => {
+    const h = await createHarness({
+      extractFn: async () => {
+        throw Object.assign(new Error('forbidden'), { status: 403 })
+      },
+    })
+    try {
+      await insertLink(h.store, 'https://x.com/a')
+      const res = await h.client.callTool({ name: 'extract_run', arguments: {} })
+      const { isError, data } = callJson(res)
+      expect(isError).toBe(false)
+      expect(data.deferredCount).toBe(1)
+      expect(typeof data.retryAfter).toBe('number')
+    } finally {
+      await h.cleanup()
+    }
+  })
+})

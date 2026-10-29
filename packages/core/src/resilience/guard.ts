@@ -104,6 +104,7 @@ export async function guardRun<T>(
   deps: GuardDeps,
   key: string,
   fn: () => Promise<T>,
+  hooks: { onRetry?: (attempt: number) => void } = {},
 ): Promise<GuardOutcome<T>> {
   const now = deps.clock()
 
@@ -148,7 +149,8 @@ export async function guardRun<T>(
     clock: deps.clock,
     random: deps.random,
     sleep: deps.sleep,
-    onRetry: ({ signal }) => {
+    onRetry: ({ attempt, signal }) => {
+      hooks.onRetry?.(attempt)
       if (signal.block) void breakerReport(bDeps, key, 'failure', signal)
     },
   })

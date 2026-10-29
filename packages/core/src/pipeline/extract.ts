@@ -95,6 +95,11 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
   const extractionsByExtractor = new Map<string, number>()
   /** Set when a host's breaker opens: the rest of its links are deferred. */
   const blockedHosts = new Set<string>()
+  /** Deferral count per host, for the tagged resilience metrics. */
+  const deferralsByHost = new Map<string, number>()
+  const bumpDeferral = (host: string): void => {
+    deferralsByHost.set(host, (deferralsByHost.get(host) ?? 0) + 1)
+  }
 
   for (const link of batch) {
     let extractor = 'unknown'
@@ -120,6 +125,7 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
     // link is deferred with the breaker's reopen time.
     if (blockedHosts.has(host)) {
       deferredCount += 1
+      bumpDeferral(host)
       await store.applyEvent(link.id, {
         type: 'DEFER',
         stage: 'extract',
@@ -139,11 +145,26 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
     }
 
     try {
+      let retriesThisLink = 0
       const result = guardActive
-        ? await guardRun(guard as GuardDeps, host, () => options.extract(link.url))
+        ? await guardRun(guard as GuardDeps, host, () => options.extract(link.url), {
+            onRetry: () => {
+              retriesThisLink += 1
+            },
+          })
         : { kind: 'ok' as const, value: await options.extract(link.url), attempts: 1 }
+      if (retriesThisLink > 0) {
+        await store.addMetric({
+          timestamp: now(),
+          stage: STAGES.extract,
+          key: 'retries',
+          value: retriesThisLink,
+          tags: { host },
+        })
+      }
       if (result.kind === 'defer') {
         deferredCount += 1
+        bumpDeferral(host)
         retryAfter = Math.max(retryAfter, result.retryAfterMs)
         if (result.breakerOpen) blockedHosts.add(host)
         const decision = await deferOrError(
@@ -183,6 +204,7 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
       // breaker so the rest of the batch stops hammering it, and defer.
       if (raw.blocked === true) {
         deferredCount += 1
+        bumpDeferral(host)
         blockedHosts.add(host)
         const reason = `blocked:${raw.blockReason ?? 'login_wall'}`
         const waitMs = await openBreakerForHost(guard, host, now().getTime())
@@ -307,6 +329,25 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
       stage: STAGES.extract,
       key: 'throttled',
       value: deferredCount,
+    })
+  }
+  // Per-host resilience metrics: one row per host that appeared in the batch.
+  for (const [host, count] of deferralsByHost) {
+    await store.addMetric({
+      timestamp: now(),
+      stage: STAGES.extract,
+      key: 'deferred',
+      value: count,
+      tags: { host },
+    })
+  }
+  for (const host of blockedHosts) {
+    await store.addMetric({
+      timestamp: now(),
+      stage: STAGES.extract,
+      key: 'breaker_open',
+      value: 1,
+      tags: { host },
     })
   }
   for (const [name, count] of needsBrowserByExtractor) {
