@@ -5,8 +5,18 @@
  * provider lives in the enrich package. Both are loaded dynamically so the
  * CLI still starts when one of them is missing, and no provider or model is
  * named here: the enrich package reads its model config from the environment.
+ *
+ * The budget is store-backed (core.createMediaBudget), so the daily cap
+ * survives restarts.
  */
-import type { AsrFn, GuardDeps, MediaConfig, MediaTierName } from '@linkinbox/core'
+import {
+  createMediaBudget,
+  type AsrFn,
+  type GuardDeps,
+  type MediaConfig,
+  type MediaTierName,
+  type Store,
+} from '@linkinbox/core'
 import type { MediaReport } from '@linkinbox/media'
 
 export interface MediaFnInput {
@@ -16,7 +26,14 @@ export interface MediaFnInput {
   tiers?: MediaTierName[]
 }
 
-export type MediaFn = (input: MediaFnInput) => Promise<MediaReport>
+/** One media run: the per-tier report plus the rendered markdown. */
+export interface MediaRun {
+  report: MediaReport
+  markdown: string
+}
+
+/** The media stage function the pipeline and the media command call. */
+export type MediaFn = (input: MediaFnInput) => Promise<MediaRun>
 
 export interface MediaAdapterOptions {
   /** Override the module loader (tests). */
@@ -29,6 +46,10 @@ export interface MediaAdapterOptions {
   config?: MediaConfig
   /** Override the ASR provider (tests). */
   asr?: AsrFn
+  /** The store, for the store-backed daily budget. */
+  store?: Pick<Store, 'getMediaBudget' | 'saveMediaBudget'>
+  /** Override the daily budget (tests). */
+  budget?: import('@linkinbox/core').MediaBudget
 }
 
 interface MediaModule {
@@ -36,6 +57,7 @@ interface MediaModule {
     input: MediaFnInput,
     options?: unknown,
   ) => Promise<MediaReport>
+  renderMedia?: (report: MediaReport) => string
 }
 
 interface EnrichModule {
@@ -77,6 +99,7 @@ export async function createMediaFn(options: MediaAdapterOptions = {}): Promise<
     }
   }
   const runMediaStage = mod.runMediaStage
+  const renderMedia = mod.renderMedia ?? ((_report: MediaReport) => '')
 
   let asr = options.asr
   if (!asr) {
@@ -90,11 +113,23 @@ export async function createMediaFn(options: MediaAdapterOptions = {}): Promise<
     }
   }
 
-  return async (input: MediaFnInput): Promise<MediaReport> => {
-    return runMediaStage(input, {
+  const config = options.config
+  const budget =
+    options.budget ??
+    (options.store
+      ? createMediaBudget(options.store, {
+          dailyCap: config?.dailyCap ?? 20,
+          dailyCaps: config?.dailyCaps,
+        })
+      : undefined)
+
+  return async (input: MediaFnInput): Promise<MediaRun> => {
+    const report = await runMediaStage(input, {
       asr,
       guard: options.guard,
-      config: options.config,
+      config,
+      budget,
     })
+    return { report, markdown: renderMedia(report) }
   }
 }

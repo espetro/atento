@@ -42,6 +42,7 @@ if (live) {
       readMinutes: null,
       needsBrowser: false,
       captured: false,
+      mediaReport: null,
       capturedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),

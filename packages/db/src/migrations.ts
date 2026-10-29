@@ -213,6 +213,19 @@ ALTER TABLE host_state ADD COLUMN pages_since_break INTEGER;
 ALTER TABLE host_state ADD COLUMN break_every INTEGER;
 `,
   },
+  {
+    name: '0007_media',
+    sql: `
+-- Media stage: the per-tier report per link, and the per-day budget
+-- counters so the media daily cap survives restarts.
+ALTER TABLE links ADD COLUMN media_report TEXT;
+CREATE TABLE IF NOT EXISTS media_budget (
+  day TEXT PRIMARY KEY,
+  total INTEGER NOT NULL DEFAULT 0,
+  by_tier TEXT NOT NULL DEFAULT '{}'
+);
+`,
+  },
 ]
 
 const META_TABLE = `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`

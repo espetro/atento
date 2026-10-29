@@ -23,6 +23,7 @@ import {
   hostOf,
   releaseDueDeferred,
 } from './resilience.js'
+import { isMediaLink, type MediaFn, type MediaRun } from '../media.js'
 import { DEFAULT_MAX_ATTEMPTS } from './resilience-options.js'
 
 /** The reason recorded on links parked because their host is skip-listed. */
@@ -50,6 +51,13 @@ export interface ExtractOptions extends StageOptions {
   maxAttempts?: number
   /** Hard cap on links per call when invoked remotely. Default 20. */
   maxBatch?: number
+  /**
+   * The tiered media stage, injected by the caller. When present, links whose
+   * extracted metadata or URL marks them as video get a media run after a
+   * successful extraction and the report is attached to the link. A media
+   * failure never fails the link.
+   */
+  media?: MediaFn
 }
 
 export interface ExtractResult extends StageResult {
@@ -61,6 +69,8 @@ export interface ExtractResult extends StageResult {
   retryAfter: number
   /** Number of links parked (discarded) because their host is skip-listed. */
   skippedHostCount: number
+  /** Number of links the media stage ran for (additive). */
+  mediaCount: number
   /** Hosts whose canary was tried in this run: host -> flag/open. */
   canaryTrials: Record<string, 'open' | 'flagged'>
 }
@@ -108,6 +118,7 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
   let needsBrowserCount = 0
   let deferredCount = 0
   let skippedHostCount = 0
+  let mediaCount = 0
   let retryAfter = 0
   const errorsByExtractor = new Map<string, number>()
   const needsBrowserByExtractor = new Map<string, number>()
@@ -312,6 +323,7 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
       )
       const raw = result.value as {
         markdown?: string
+        meta?: Record<string, unknown>
         needsBrowser?: boolean
         blocked?: boolean
         blockReason?: string
@@ -460,6 +472,31 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
 
       await store.setExtractedContent(link.id, markdown, false, now())
       bump(extractionsByExtractor, extractor)
+
+      // The media stage: video links get their tiers run before the link
+      // moves on to enrich. A media failure never fails the link: the report
+      // is attached, the extracted content stays.
+      let mediaRan = false
+      if (options.media) {
+        const meta = raw.meta ?? null
+        if (isMediaLink(link.url, meta)) {
+          const mediaRun = await runMediaStage(link, markdown, meta, options, logger)
+          if (mediaRun) {
+            mediaRan = true
+            mediaCount += 1
+            await store.setMediaReport(link.id, mediaRun.report, now())
+            if (mediaRun.markdown.trim() !== '') {
+              await store.setExtractedContent(
+                link.id,
+                `${markdown}\n\n${mediaRun.markdown}`,
+                false,
+                now(),
+              )
+            }
+          }
+        }
+      }
+
       const done = await store.applyEvent(link.id, {
         type: 'EXTRACTED',
         chars: markdown.length,
@@ -484,6 +521,7 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
         ok: true,
         needsBrowser: false,
         chars: markdown.length,
+        media: mediaRan,
       })
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err)
@@ -580,6 +618,15 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
     })
   }
 
+  if (mediaCount > 0) {
+    await store.addMetric({
+      timestamp: now(),
+      stage: STAGES.extract,
+      key: 'media',
+      value: mediaCount,
+    })
+  }
+
   const durationMs = now().getTime() - startedAt.getTime()
   await store.finishRun(run.id, {
     okCount,
@@ -609,7 +656,44 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
     deferredCount,
     retryAfter,
     skippedHostCount,
+    mediaCount,
     canaryTrials,
+  }
+}
+
+/**
+ * Run the media stage for one link. The stage never throws: a failure comes
+ * back as a failed tier inside the report, so the link itself survives.
+ *
+ * A captured link skips the download: its content came from the user's own
+ * session, so the pipeline does not fetch the media again.
+ */
+async function runMediaStage(
+  link: Link,
+  markdown: string,
+  meta: Record<string, unknown> | null,
+  options: ExtractOptions,
+  logger: { error(message: string, properties?: Record<string, unknown>): void },
+): Promise<MediaRun | null> {
+  const media = options.media
+  if (!media) return null
+  try {
+    const run = await media({
+      url: link.url,
+      content: markdown,
+      meta,
+      // A captured link keeps its own content: only the caption tier (which
+      // fetches nothing) may run.
+      ...(link.captured ? { tiers: ['caption' as const] } : {}),
+    })
+    if (!run || !Array.isArray(run.report?.tiers)) return null
+    return run
+  } catch (err) {
+    logger.error('media stage failed for {url}: {error}', {
+      url: link.url,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return null
   }
 }
 

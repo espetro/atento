@@ -11,6 +11,7 @@ import {
 } from '@linkinbox/core'
 import type { MediaReport, TierResult } from '@linkinbox/media'
 import type { CliContext } from '../context.js'
+import type { MediaFn } from '../media-fn.js'
 import { renderTable } from '../render.js'
 
 /** Resolve a link by numeric id or by URL. */
@@ -75,7 +76,7 @@ export function renderMediaTable(report: MediaReport): string {
 
 export interface MediaCommandDeps {
   ctx: () => Promise<CliContext>
-  mediaFn: () => Promise<(input: { url: string; content?: string | null; tiers?: MediaTierName[] }) => Promise<MediaReport>>
+  mediaFn: () => Promise<MediaFn>
 }
 
 export function registerMediaCommand(program: Command, deps: MediaCommandDeps): void {
@@ -95,7 +96,7 @@ export function registerMediaCommand(program: Command, deps: MediaCommandDeps): 
         }
         const tiers = parseTiers(opts.tiers)
         const run = await deps.mediaFn()
-        const report = await run({ url: link.url, content: link.content, tiers })
+        const { report } = await run({ url: link.url, content: link.content, tiers })
         if (opts.json) {
           console.log(JSON.stringify(report, null, 2))
           return

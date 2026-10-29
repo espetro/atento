@@ -81,7 +81,7 @@ describe('media command', () => {
         config: cliConfig(db) as never,
         store: db.store,
         quiet: true,
-        mediaFn: async () => report,
+        mediaFn: async () => ({ report, markdown: '' }),
       })
       const out = await capture(() =>
         program.parseAsync(['node', 'linkinbox', 'media', '1', '--tiers', 'caption,transcript,frames']),
@@ -109,24 +109,27 @@ describe('media command', () => {
         store: db.store,
         quiet: true,
         mediaFn: async () => ({
-          url,
-          tiers: [
-            {
-              kind: 'caption',
-              tier: 'caption',
-              status: 'ok',
-              seconds: 0,
-              text: 'Clip two',
-              hashtags: [],
-            },
-            {
-              kind: 'transcript',
-              tier: 'transcript',
-              status: 'ok',
-              seconds: 0.5,
-              text: 'words',
-            },
-          ],
+          report: {
+            url,
+            tiers: [
+              {
+                kind: 'caption',
+                tier: 'caption',
+                status: 'ok',
+                seconds: 0,
+                text: 'Clip two',
+                hashtags: [],
+              },
+              {
+                kind: 'transcript',
+                tier: 'transcript',
+                status: 'ok',
+                seconds: 0.5,
+                text: 'words',
+              },
+            ],
+          },
+          markdown: '',
         }),
       })
       const out = await capture(() =>

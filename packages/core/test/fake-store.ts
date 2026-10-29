@@ -15,6 +15,7 @@ import type {
   TransitionOutcome,
   LinkHistoryEntry,
   HostState,
+  MediaReport,
 } from '../src/index.js'
 import {
   normalizeUrl,
@@ -85,6 +86,7 @@ export class FakeStore implements Store {
       needsBrowser: input.needsBrowser ?? false,
       captured: input.captured ?? false,
       capturedAt: input.capturedAt ?? null,
+      mediaReport: input.mediaReport ?? null,
       createdAt: input.createdAt ?? now,
       updatedAt: input.updatedAt ?? now,
     }
@@ -329,6 +331,27 @@ export class FakeStore implements Store {
     link.capturedAt = capturedAt
     link.updatedAt = updatedAt ?? new Date()
     return 1
+  }
+
+  mediaBudgets = new Map<string, { total: number; byTier: Record<string, number> }>()
+
+  async setMediaReport(id: number, report: MediaReport, updatedAt?: Date): Promise<number> {
+    const link = this.links.find((l) => l.id === id)
+    if (!link) return 0
+    link.mediaReport = report
+    link.updatedAt = updatedAt ?? new Date()
+    return 1
+  }
+
+  async getMediaBudget(day: string): Promise<{ total: number; byTier: Record<string, number> }> {
+    return this.mediaBudgets.get(day) ?? { total: 0, byTier: {} }
+  }
+
+  async saveMediaBudget(
+    day: string,
+    budget: { total: number; byTier: Record<string, number> },
+  ): Promise<void> {
+    this.mediaBudgets.set(day, budget)
   }
 
   async startRun(stage: string, inputCount: number, startedAt?: Date): Promise<Run> {

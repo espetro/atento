@@ -10,6 +10,7 @@ import {
   profiles,
   runs,
   hostState,
+  mediaBudget,
   type LinkRow,
 } from './schema.js'
 import { runMigrations } from './migrations.js'
@@ -31,6 +32,7 @@ import type {
   TransitionOutcome,
   LinkHistoryEntry,
   HostState,
+  MediaReport,
 } from '@linkinbox/core'
 import {
   transition,
@@ -350,6 +352,36 @@ export class SqliteStore implements Store {
       .where(eq(links.id, id))
       .run()
     return r.changes
+  }
+
+  async setMediaReport(id: number, report: MediaReport, updatedAt?: Date): Promise<number> {
+    const r = this.db
+      .update(links)
+      .set({ mediaReport: report, updatedAt: updatedAt ?? new Date() })
+      .where(eq(links.id, id))
+      .run()
+    return r.changes
+  }
+
+  async getMediaBudget(
+    day: string,
+  ): Promise<{ total: number; byTier: Record<string, number> }> {
+    const row = this.db.select().from(mediaBudget).where(eq(mediaBudget.day, day)).get()
+    return { total: row?.total ?? 0, byTier: { ...(row?.byTier ?? {}) } }
+  }
+
+  async saveMediaBudget(
+    day: string,
+    budget: { total: number; byTier: Record<string, number> },
+  ): Promise<void> {
+    this.db
+      .insert(mediaBudget)
+      .values({ day, total: budget.total, byTier: budget.byTier })
+      .onConflictDoUpdate({
+        target: mediaBudget.day,
+        set: { total: budget.total, byTier: budget.byTier },
+      })
+      .run()
   }
 
   /**
@@ -820,6 +852,7 @@ function toRow(input: LinkInput, now: Date): typeof links.$inferInsert {
     needsBrowser: input.needsBrowser ?? false,
     captured: input.captured ?? false,
     capturedAt: input.capturedAt ?? null,
+    mediaReport: input.mediaReport ?? null,
     state: input.state ?? 'created',
     stateData: input.stateData ?? null,
     createdAt: input.createdAt ?? now,
@@ -851,6 +884,7 @@ function fromRow(row: LinkRow): Link {
     needsBrowser: row.needsBrowser,
     captured: row.captured,
     capturedAt: row.capturedAt ?? null,
+    mediaReport: (row.mediaReport as MediaReport | null) ?? null,
     state: row.state,
     stateData: (row.stateData as Record<string, unknown> | null) ?? null,
     createdAt: row.createdAt,

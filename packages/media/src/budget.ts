@@ -1,16 +1,13 @@
 /**
  * Per-day budget for media runs. The counters are per tier and per total.
- * The default implementation lives in memory (one CLI invocation); callers
- * that need a shared budget across runs inject their own.
+ *
+ * The default implementation lives in memory (one CLI invocation); the
+ * pipeline injects the store-backed one from core (`createMediaBudget`), so
+ * the cap survives restarts and is shared across processes.
  */
-import type { MediaTierName } from './types.js'
+import type { MediaBudget, MediaTierName } from '@linkinbox/core'
 
-export interface MediaBudget {
-  /** Try to spend one run of this tier. False when the budget is exhausted. */
-  consume(tier: MediaTierName): Promise<boolean>
-  /** Runs spent today, total and per tier. */
-  snapshot(): Promise<{ total: number; byTier: Record<string, number> }>
-}
+export type { MediaBudget }
 
 export interface InMemoryBudgetOptions {
   /** Total runs allowed per day. */

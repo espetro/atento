@@ -68,7 +68,7 @@ export function createDefuddleExtractor(options: DefuddleExtractorOptions): Extr
         return {
           markdown,
           title: result.title || undefined,
-          meta: buildMeta(result),
+          meta: { ...buildMeta(result), ...videoMeta(doc) },
           status: lastStatus,
           finalUrl: url,
           html: body,
@@ -102,6 +102,55 @@ function buildMeta(r: DefuddleResponseLike): Record<string, unknown> {
     wordCount: r.wordCount,
   })) {
     if (value !== undefined && value !== null && value !== "") meta[key] = value;
+  }
+  return meta;
+}
+
+function metaContent(doc: Document, selectors: string[]): string | undefined {
+  for (const selector of selectors) {
+    const el = doc.querySelector(selector);
+    const content = el?.getAttribute("content");
+    if (content && content.trim() !== "") return content.trim();
+  }
+  return undefined;
+}
+
+/**
+ * Video signals from the page head: og:type ("video", "video.other", ...),
+ * twitter:card player and the schema.org VideoObject marker. The pipeline
+ * matches on these names (core.isVideoMeta), no host names involved.
+ */
+function videoMeta(doc: Document): Record<string, unknown> {
+  const meta: Record<string, unknown> = {};
+  const ogType = metaContent(doc, [
+    "meta[property=\"og:type\"]",
+    "meta[name=\"og:type\"]",
+  ]);
+  if (ogType) meta.ogType = ogType;
+  const twitterCard = metaContent(doc, [
+    "meta[name=\"twitter:card\"]",
+    "meta[property=\"twitter:card\"]",
+  ]);
+  if (twitterCard) meta.twitterCard = twitterCard;
+  if (doc.querySelector("script[type=\"application/ld+json\"]") !== null) {
+    for (const el of doc.querySelectorAll("script[type=\"application/ld+json\"]")) {
+      try {
+        const parsed: unknown = JSON.parse(el.textContent ?? "");
+        const types = Array.isArray(parsed) ? parsed : [parsed];
+        if (
+          types.some(
+            (t) =>
+              t && typeof t === "object" &&
+              String((t as { "@type"?: unknown })["@type"] ?? "").includes("VideoObject"),
+          )
+        ) {
+          meta.videoObject = true;
+          break;
+        }
+      } catch {
+        // A malformed ld+json block is not fatal.
+      }
+    }
   }
   return meta;
 }

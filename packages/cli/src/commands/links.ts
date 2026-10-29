@@ -107,6 +107,7 @@ export async function runShow(ctx: CliContext, id: number, json: boolean): Promi
     'needsBrowser',
     'extractedAt',
     'enrichment',
+    'mediaReport',
     'extracted_content',
   ])
   if (!row) {
@@ -119,8 +120,18 @@ export async function runShow(ctx: CliContext, id: number, json: boolean): Promi
     return
   }
   for (const [key, value] of Object.entries(row)) {
-    if (key === 'extracted_content') continue
+    if (key === 'extracted_content' || key === 'mediaReport') continue
     console.log(`${key}: ${formatValue(value)}`)
+  }
+  const media = row['mediaReport'] as
+    | { url: string; tiers: { tier: string; status: string; reason?: string; error?: string }[] }
+    | undefined
+  if (media && Array.isArray(media.tiers) && media.tiers.length > 0) {
+    console.log('\n--- media report ---')
+    for (const tier of media.tiers) {
+      const detail = tier.error ?? tier.reason ?? ''
+      console.log(`${tier.tier.padEnd(12)} ${tier.status}${detail !== '' ? `  ${detail}` : ''}`)
+    }
   }
   const content = row['extracted_content']
   if (typeof content === 'string' && content !== '') {
