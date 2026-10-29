@@ -15,6 +15,11 @@ export interface ExtractResult {
    * router surfaces this instead of treating it as a hard failure.
    */
   needsBrowser?: boolean;
+  /**
+   * HTTP status when the page is permanently gone (404 or 410). A browser
+   * cannot fix this, so the router stops escalating and the caller errors.
+   */
+  gone?: number;
 }
 
 export interface Extractor {

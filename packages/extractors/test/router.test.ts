@@ -162,3 +162,23 @@ describe("profileDirForHost", () => {
     expect(dir).toBe(join("/custom/profiles", "example.dev"));
   });
 });
+
+describe("createRouter gone pages", () => {
+  it("stops at a 404/410 instead of escalating to readability and the browser", async () => {
+    const calls: string[] = [];
+    const track = (name: string, r: ExtractResult) =>
+      fakeExtractor(name, () => {
+        calls.push(name);
+        return r;
+      });
+    const router = routerWith({
+      defuddle: track("defuddle", { markdown: "", gone: 404 }),
+      readability: track("readability", ok()),
+      browser: track("browser", ok()),
+    });
+    const result = await router.extract("https://example.com/missing");
+    expect(result.gone).toBe(404);
+    expect(result.needsBrowser).toBeUndefined();
+    expect(calls).toEqual(["defuddle"]);
+  });
+});

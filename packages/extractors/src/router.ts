@@ -120,6 +120,8 @@ export function createRouter(options: RouterOptions = {}) {
         const extractor: Extractor = deps.extractors[route];
         const result = await extractor.extract(url);
         attempts.push({ route, result });
+        // A 404/410 is final: no other extractor will find the page.
+        if (result.gone !== undefined) return { route, attempts, ...result };
         const good =
           result.markdown.trim().length >= minChars && !result.needsBrowser;
         if (good) return { route, attempts, ...result };

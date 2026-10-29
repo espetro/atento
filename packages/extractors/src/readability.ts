@@ -17,6 +17,7 @@ export function createReadabilityExtractor(options: ReadabilityExtractorOptions)
       let body: string;
       try {
         const res = await options.fetch(url);
+        if (res.status === 404 || res.status === 410) return { markdown: "", gone: res.status };
         if (res.status >= 400) return { markdown: "", needsBrowser: true };
         body = res.body;
       } catch {
