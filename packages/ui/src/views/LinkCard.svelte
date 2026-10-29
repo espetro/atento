@@ -32,7 +32,7 @@
         data-testid="link-title"
         onclick={() => onOpen(link.id)}
       >
-        {link.title}
+        {link.title || link.url}
       </button>
     </div>
 

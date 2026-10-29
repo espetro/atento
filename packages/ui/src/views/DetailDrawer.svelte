@@ -35,7 +35,7 @@
   >
     <header class="flex items-center justify-between p-4 border-b border-base-300 gap-2">
       <h2 class="font-semibold text-lg truncate" data-testid="drawer-title">
-        {query.data?.title ?? 'Loading'}
+        {query.data ? query.data.title || query.data.url : 'Loading'}
       </h2>
       <button class="btn btn-circle btn-ghost btn-sm" data-testid="drawer-close" onclick={onClose} aria-label="Close">
         ✕

@@ -60,7 +60,7 @@
             {#each group.links as link (link.id)}
               {@const l = link as LinkSummary}
               <li class="py-2">
-                <span class="font-medium">{l.title}</span>
+                <span class="font-medium">{l.title || l.url}</span>
                 <span class="block text-sm text-base-content/60">
                   expired {l.expires_at ? new Date(l.expires_at).toLocaleDateString() : 'unknown'}
                   {#if l.expiry_reason}
