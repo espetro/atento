@@ -63,6 +63,12 @@ export interface Store {
   /** FSM state of one link (parsed and zod-validated). */
   getState(id: number): Promise<LinkState | null>
 
+  /**
+   * Return every leased link whose lease expired before `cutoff` to its
+   * queue state. A killed process never strands a link.
+   */
+  reclaimExpiredLeases(cutoff: Date): Promise<number>
+
   // runs
   startRun(stage: string, inputCount: number, startedAt?: Date): Promise<Run>
   finishRun(

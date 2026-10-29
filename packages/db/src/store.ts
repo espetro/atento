@@ -36,6 +36,7 @@ import {
   legacyStatus,
   isTerminal,
   LINK_STATES,
+  LEASED_STATES,
 } from '@linkinbox/core'
 
 export interface SqliteStoreOptions {
@@ -342,7 +343,11 @@ export class SqliteStore implements Store {
     event: LinkEvent,
     expected?: LinkStateName,
   ): Promise<TransitionOutcome> {
-    const at = new Date()
+    const now = new Date()
+    // The event carries its own clock, so the recorded lease start (and the
+    // history timestamp) reflect when the event happened, not when the write
+    // landed.
+    const at = new Date(event.at)
     const row = this.db.select().from(links).where(eq(links.id, linkId)).get()
     if (!row) {
       return {
@@ -390,7 +395,7 @@ export class SqliteStore implements Store {
           state: next.state,
           stateData: payload,
           status: legacyStatus(next),
-          updatedAt: at,
+          updatedAt: now,
           ...purgeForState(next, row),
         })
         .where(and(eq(links.id, linkId), eq(links.state, currentName)))
@@ -468,6 +473,30 @@ export class SqliteStore implements Store {
     const ordered = q.orderBy(sql`${links.createdAt} ASC, ${links.id} ASC`)
     const paged = limit !== undefined ? ordered.limit(limit) : ordered
     return paged.all().map(fromRow)
+  }
+
+  /**
+   * Return every leased link whose lease expired before `cutoff` to its queue
+   * state. A killed process never strands a link: the next run picks it up.
+   */
+  async reclaimExpiredLeases(cutoff: Date): Promise<number> {
+    const rows = this.db
+      .select({ id: links.id })
+      .from(links)
+      .where(inArray(links.state, LEASED_STATES))
+      .all()
+    let reclaimed = 0
+    for (const row of rows) {
+      const state = await this.getState(row.id)
+      if (!state || (state.state !== 'extracting' && state.state !== 'enriching')) continue
+      if (new Date(state.startedAt).getTime() >= cutoff.getTime()) continue
+      const outcome = await this.applyEvent(row.id, {
+        type: 'LEASE_EXPIRED',
+        at: new Date().toISOString(),
+      })
+      if (outcome.ok) reclaimed += 1
+    }
+    return reclaimed
   }
 
   /** FSM state of one link, zod-validated. */

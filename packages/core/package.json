@@ -16,7 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.test.json",
-    "gen:fsm-docs": "vitest run test/fsm-docs.test.ts --mode=docs 2>/dev/null; true"
+    "gen:fsm-docs": "pnpm build && node dist/scripts/gen-fsm-docs.js"
   },
   "dependencies": {
     "zod": "^4.1.13",

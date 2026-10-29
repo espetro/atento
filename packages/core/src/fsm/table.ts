@@ -175,6 +175,9 @@ const TABLE: StateTable = {
 
   // errored: retryable errors go back to their queue.
   errored: {
+    // Restoring an errored link sends it back to the extraction queue: the
+    // content may be missing, so it cannot go straight to the inbox.
+    RESTORE: () => ({ state: 'created' }),
     RETRY: (s, e) =>
       (e.stage ?? s.stage) === 'extract'
         ? { state: 'created' }

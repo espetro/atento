@@ -88,6 +88,32 @@ describe('FSM store', () => {
     await store.close()
   })
 
+  it('reclaimExpiredLeases returns stale leases to their queue', async () => {
+    const store = await openStore({ path: ':memory:' })
+    const old = await store.upsertLink(linkInput('https://example.com/old'))
+    const fresh = await store.upsertLink(linkInput('https://example.com/fresh'))
+    await store.applyEvent(old.id, { type: 'EXTRACT_STARTED', at: '2026-10-01T00:00:00.000Z' })
+    await store.applyEvent(fresh.id, { type: 'EXTRACT_STARTED', at: new Date().toISOString() })
+
+    // Only the stale lease is reclaimed; the fresh one stays leased.
+    const reclaimed = await store.reclaimExpiredLeases(new Date('2026-10-20T00:00:00.000Z'))
+    expect(reclaimed).toBe(1)
+    expect((await store.getState(old.id))?.state).toBe('created')
+    expect((await store.getState(fresh.id))?.state).toBe('extracting')
+    await store.close()
+  })
+
+  it('restore from errored requeues, never resurrects from deleted', async () => {
+    const store = await openStore({ path: ':memory:' })
+    const err = await store.upsertLink(linkInput('https://example.com/err'))
+    await store.applyEvent(err.id, { type: 'EXTRACT_STARTED', at: new Date().toISOString() })
+    await store.applyEvent(err.id, { type: 'EXTRACT_FAILED', error: 'x', at: new Date().toISOString() })
+    const restored = await store.applyEvent(err.id, { type: 'RESTORE', at: new Date().toISOString() })
+    expect(restored.ok).toBe(true)
+    if (restored.ok) expect(restored.state.state).toBe('created')
+    await store.close()
+  })
+
   it('nothing transitions out of deleted, restore never resurrects', async () => {
     const store = await openStore({ path: ':memory:' })
     const link = await store.upsertLink(linkInput('https://example.com/dead'))

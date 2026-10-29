@@ -55,7 +55,7 @@ The processing states `extracting` and `enriching` carry a lease, a `startedAt` 
 | `scheduled` | 3 | `TRIAGE`, `EXPIRE`, `DELETE` |
 | `archived` | 2 | `RESTORE`, `DELETE` |
 | `discarded` | 2 | `RESTORE`, `DELETE` |
-| `errored` | 2 | `RETRY`, `DELETE` |
+| `errored` | 3 | `RESTORE`, `RETRY`, `DELETE` |
 | `deleted` | 0 | (terminal) |
 
 ## Diagram
@@ -108,6 +108,7 @@ stateDiagram-v2
     archived --> deleted: DELETE
     discarded --> inbox: RESTORE
     discarded --> deleted: DELETE
+    errored --> created: RESTORE
     errored --> created: RETRY
     errored --> deleted: DELETE
 ```

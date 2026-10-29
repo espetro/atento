@@ -233,6 +233,22 @@ export class FakeStore implements Store {
     return out
   }
 
+  async reclaimExpiredLeases(cutoff: Date): Promise<number> {
+    let reclaimed = 0
+    for (const link of this.links) {
+      if (link.state !== 'extracting' && link.state !== 'enriching') continue
+      const state = parseLinkState(link.state, link.stateData)
+      if (state.state !== 'extracting' && state.state !== 'enriching') continue
+      if (new Date(state.startedAt).getTime() >= cutoff.getTime()) continue
+      const outcome = await this.applyEvent(link.id, {
+        type: 'LEASE_EXPIRED',
+        at: new Date().toISOString(),
+      })
+      if (outcome.ok) reclaimed += 1
+    }
+    return reclaimed
+  }
+
   async getState(id: number): Promise<import('../src/index.js').LinkState | null> {
     const link = this.links.find((l) => l.id === id)
     if (!link) return null

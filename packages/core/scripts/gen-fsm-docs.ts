@@ -4,8 +4,7 @@
  *
  *   pnpm --filter @linkinbox/core gen:fsm-docs
  */
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   LINK_EVENTS,
@@ -16,11 +15,14 @@ import {
 } from '../src/index.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const repoRoot = join(here, '..', '..', '..')
+/** The repo root, whether the script runs from src or from dist. */
+const repoRoot = here.includes(`${sep}dist${sep}`)
+  ? join(here, '..', '..', '..', '..')
+  : join(here, '..', '..', '..')
 const docsDir = join(repoRoot, 'docs')
 
 /** A minimal valid instance of each state. */
-function stateFor(name: string): { state: string } {
+function stateFor(name: string): Parameters<typeof transition>[0] {
   const at = new Date(0).toISOString()
   switch (name) {
     case 'created': return { state: 'created' }
@@ -40,7 +42,7 @@ function stateFor(name: string): { state: string } {
 }
 
 /** A minimal valid instance of each event. */
-function eventFor(name: string): { type: string; at: string } {
+function eventFor(name: string): Parameters<typeof transition>[1] {
   const at = new Date(0).toISOString()
   switch (name) {
     case 'EXTRACT_STARTED': return { type: 'EXTRACT_STARTED', at, attempt: 1 }
@@ -181,10 +183,12 @@ The \`status\` field of the API is unchanged. It is the \`legacyStatus\` project
 `
 }
 
-// Only write when run directly, so importing the module is side effect free.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Only write when run directly so importing the module is side effect free.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  const { mkdirSync, writeFileSync } = await import('node:fs')
   mkdirSync(docsDir, { recursive: true })
   writeFileSync(join(docsDir, 'fsm.md'), renderDoc())
   console.log('wrote docs/fsm.md')
   console.log(`${TRANSITION_PAIRS.length} transitions, ${LINK_EVENTS.length} events`)
 }
+
