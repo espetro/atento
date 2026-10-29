@@ -58,6 +58,7 @@ export function createProgram(options: ProgramOptions = {}): Command {  const pr
     return createExtractFn({
       profilesDir: config.profilesDir,
       limits: config.limits,
+      pacing: config.pacing,
       store: ctx.store,
     })
   }
@@ -76,7 +77,9 @@ export function createProgram(options: ProgramOptions = {}): Command {  const pr
       const guard =
         limits.disabled === true
           ? undefined
-          : guardDepsFromStore(context.store, { config: { limits } })
+          : guardDepsFromStore(context.store, {
+              config: { limits, pacing: config.pacing },
+            })
       return createMediaFn({
         env: options.env,
         config: config.media,

@@ -46,23 +46,23 @@ function linkInput(overrides: Partial<LinkInput> = {}): LinkInput {
 describe('SqliteStore', () => {
   it('migrates idempotently and records schema version', async () => {
     const store = await openStore({ path: join(dir, 'test.db') })
-    expect(await store.schemaVersion()).toBe('4')
+    expect(await store.schemaVersion()).toBe('5')
     await store.migrate() // second run must not throw
-    expect(await store.schemaVersion()).toBe('4')
+    expect(await store.schemaVersion()).toBe('5')
     await store.close()
   })
 
   it('records applied migrations and does not reapply them', async () => {
     const dbPath = join(dir, 'migrations.db')
     const store = await openStore({ path: dbPath })
-    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial'])
+    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_human_pacing'])
     await store.migrate()
-    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial'])
+    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_human_pacing'])
     await store.close()
 
     // reopening an existing database keeps the same migration set
     const reopened = await openStore({ path: dbPath })
-    expect(reopened.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial'])
+    expect(reopened.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_human_pacing'])
     expect(await reopened.countLinks()).toBe(0)
     await reopened.close()
   })

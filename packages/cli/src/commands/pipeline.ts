@@ -18,11 +18,13 @@ import {
 import { loadConfig } from '../config.js'
 import type { CliContext } from '../context.js'
 
-/** Build a guard over the store, using the CLI config limits. */
+/** Build a guard over the store, using the CLI config limits and pacing. */
 function guardFor(ctx: CliContext): GuardDeps | undefined {
   const limits = ctx.config.limits ?? DEFAULT_LIMITS
   if (limits.disabled === true) return undefined
-  return guardDepsFromStore(ctx.store, { config: { limits } })
+  return guardDepsFromStore(ctx.store, {
+    config: { limits, pacing: ctx.config.pacing },
+  })
 }
 
 export interface RunOutcome {

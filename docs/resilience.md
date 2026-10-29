@@ -67,6 +67,41 @@ HTTP date), `X-RateLimit-Reset` (unix timestamp or delta, in seconds) and
 `host_state.rate_limited_until`; the gate defers requests until it elapses.
 The strongest signal wins.
 
+## Pacing (human-like timing for strict hosts)
+
+A strict host (flagged by the canary, login gated, a saved browser profile,
+or listed in `walled_gardens`) is not touched with a metronome: a fixed 45
+second spacing is machine-shaped and the behaviour that gets an account
+flagged. The strict policy uses the `humanPacing` module
+(packages/core/src/resilience/human-pacing.ts) instead:
+
+- **Dwell time per page**: log-normal around `dwell_median_s` (default 20),
+  capped at `dwell_max_s` (default 90). The browser extractor waits the
+  sampled dwell after the page loads and scrolls a small human-like distance
+  before reading; both are injected functions, so tests never sleep.
+- **Jittered spacing**: consecutive requests are log-normal around the same
+  median, times (1 +/- 30 percent). Ordinary open hosts keep the fixed 2s
+  token-bucket spacing; nothing changes for them.
+- **Occasional longer breaks**: after every 5 to 12 pages (drawn per cycle)
+  the host takes a 2 to 6 minute break. The page counter and the drawn cycle
+  length persist in `host_state` (`pages_since_break`, `break_every`), so the
+  cadence survives restarts.
+- **Per-host daily cap**: `daily_cap` (default 40) paced requests per rolling
+  calendar day, mirroring the limiter's window. On rollover the budget resets.
+- **Working-hours window**: `hours_start` to `hours_end` in LOCAL time
+  (default 08:00 to 23:00; overnight windows like 22 to 6 are supported).
+  Outside the window the link is deferred with the reason `outside_hours` and
+  a `nextAttemptAt` exactly when the window opens. `hours_start = 0` with
+  `hours_end = 24` (or `hours_start = hours_end`) means always open.
+
+No host names are hardcoded anywhere: the pacing profile applies to whatever
+host `hostPolicy` marks strict, decided by the same shared verdict the router
+and the limiter already use.
+
+The gate order in `pacingGate` is: working hours, daily cap, long break,
+jittered spacing. Every deferral carries the reason and the wait, so the
+pipeline turns it into the usual DEFER event with `nextAttemptAt`.
+
 ## Canary probing (no hardcoded walled gardens)
 
 There is no hardcoded list of walled gardens. Rate-limited hosts are
@@ -114,12 +149,13 @@ No unbounded memory growth.
 ## Persistence
 
 CLI processes are short lived, so limiter and breaker state live in the
-`host_state` table (migrations 0003 and 0004, schema version 4):
+`host_state` table (migrations 0003, 0004 and 0005, schema version 5):
 
 ```
 key, last_request_at, window_start, window_count, consecutive_failures,
 breaker_state, opened_until, cooldown_level, last_error,
-trial_state, trial_reason, trial_at, login_gated, rate_limited_until
+trial_state, trial_reason, trial_at, login_gated, rate_limited_until,
+pages_since_break, break_every
 ```
 
 The limiter and breaker load and save through the Store (`getHostState`,
@@ -166,7 +202,33 @@ walled_gardens = []
 interval_ms = 45000
 daily_cap = 40
 concurrency = 1
+
+# Human pacing for strict hosts. Additive: a missing table keeps the
+# defaults. Set daily_cap very high (or hours_start = 0 / hours_end = 24)
+# to disable the profile.
+[pacing]
+dwell_median_s = 20
+dwell_max_s = 90
+break_every_min = 5
+break_every_max = 12
+break_min_s = 120
+break_max_s = 360
+daily_cap = 40
+hours_start = 8
+hours_end = 23
 ```
+
+| `[pacing]` key | Default | Meaning |
+|---|---|---|
+| `dwell_median_s` | 20 | Median dwell per page; also the spacing baseline. |
+| `dwell_max_s` | 90 | Hard cap of a single dwell. |
+| `break_every_min` | 5 | Minimum pages before a long break. |
+| `break_every_max` | 12 | Maximum pages before a long break. |
+| `break_min_s` | 120 | Minimum length of a long break. |
+| `break_max_s` | 360 | Maximum length of a long break. |
+| `daily_cap` | 40 | Paced requests per host per rolling day. |
+| `hours_start` | 8 | Working-hours window start (local hour). |
+| `hours_end` | 23 | Working-hours window end (local hour). |
 
 ## Surfaces
 
@@ -198,3 +260,14 @@ queue backpressure past maxSize, an LLM 429 storm resulting in deferral not
 failure, a 500-link burst against a strict host making at most the daily cap
 of requests, and FSM history DEFER/RETRY events. All use a fake clock and
 fake fetch/exec; nothing sleeps and nothing touches the network.
+
+packages/core/test/human-pacing.test.ts and
+packages/core/test/pacing-config.test.ts cover: the dwell distribution
+bounds and its median, the spacing jitter band, the break cycle length and
+break length ranges, the break cadence reset, the pacing daily cap rollover
+across a day boundary, the working-hours gate (day, overnight and 0..24
+windows), the `outside_hours` deferral and its release when the window
+opens, the integration through `guardRun` with a fake clock (spacing defer,
+daily cap, ordinary hosts keeping the fixed 2s spacing), and the `[pacing]`
+config table parsing including the disabled profile. All use a fake clock
+and a deterministic random; nothing sleeps and nothing touches the network.

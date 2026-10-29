@@ -26,6 +26,7 @@ export const deps: McpDeps = {
     createExtractFn({
       profilesDir: config.profilesDir,
       limits: config.limits,
+      pacing: config.pacing,
       store: (ctx ?? context).store,
     }),
   enrichFn: () => createEnrichFn(),

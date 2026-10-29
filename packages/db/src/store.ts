@@ -641,6 +641,8 @@ export class SqliteStore implements Store {
       trialAt: state.trialAt,
       loginGated: state.loginGated,
       rateLimitedUntil: state.rateLimitedUntil,
+      pagesSinceBreak: state.pagesSinceBreak ?? null,
+      breakEvery: state.breakEvery ?? null,
     }
     this.db
       .insert(hostState)
@@ -691,6 +693,8 @@ function hostStateFromRow(row: {
   trialAt?: number | null
   loginGated?: boolean | number | null
   rateLimitedUntil?: number | null
+  pagesSinceBreak?: number | null
+  breakEvery?: number | null
 }): HostState {
   return {
     key: row.key,
@@ -707,6 +711,8 @@ function hostStateFromRow(row: {
     trialAt: row.trialAt ?? null,
     loginGated: row.loginGated === true || row.loginGated === 1,
     rateLimitedUntil: row.rateLimitedUntil ?? null,
+    pagesSinceBreak: row.pagesSinceBreak ?? undefined,
+    breakEvery: row.breakEvery ?? undefined,
   }
 }
 

@@ -241,6 +241,13 @@ describe('guardRun integration', () => {
     }
   }
 
+  /** 10:30 on the fake clock's local day: inside a 08:00..23:00 window. */
+  const IN_HOURS = (() => {
+    const d = new Date()
+    d.setHours(10, 30, 0, 0)
+    return d.getTime()
+  })()
+
   function guard(clock: ReturnType<typeof fakeClock>): GuardDeps {
     return {
       getHostState: async () => null,
@@ -256,9 +263,114 @@ describe('guardRun integration', () => {
   }
 
   it('paces a strict host through guardRun', async () => {
-    const clock = fakeClock(0)
+    const clock = fakeClock(IN_HOURS)
     const g = guard(clock)
     const out = await guardRun(g, 'gated.example', async () => 'fetched')
     expect(out.kind).toBe('ok')
+  })
+
+  it('defers the second request until the sampled spacing elapses', async () => {
+    const clock = fakeClock(IN_HOURS)
+    const store = new Map<string, unknown>()
+    const g: GuardDeps = {
+      ...guard(clock),
+      getHostState: async (key) => (store.get(key) as never) ?? null,
+      saveHostState: async (state) => {
+        store.set(state.key, { ...state })
+      },
+    }
+    const first = await guardRun(g, 'gated.example', async () => 'one')
+    expect(first.kind).toBe('ok')
+    // Immediately again: the pacing gate defers (spacing, break or hours).
+    const second = await guardRun(g, 'gated.example', async () => 'two')
+    expect(second.kind).toBe('defer')
+    if (second.kind === 'defer') {
+      expect(['spacing', 'break']).toContain(second.reason)
+      expect(second.retryAfterMs).toBeGreaterThan(0)
+    }
+    // After the maximum possible spacing (dwellMax * 1.3 s) it admits again.
+    clock.advance(90 * 1.3 * 1000 + 1000)
+    const third = await guardRun(g, 'gated.example', async () => 'three')
+    expect(third.kind).toBe('ok')
+  })
+
+  it('defers with outside_hours when the window is closed', async () => {
+    const at = (h: number) => {
+      const d = new Date()
+      d.setHours(h, 0, 0, 0)
+      return d.getTime()
+    }
+    const clock = fakeClock(at(4))
+    const g = guard(clock)
+    const out = await guardRun(g, 'gated.example', async () => 'never')
+    expect(out.kind).toBe('defer')
+    if (out.kind === 'defer') {
+      expect(out.reason).toBe('outside_hours')
+      // 04:00 -> 08:00.
+      expect(out.retryAfterMs).toBe(4 * 3_600_000)
+    }
+  })
+
+  it('releases the deferral when the clock reaches the window', async () => {
+    const at = (h: number) => {
+      const d = new Date()
+      d.setHours(h, 0, 0, 0)
+      return d.getTime()
+    }
+    const clock = fakeClock(at(7))
+    const g = guard(clock)
+    const out = await guardRun(g, 'gated.example', async () => 'never')
+    void out
+    clock.advance(60 * 60_000 + 60_000)
+    const released = await guardRun(g, 'gated.example', async () => 'fetched')
+    expect(released.kind).toBe('ok')
+  })
+
+  it('enforces the pacing daily cap and rolls over the next day', async () => {
+    const clock = fakeClock(IN_HOURS)
+    const store = new Map<string, unknown>()
+    const g: GuardDeps = {
+      ...guard(clock),
+      getHostState: async (key) => (store.get(key) as never) ?? null,
+      saveHostState: async (state) => {
+        store.set(state.key, { ...state })
+      },
+      config: {
+        limits: { ...DEFAULT_LIMITS, walledGardens: ['gated.example'] },
+        pacing: base({ dailyCap: 2, dwellMedianS: 20, dwellMaxS: 90 }),
+      },
+    }
+    let oks = 0
+    let sawCap = false
+    for (let i = 0; i < 40; i += 1) {
+      const out = await guardRun(g, 'gated.example', async () => 'x')
+      if (out.kind === 'ok') {
+        oks += 1
+        clock.advance(90 * 1.3 * 1000 + 1000)
+      } else if (out.kind === 'defer') {
+        if (out.reason === 'daily_cap') {
+          sawCap = true
+          break
+        }
+        clock.advance(out.retryAfterMs + 1000)
+      }
+    }
+    expect(sawCap).toBe(true)
+    expect(oks).toBe(2)
+    // The next day the budget is back.
+    clock.advance(24 * 60 * 60 * 1000)
+    const nextDay = await guardRun(g, 'gated.example', async () => 'x')
+    expect(nextDay.kind).toBe('ok')
+  })
+
+  it('ordinary hosts keep the fixed 2s spacing, not human pacing', async () => {
+    const clock = fakeClock(IN_HOURS)
+    const g = guard(clock)
+    const first = await guardRun(g, 'open.example', async () => 'one')
+    expect(first.kind).toBe('ok')
+    // 2s later the ordinary host admits again (jitter band 1.4s..2.6s).
+    clock.advance(3_000)
+    const second = await guardRun(g, 'open.example', async () => 'two')
+    expect(second.kind).toBe('ok')
   })
 })

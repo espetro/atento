@@ -9,9 +9,11 @@ import { parse as parseToml } from 'smol-toml'
 import {
   limitsFromToml,
   mediaFromToml,
+  pacingFromToml,
   ttlFromToml,
   type LimitsConfig,
   type MediaConfig,
+  type PacingConfig,
   type TomlTable,
   type TtlConfig,
 } from '@linkinbox/core'
@@ -22,6 +24,8 @@ export interface AppConfig {
   ttl: TtlConfig
   /** Rate limit and breaker configuration from `[limits]`. */
   limits: LimitsConfig
+  /** Human pacing profile for strict hosts from `[pacing]`. */
+  pacing: PacingConfig
   /** Tiered media stage configuration from `[media]`. */
   media: MediaConfig
   /** Directory holding agent-browser login profiles. */
@@ -86,6 +90,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     dbPath: resolveDbPath(toml, env),
     ttl: ttlFromToml(toml),
     limits: limitsFromToml(toml),
+    pacing: pacingFromToml(toml),
     media: mediaFromToml(toml),
     profilesDir: defaultProfilesDir(env),
     dir,
