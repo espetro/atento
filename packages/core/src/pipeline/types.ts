@@ -1,4 +1,5 @@
 import type { Enrichment, Link } from '../types.js'
+import type { MediaFn, MediaReport } from '../media.js'
 
 /**
  * Injected enrichment entry point. The `enrich` package (built separately)
@@ -30,6 +31,8 @@ export type EnrichFn = (
 export type ExtractFn = (url: string) => Promise<{
   markdown: string
   title?: string
+  /** Site metadata (og:type, twitter:card, author, ...), JSON-safe scalars. */
+  meta?: Record<string, unknown>
   needsBrowser?: boolean
   extractor?: string
   /**
@@ -59,6 +62,7 @@ export const STAGES = {
   ingest: 'ingest',
   extract: 'extract',
   enrich: 'enrich',
+  media: 'media',
 } as const
 
 export type Stage = (typeof STAGES)[keyof typeof STAGES]
@@ -76,6 +80,8 @@ export interface LinkOutcome {
   needsBrowser?: boolean
   /** Extracted character count (extract stage). */
   chars?: number
+  /** True when the media stage ran for this link (extract stage). */
+  media?: boolean
   /** Model identity (enrich stage). */
   modelId?: string
   tokensIn?: number
