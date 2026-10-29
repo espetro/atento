@@ -3,6 +3,9 @@ import type { StageResult, StageOptions, LinkOutcome, EnrichFn } from './types.j
 import { STAGES, noopLogger } from './types.js'
 import { recordRunMetrics } from './ingest.js'
 import { ttlDaysForCategory, type TtlConfig } from '../ttl.js'
+import { DEFAULT_MAX_BATCH, LLM_KEY, type GuardDeps, guardRun } from '../resilience/index.js'
+import { deferOrError, releaseDueDeferred } from './resilience.js'
+import { DEFAULT_MAX_ATTEMPTS } from './resilience-options.js'
 
 export interface EnrichOptions extends StageOptions {
   /** Injected enrichment function (implemented by @linkinbox/enrich). */
@@ -19,11 +22,24 @@ export interface EnrichOptions extends StageOptions {
    * 30 minutes.
    */
   leaseMs?: number
+  /**
+   * Resilience wiring: the llm breaker, retry and bounded concurrency. When
+   * absent the stage runs unguarded exactly as before.
+   */
+  guard?: GuardDeps
+  /** Max DEFER rounds before a link moves to errored. Default 5. */
+  maxAttempts?: number
+  /** Hard cap on links per call when invoked remotely. Default 20. */
+  maxBatch?: number
 }
 
 export interface EnrichResult extends StageResult {
   /** Ids of links that received enrichment. */
   linkIds: number[]
+  /** Number of links deferred by the limiter or breaker (additive). */
+  deferredCount: number
+  /** Suggested wait in ms before the next batch should run (additive). */
+  retryAfter: number
 }
 
 /**
@@ -31,11 +47,18 @@ export interface EnrichResult extends StageResult {
  * `enriching`, call the injected structured-output function, then record the
  * outcome as one FSM event. Model identity comes from the injected function;
  * nothing here knows about providers.
+ *
+ * With a guard, the llm key has its own breaker: a 429 or 5xx storm retries
+ * with backoff and then defers the remaining links instead of failing them.
  */
 export async function enrich(store: Store, options: EnrichOptions): Promise<EnrichResult> {
   const logger = options.logger ?? noopLogger
   const now = options.now ?? (() => new Date())
   const startedAt = now()
+  const guard = options.guard
+  const guardActive = guard !== undefined
+  const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS
+  const maxBatch = options.maxBatch ?? DEFAULT_MAX_BATCH
 
   // Candidates: links that still need enrichment. `extracted` has content and
   // waits for the model, `created` was never extracted, `inbox` was enriched
@@ -44,13 +67,16 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
   const leaseMs = options.leaseMs ?? 30 * 60 * 1000
   await store.reclaimExpiredLeases(new Date(startedAt.getTime() - leaseMs))
 
+  // Due deferred links come back to their queue before selection.
+  await releaseDueDeferred(store, 'enrich', startedAt)
+
   const extracted = await store.listByStates(['extracted'])
   const created = await store.listByStates(['created'])
   const inbox = await store.listByStates(['inbox'])
   const batch = [...extracted, ...created, ...inbox]
     .filter((l) => l.enrichment === null)
     .slice(0, options.limit ?? undefined)
-  const pending = batch
+  const pending = batch.slice(0, maxBatch)
 
   const run = await store.startRun(STAGES.enrich, pending.length, startedAt)
   logger.info('enrich run {runId} started with {inputCount} links', {
@@ -63,9 +89,13 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
   const errorsByModel = new Map<string, number>()
   let okCount = 0
   let errorCount = 0
+  let deferredCount = 0
+  let retryAfter = 0
   let tokensIn = 0
   let tokensOut = 0
   let costUsd = 0
+  /** Set when the llm breaker opens: the rest of the batch is deferred. */
+  let breakerOpen = false
 
   for (const link of pending) {
     let modelId = 'unknown'
@@ -84,8 +114,52 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
       continue
     }
 
+    // The llm breaker opened mid-batch: defer the rest without calling out.
+    if (breakerOpen) {
+      deferredCount += 1
+      await deferOrError(store, link, 'enrich', 'breaker_open', 30_000, maxAttempts, now())
+      outcomes.push({
+        linkId: link.id,
+        url: link.url,
+        ok: true,
+        skipped: true,
+        error: 'deferred: breaker_open',
+      })
+      continue
+    }
+
     try {
-      const result = await options.enrich(link)
+      const raw = guardActive
+        ? await guardRun(guard as GuardDeps, LLM_KEY, () => options.enrich(link))
+        : { kind: 'ok' as const, value: await options.enrich(link), attempts: 1 }
+
+      if (raw.kind === 'defer') {
+        deferredCount += 1
+        retryAfter = Math.max(retryAfter, raw.retryAfterMs)
+        if (raw.breakerOpen) breakerOpen = true
+        const decision = await deferOrError(
+          store, link, 'enrich', raw.reason, raw.retryAfterMs, maxAttempts, now(),
+        )
+        if (decision.errored) {
+          errorCount += 1
+          bump(errorsByModel, 'error')
+          outcomes.push({ linkId: link.id, url: link.url, ok: false, error: raw.reason })
+        } else {
+          outcomes.push({
+            linkId: link.id,
+            url: link.url,
+            ok: true,
+            skipped: true,
+            error: `deferred: ${raw.reason}`,
+          })
+        }
+        continue
+      }
+      if (raw.kind === 'error') {
+        throw new Error(raw.reason)
+      }
+
+      const result = raw.value
       if (result.ok) {
         modelId = result.modelId
         const enrichment = result.enrichment
@@ -172,6 +246,20 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
   await store.addMetric({ timestamp: now(), stage: STAGES.enrich, key: 'tokens_in', value: tokensIn })
   await store.addMetric({ timestamp: now(), stage: STAGES.enrich, key: 'tokens_out', value: tokensOut })
   await store.addMetric({ timestamp: now(), stage: STAGES.enrich, key: 'cost_usd', value: costUsd })
+  if (deferredCount > 0) {
+    await store.addMetric({
+      timestamp: now(),
+      stage: STAGES.enrich,
+      key: 'deferred',
+      value: deferredCount,
+    })
+    await store.addMetric({
+      timestamp: now(),
+      stage: STAGES.enrich,
+      key: 'throttled',
+      value: deferredCount,
+    })
+  }
 
   for (const [model, count] of errorsByModel) {
     await store.addMetric({
@@ -212,6 +300,8 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
     outcomes,
     warnings: [],
     linkIds,
+    deferredCount,
+    retryAfter,
   }
 }
 
