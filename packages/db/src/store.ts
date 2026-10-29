@@ -148,6 +148,12 @@ export class SqliteStore implements Store {
       return fromRow(existing!)
     }
     const row = toRow(input, now)
+    // FSM: a freshly stored link starts in the state that matches its
+    // legacy status column, so old rows and new rows agree.
+    if (!input.state) {
+      row.state = stateForLegacyStatus(row.status)
+      row.stateData = dataForLegacyStatus(row.status, row, now)
+    }
     const inserted = this.db
       .insert(links)
       .values(row)
@@ -593,6 +599,33 @@ export class SqliteStore implements Store {
 
 // ---- FSM helpers ----
 
+/** The FSM state a legacy status column maps to. */
+function stateForLegacyStatus(status: string): string {
+  switch (status) {
+    case 'archived': return 'archived'
+    case 'discarded': return 'discarded'
+    case 'scheduled': return 'scheduled'
+    default: return 'inbox'
+  }
+}
+
+function dataForLegacyStatus(
+  status: string,
+  row: LinkRow,
+  now: Date,
+): Record<string, unknown> | null {
+  switch (status) {
+    case 'archived':
+      return { archivedAt: new Date(row.updatedAt ?? now).toISOString(), reason: 'manual' }
+    case 'discarded':
+      return { discardedAt: new Date(row.updatedAt ?? now).toISOString() }
+    case 'scheduled':
+      return { scheduledFor: null }
+    default:
+      return { enriched: row.enrichment !== null || row.category !== null }
+  }
+}
+
 class LostRace extends Error {
   constructor(
     readonly linkId: number,
@@ -691,6 +724,11 @@ function fromRow(row: LinkRow): Link {
 
 const FSM_MUTATOR = Symbol('fsm')
 
+/**
+ * Map a legacy status onto the event that reaches it. `inbox` is the
+ * "send it back to the inbox" projection, which the FSM models as RESTORE
+ * from a parked state or ENRICHED from an enriched one.
+ */
 function eventForStatus(status: Status, at: Date): LinkEvent {
   switch (status) {
     case 'archived':
@@ -701,6 +739,6 @@ function eventForStatus(status: Status, at: Date): LinkEvent {
       return { type: 'TRIAGE', action: 'schedule', at: at.toISOString() }
     case 'inbox':
     default:
-      return { type: 'ENRICHED', at: at.toISOString() }
+      return { type: 'RESTORE', at: at.toISOString() }
   }
 }

@@ -36,6 +36,16 @@ const TABLE: StateTable = {
       startedAt: at.toISOString(),
       attempt: e.attempt ?? 1,
     }),
+    TRIAGE: (_s, e, at) => {
+      switch (e.action) {
+        // A link that was never read can still be scheduled, archived or
+        // discarded; `read_now` is a no-op until the content exists.
+        case 'read_now': return { state: 'created' }
+        case 'schedule': return { state: 'scheduled', scheduledFor: e.scheduledFor ?? null }
+        case 'archive': return { state: 'archived', archivedAt: at.toISOString(), reason: 'manual' }
+        case 'discard': return { state: 'discarded', discardedAt: at.toISOString() }
+      }
+    },
     DELETE: (_s, _e, at) => ({ state: 'deleted', deletedAt: at.toISOString() }),
   },
 
@@ -58,6 +68,7 @@ const TABLE: StateTable = {
       reason: e.reason,
     }),
     LEASE_EXPIRED: () => ({ state: 'created' }),
+    DELETE: (_s, _e, at) => ({ state: 'deleted', deletedAt: at.toISOString() }),
   },
 
   // extracted: content present, awaiting enrichment.
@@ -67,6 +78,16 @@ const TABLE: StateTable = {
       startedAt: at.toISOString(),
       attempt: e.attempt ?? 1,
     }),
+    TRIAGE: (_s, e, at) => {
+      switch (e.action) {
+        // The content exists but was never enriched: `read_now` keeps it
+        // queued for the enrich stage.
+        case 'read_now': return { state: 'extracted', chars: 0 }
+        case 'schedule': return { state: 'scheduled', scheduledFor: e.scheduledFor ?? null }
+        case 'archive': return { state: 'archived', archivedAt: at.toISOString(), reason: 'manual' }
+        case 'discard': return { state: 'discarded', discardedAt: at.toISOString() }
+      }
+    },
     DELETE: (_s, _e, at) => ({ state: 'deleted', deletedAt: at.toISOString() }),
   },
 
@@ -102,6 +123,7 @@ const TABLE: StateTable = {
       reason: e.reason,
     }),
     LEASE_EXPIRED: () => ({ state: 'extracted', chars: 0 }),
+    DELETE: (_s, _e, at) => ({ state: 'deleted', deletedAt: at.toISOString() }),
   },
 
   // inbox: triage moves a link to its action-mapped state.

@@ -182,9 +182,17 @@ describe('test set D: sweep and prune through the store', () => {
     // job item expired 10 days ago, and the fresh guide item is still inbox
     expect(prune.items.map((i) => i.url)).toEqual(['https://a.test/5'])
 
+    // FSM semantics: prune does not remove the row. It moves the link to the
+    // terminal deleted state and purges the content, keeping the url_hash.
     const deleted = await store.deleteLinks(prune.items.map((i) => i.linkId))
     expect(deleted).toBe(1)
-    expect(await store.countLinks()).toBe(5)
+    expect(await store.countLinks()).toBe(6)
+    const tomb = await store.getLink(prune.items[0]!.linkId)
+    expect(tomb?.state).toBe('deleted')
+    expect(tomb?.status).toBe('deleted')
+    expect(tomb?.extractedContent).toBeNull()
+    expect(tomb?.enrichment).toBeNull()
+    expect(tomb?.urlHash).not.toBeNull()
     await store.close()
   })
 
