@@ -271,6 +271,9 @@ async function pickHosts(
   const rl = createInterface({ input: process.stdin, output: process.stdout })
   try {
     const answer: string = await new Promise((resolve) => {
+      // stdin closed before an answer (EOF): treat it as skip so the flow
+      // always terminates.
+      rl.on('close', () => resolve(''))
       rl.question('> ', (line) => resolve(line.trim()))
     })
     if (answer.toLowerCase() === 'q') return { selected: [], quit: true }
