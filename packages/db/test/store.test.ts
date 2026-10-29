@@ -169,6 +169,20 @@ describe('SqliteStore', () => {
     await store.close()
   })
 
+  it('profiles round-trip per host', async () => {
+    const store = await openStore({ path: ':memory:' })
+    expect(await store.listProfiles()).toEqual([])
+    const created = await store.upsertProfile({ host: 'x.com', path: '/profiles/x.com' })
+    expect(created.host).toBe('x.com')
+    await store.upsertProfile({ host: 'x.com', path: '/profiles/x.com-v2' })
+    const fetched = await store.getProfile('x.com')
+    expect(fetched?.path).toBe('/profiles/x.com-v2')
+    expect(await store.listProfiles()).toHaveLength(1)
+    expect(await store.deleteProfile('x.com')).toBe(1)
+    expect(await store.getProfile('x.com')).toBeNull()
+    await store.close()
+  })
+
   it('meta get/set round-trips', async () => {
     const store = await openStore({ path: ':memory:' })
     expect(await store.getMeta('config.snapshot')).toBeNull()

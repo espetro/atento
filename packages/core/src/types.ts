@@ -81,6 +81,17 @@ export interface Metric {
   tags: Record<string, string> | null
 }
 
+/** agent-browser profile path for a host. */
+export interface Profile {
+  host: string
+  path: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+export type ProfileInput = Pick<Profile, 'host' | 'path'> &
+  Partial<Pick<Profile, 'createdAt' | 'updatedAt'>>
+
 /** Data needed to insert or update a link, keyed on urlHash. */
 export type LinkInput = Omit<
   Link,

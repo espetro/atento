@@ -6,6 +6,7 @@ import {
   links,
   meta,
   metrics,
+  profiles,
   runs,
   type LinkRow,
 } from './schema.js'
@@ -16,6 +17,8 @@ import type {
   LinkInput,
   Metric,
   MetricFilter,
+  Profile,
+  ProfileInput,
   Run,
   Status,
   Store,
@@ -324,6 +327,38 @@ export class SqliteStore implements Store {
       value: r.value,
       tags: r.tags ?? null,
     }))
+  }
+
+  async listProfiles(): Promise<Profile[]> {
+    return this.db
+      .select()
+      .from(profiles)
+      .orderBy(profiles.host)
+      .all()
+      .map((r) => ({ host: r.host, path: r.path, createdAt: r.createdAt, updatedAt: r.updatedAt }))
+  }
+
+  async getProfile(host: string): Promise<Profile | null> {
+    const r = this.db.select().from(profiles).where(eq(profiles.host, host)).get()
+    return r ? { host: r.host, path: r.path, createdAt: r.createdAt, updatedAt: r.updatedAt } : null
+  }
+
+  async upsertProfile(input: ProfileInput): Promise<Profile> {
+    const now = new Date()
+    const row = this.db
+      .insert(profiles)
+      .values({ host: input.host, path: input.path, createdAt: input.createdAt ?? now, updatedAt: input.updatedAt ?? now })
+      .onConflictDoUpdate({
+        target: profiles.host,
+        set: { path: input.path, updatedAt: now },
+      })
+      .returning()
+      .get()
+    return { host: row.host, path: row.path, createdAt: row.createdAt, updatedAt: row.updatedAt }
+  }
+
+  async deleteProfile(host: string): Promise<number> {
+    return this.db.delete(profiles).where(eq(profiles.host, host)).run().changes
   }
 
   async getMeta(key: string): Promise<string | null> {

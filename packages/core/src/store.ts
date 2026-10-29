@@ -1,5 +1,15 @@
 import { createHash } from 'node:crypto'
-import type { RawLink, Link, LinkInput, Enrichment, Status, Run, Metric } from './types.js'
+import type {
+  RawLink,
+  Link,
+  LinkInput,
+  Enrichment,
+  Status,
+  Run,
+  Metric,
+  Profile,
+  ProfileInput,
+} from './types.js'
 
 /**
  * Repository layer. Hides the storage engine (drizzle/sqlite today, maybe pg
@@ -48,6 +58,12 @@ export interface Store {
   addMetric(metric: Metric): Promise<void>
   listMetrics(filter?: MetricFilter): Promise<Metric[]>
 
+  // browser profiles (agent-browser profile path per host)
+  listProfiles(): Promise<Profile[]>
+  getProfile(host: string): Promise<Profile | null>
+  upsertProfile(profile: ProfileInput): Promise<Profile>
+  deleteProfile(host: string): Promise<number>
+
   // meta / maintenance
   getMeta(key: string): Promise<string | null>
   setMeta(key: string, value: string): Promise<void>
@@ -79,4 +95,4 @@ export const SOURCES = {
   safariReadingList: 'safari-reading-list',
 } as const satisfies Record<string, string>
 
-export type { RawLink, Link, Enrichment, Status, Run, Metric }
+export type { RawLink, Link, Enrichment, Status, Run, Metric, Profile, ProfileInput }
