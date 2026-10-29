@@ -269,6 +269,19 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
           await flagHost(store, host, now().getTime(), flagReason, flagReason === LOGIN_WALL_REASON)
           canaryTrials[host] = 'flagged'
           canaryReasons.set(host, flagReason)
+          // An upstream Retry-After extends the host spacing until then.
+          if (result.retryAfterMs > 0) {
+            const state = await store.getHostState(host)
+            if (state) {
+              await store.saveHostState({
+                ...state,
+                rateLimitedUntil: Math.max(
+                  state.rateLimitedUntil ?? 0,
+                  now().getTime() + result.retryAfterMs,
+                ),
+              })
+            }
+          }
         }
         const decision = await deferOrError(
           store, link, 'extract', result.reason, result.retryAfterMs, maxAttempts, now(),
