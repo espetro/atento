@@ -6,6 +6,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core'
+import type { MediaReport } from '@linkinbox/core'
 
 /**
  * Links table. `urlHash` is the dedupe key (sha256 of the normalized URL)
@@ -41,6 +42,8 @@ export const links = sqliteTable(
     state: text('state').notNull().default('created'),
     /** FSM variant payload (json). */
     stateData: text('state_data', { mode: 'json' }).$type<Record<string, unknown> | null>(),
+    /** Media stage report (json): one entry per tier. */
+    mediaReport: text('media_report', { mode: 'json' }).$type<MediaReport | null>(),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
     updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
   },
@@ -141,15 +144,19 @@ export const hostState = sqliteTable('host_state', {
 })
 
 /** Schema version and config snapshots. */
-export const meta = sqliteTable(
-  'meta',
-  {
-    key: text('key').primaryKey(),
-    value: text('value').notNull(),
-  },
-)
+export const meta = sqliteTable('meta', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+})
 
-export const schema = { links, linkEvents, runs, metrics, profiles, meta }
+/** Per-day media budget counters, so the cap survives restarts. */
+export const mediaBudget = sqliteTable('media_budget', {
+  day: text('day').primaryKey(),
+  total: integer('total').notNull().default(0),
+  byTier: text('by_tier', { mode: 'json' }).$type<Record<string, number>>(),
+})
+
+export const schema = { links, linkEvents, runs, metrics, profiles, meta, mediaBudget }
 
 export type LinkRow = typeof links.$inferSelect
 export type RunRow = typeof runs.$inferSelect
@@ -158,4 +165,4 @@ export type ProfileRow = typeof profiles.$inferSelect
 export type MetaRow = typeof meta.$inferSelect
 export type LinkEventRow = typeof linkEvents.$inferSelect
 
-export const SCHEMA_VERSION = '6'
+export const SCHEMA_VERSION = '7'
