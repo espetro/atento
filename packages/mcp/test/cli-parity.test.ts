@@ -21,6 +21,8 @@ export const CLI_ONLY_EXCEPTIONS: Record<string, string> = {
   prune: 'tombstone delete (purges content) with an interactive confirmation prompt; deliberately CLI-only',
   breaker:
     'breaker reset mutates the shared circuit breaker state; the MCP side exposes the read-only limits_status tool instead',
+  media:
+    'tiered media stage (yt-dlp download plus local ASR); a long-running local subprocess that stays CLI-only for now',
 }
 
 /** Which MCP tool(s) cover which CLI command. */

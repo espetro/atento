@@ -8,8 +8,10 @@ import { existsSync, readFileSync } from 'node:fs'
 import { parse as parseToml } from 'smol-toml'
 import {
   limitsFromToml,
+  mediaFromToml,
   ttlFromToml,
   type LimitsConfig,
+  type MediaConfig,
   type TomlTable,
   type TtlConfig,
 } from '@linkinbox/core'
@@ -20,6 +22,8 @@ export interface AppConfig {
   ttl: TtlConfig
   /** Rate limit and breaker configuration from `[limits]`. */
   limits: LimitsConfig
+  /** Tiered media stage configuration from `[media]`. */
+  media: MediaConfig
   /** Directory holding agent-browser login profiles. */
   profilesDir: string
   /** Directory holding config.toml. */
@@ -82,6 +86,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     dbPath: resolveDbPath(toml, env),
     ttl: ttlFromToml(toml),
     limits: limitsFromToml(toml),
+    media: mediaFromToml(toml),
     profilesDir: defaultProfilesDir(env),
     dir,
   }

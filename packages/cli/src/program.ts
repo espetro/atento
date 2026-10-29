@@ -11,9 +11,13 @@ import { registerMaintenanceCommands } from './commands/maintenance.js'
 import { registerLoginCommand } from './commands/login.js'
 import { registerReportingCommands } from './commands/metrics.js'
 import { registerResilienceCommands } from './commands/resilience.js'
+import { registerMediaCommand } from './commands/media.js'
+import { createMediaFn, type MediaFn } from './media-fn.js'
 import { createExtractFn } from './extract-fn.js'
 import { createEnrichFn } from './enrich-fn.js'
 import type { EnrichFn, ExtractFn, TtlConfig } from '@linkinbox/core'
+import { DEFAULT_LIMITS, guardDepsFromStore } from '@linkinbox/core'
+import type { AsrFn } from '@linkinbox/core'
 
 export interface ProgramOptions extends ContextOptions {
   /** Override the config (tests). */
@@ -22,6 +26,10 @@ export interface ProgramOptions extends ContextOptions {
   extractFn?: ExtractFn
   /** Override the enrich fn (tests). */
   enrichFn?: EnrichFn
+  /** Override the ASR provider for the media stage (tests). */
+  asr?: AsrFn
+  /** Override the media stage function (tests). */
+  mediaFn?: MediaFn
 }
 
 export function createProgram(options: ProgramOptions = {}): Command {  const program = new Command()
@@ -59,12 +67,33 @@ export function createProgram(options: ProgramOptions = {}): Command {  const pr
     return createEnrichFn()
   }
 
+  const mediaFn = (): Promise<MediaFn> => {
+    if (options.mediaFn) return Promise.resolve(options.mediaFn)
+    const build = async (): Promise<MediaFn> => {
+      const context = await ctx()
+      const config = options.config ?? loadConfig(options.env)
+      const limits = config.limits ?? DEFAULT_LIMITS
+      const guard =
+        limits.disabled === true
+          ? undefined
+          : guardDepsFromStore(context.store, { config: { limits } })
+      return createMediaFn({
+        env: options.env,
+        config: config.media,
+        guard,
+        asr: options.asr,
+      })
+    }
+    return build()
+  }
+
   registerPipelineCommands(program, { ctx, extractFn, enrichFn })
   registerLinkCommands(program, { ctx })
   registerMaintenanceCommands(program, { ctx, ttl })
   registerLoginCommand(program, { ctx })
   registerReportingCommands(program, { ctx })
   registerResilienceCommands(program, { ctx })
+  registerMediaCommand(program, { ctx, mediaFn })
 
   return program
 }

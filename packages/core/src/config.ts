@@ -1,6 +1,13 @@
 import { parse as parseToml } from 'smol-toml'
 import { ttlFromToml, type TtlConfig, type TomlTable } from './ttl.js'
 import {
+  DEFAULT_MEDIA_CONFIG,
+  MEDIA_TIERS,
+  mediaFromToml,
+  type MediaConfig,
+  type MediaTierName,
+} from './media-config.js'
+import {
   DEFAULT_LIMITS,
   ORDINARY_LIMIT,
   WALLED_GARDEN_LIMIT,
@@ -93,5 +100,11 @@ export function parseLimitsConfig(tomlText: string): LimitsConfig {
   return limitsFromToml(parseToml(tomlText) as TomlTable)
 }
 
+/** Parse the `[media]` table out of raw TOML text. */
+export function parseMediaConfig(tomlText: string): MediaConfig {
+  return mediaFromToml(parseToml(tomlText) as TomlTable)
+}
+
 export { DEFAULT_LIMITS, ORDINARY_LIMIT, WALLED_GARDEN_LIMIT }
+
 export type { LimitsConfig }
