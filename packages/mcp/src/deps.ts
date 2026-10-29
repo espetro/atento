@@ -49,6 +49,7 @@ export const TOOL_NAME_MAP: Record<string, string> = {
   enrich_run: 'enrich.run',
   metrics_get: 'metrics.get',
   limits_status: 'limits.status',
+  login_pending: 'login.pending',
 }
 
 export type SweepProposal = SweepPlan

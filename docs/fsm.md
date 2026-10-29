@@ -48,7 +48,7 @@ The processing states `extracting` and `enriching` carry a lease, a `startedAt` 
 | `created` | 5 | `EXTRACT_STARTED`, `ENRICH_STARTED`, `TRIAGE`, `EXPIRE`, `DELETE` |
 | `extracting` | 6 | `EXTRACTED`, `NEEDS_BROWSER`, `EXTRACT_FAILED`, `DEFER`, `LEASE_EXPIRED`, `DELETE` |
 | `extracted` | 4 | `ENRICH_STARTED`, `TRIAGE`, `EXPIRE`, `DELETE` |
-| `needs_browser` | 1 | `DELETE` |
+| `needs_browser` | 2 | `RETRY`, `DELETE` |
 | `deferred` | 2 | `RETRY`, `DELETE` |
 | `enriching` | 5 | `ENRICHED`, `ENRICH_FAILED`, `DEFER`, `LEASE_EXPIRED`, `DELETE` |
 | `inbox` | 4 | `ENRICH_STARTED`, `TRIAGE`, `EXPIRE`, `DELETE` |
@@ -89,6 +89,7 @@ stateDiagram-v2
     extracted --> archived: TRIAGE
     extracted --> archived: EXPIRE
     extracted --> deleted: DELETE
+    needs_browser --> created: RETRY
     needs_browser --> deleted: DELETE
     deferred --> created: RETRY
     deferred --> deleted: DELETE

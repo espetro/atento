@@ -26,6 +26,7 @@ import {
   type GuardDeps,
 } from '@linkinbox/core'
 import { importFile } from '@linkinbox/importers'
+import { loadLoginReport } from '@linkinbox/cli'
 import type { McpDeps } from './deps.js'
 
 const LINK_FIELDS: [LinkField, ...LinkField[]] = [
@@ -341,6 +342,24 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
           args.now !== undefined ? new Date(args.now) : new Date(),
         )
         return json(summary)
+      }
+    },
+  )
+
+  server.registerTool(
+    'login_pending',
+    {
+      description:
+        'Hosts that still need a browser login (spec name login.pending). ' +
+        'Read-only: pending hosts with their waiting link counts, and the ' +
+        'hosts that already have a saved profile with its age. The browser ' +
+        'login itself is a CLI step (linkinbox login): it needs a terminal.',
+      inputSchema: {},
+    },
+    async () => {
+      const ctx = await deps.ctx()
+      {
+        return json(await loadLoginReport(ctx.store))
       }
     },
   )

@@ -310,4 +310,33 @@ describe('mcp limits_status', () => {
       await h.cleanup()
     }
   })
+
+  it('login_pending lists pending hosts and saved profiles', async () => {
+    const h = await createHarness()
+    try {
+      const parked = await insertLink(h.store, 'https://x.com/a')
+      await h.store.applyEvent(parked.id, {
+        type: 'EXTRACT_STARTED',
+        at: new Date().toISOString(),
+      })
+      await h.store.applyEvent(parked.id, {
+        type: 'NEEDS_BROWSER',
+        host: 'x.com',
+        at: new Date().toISOString(),
+      })
+      await h.store.upsertProfile({
+        host: 'news.ycombinator.com',
+        path: '/tmp/profiles/news.ycombinator.com',
+        updatedAt: new Date(Date.now() - 2 * 86_400_000),
+      })
+
+      const res = await h.client.callTool({ name: 'login_pending', arguments: {} })
+      const { isError, data } = callJson(res)
+      expect(isError).toBe(false)
+      expect(data.pending).toEqual([{ host: 'x.com', links: 1, reason: 'login_wall' }])
+      expect(data.done).toEqual([{ host: 'news.ycombinator.com', profileAgeDays: 2 }])
+    } finally {
+      await h.cleanup()
+    }
+  })
 })

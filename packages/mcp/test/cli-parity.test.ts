@@ -3,7 +3,8 @@
  * that hits the same core function, or an explicit documented exception.
  *
  * The exceptions are deliberate:
- *   login  - interactive browser login, needs a terminal
+ *   login  - the browser step needs a terminal; the read-only listing is
+ *            exposed as the login_pending MCP tool
  *   serve  - starts the web server, not an agent operation
  *   eval   - golden-set runner, developer tooling
  *   prune  - hard delete with an interactive confirmation; stays CLI-only
@@ -14,7 +15,7 @@ import { TOOL_NAME_MAP } from '../src/index.js'
 
 /** CLI commands with no MCP tool, and why. */
 export const CLI_ONLY_EXCEPTIONS: Record<string, string> = {
-  login: 'interactive browser login needs a terminal; the browser profile is a CLI concern',
+  login: 'the browser step needs a terminal; the listing is available via the read-only login_pending tool',
   serve: 'starts the web server; not an agent operation',
   eval: 'golden-set runner for developers; the eval report is not an agent operation',
   prune: 'tombstone delete (purges content) with an interactive confirmation prompt; deliberately CLI-only',
@@ -36,6 +37,7 @@ export const CLI_TO_TOOL: Record<string, string[]> = {
   sweep: ['links_sweep'],
   metrics: ['metrics_get'],
   status: ['limits_status'],
+  login: ['login_pending'],
 }
 
 /** The spec surface, in the spec's own names. */
@@ -50,6 +52,7 @@ const SPEC_TOOLS = [
   'enrich.run',
   'metrics.get',
   'limits.status',
+  'login.pending',
 ]
 
 /** Flatten the commander command tree into names like `login list`. */
@@ -103,6 +106,9 @@ describe('cli/mcp parity', () => {
     // Breaker reset stays CLI-only: the MCP surface is read-only.
     expect(CLI_ONLY_EXCEPTIONS['breaker']).toBeDefined()
     expect(CLI_TO_TOOL['breaker']).toBeUndefined()
+    // login keeps the browser step CLI-only, but the listing is a tool.
+    expect(CLI_ONLY_EXCEPTIONS['login']).toBeDefined()
+    expect(CLI_TO_TOOL['login']).toEqual(['login_pending'])
   })
 
   it('covers the CLI commands the spec calls out', () => {
