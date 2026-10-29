@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
 import type { EnrichFn, ExtractFn } from '@linkinbox/core'
-import { capture, tempDb, unlimitedLimits, type TempDb } from './helpers.js'
+import { capture, insertLink, tempDb, unlimitedLimits, type TempDb } from './helpers.js'
 import { createProgram } from '../src/program.js'
 import { runServe } from '../src/commands/metrics.js'
 import { loadConfig } from '../src/config.js'
@@ -37,6 +37,22 @@ const mockEnrich: EnrichFn = async () => ({
   tokensOut: 5,
   modelId: 'mock-model',
 })
+
+/** Park a link in needs_browser the way the extract stage does. */
+async function parkLink(db: TempDb, url: string): Promise<void> {
+  const link = await insertLink(db.store, url)
+  const started = await db.store.applyEvent(link.id, {
+    type: 'EXTRACT_STARTED',
+    at: new Date().toISOString(),
+  })
+  if (!started.ok) throw new Error('EXTRACT_STARTED rejected on a fresh link')
+  const parked = await db.store.applyEvent(link.id, {
+    type: 'NEEDS_BROWSER',
+    host: new URL(url).host,
+    at: new Date().toISOString(),
+  })
+  if (!parked.ok) throw new Error('NEEDS_BROWSER rejected on an extracting link')
+}
 
 function serveContext(db: TempDb): never {
   return {
@@ -195,6 +211,64 @@ describe('program: run then list then triage', () => {
     try {
       const out = await runProgram(db, ['login', 'list'])
       expect(out.stdout).toContain('no saved profiles')
+    } finally {
+      await db.cleanup()
+    }
+  })
+})
+
+describe('program: login listing', () => {
+  it('prints the pending logins as JSON', async () => {
+    const db = await tempDb()
+    try {
+      await parkLink(db, 'https://x.com/a')
+      const out = await runProgram(db, ['login', '--json'])
+      const report = JSON.parse(out.stdout) as {
+        pending: { host: string; links: number; reason: string }[]
+        done: unknown[]
+      }
+      expect(report.pending).toEqual([{ host: 'x.com', links: 1, reason: 'login_wall' }])
+      expect(report.done).toEqual([])
+    } finally {
+      await db.cleanup()
+    }
+  })
+
+  it('exits 2 with --fail-if-pending when a login is pending', async () => {
+    const db = await tempDb()
+    try {
+      await parkLink(db, 'https://x.com/a')
+      process.exitCode = undefined
+      const out = await runProgram(db, ['login', '--json', '--fail-if-pending'])
+      expect(out.stdout).toContain('x.com')
+      expect(process.exitCode).toBe(2)
+    } finally {
+      process.exitCode = undefined
+      await db.cleanup()
+    }
+  })
+
+  it('exits 0 with --fail-if-pending when nothing is pending', async () => {
+    const db = await tempDb()
+    try {
+      process.exitCode = undefined
+      const out = await runProgram(db, ['login', '--json', '--fail-if-pending'])
+      const report = JSON.parse(out.stdout) as { pending: unknown[] }
+      expect(report.pending).toEqual([])
+      expect(process.exitCode).toBeUndefined()
+    } finally {
+      process.exitCode = undefined
+      await db.cleanup()
+    }
+  })
+
+  it('never opens a browser in non-interactive mode', async () => {
+    const db = await tempDb()
+    try {
+      await parkLink(db, 'https://x.com/a')
+      const out = await runProgram(db, ['login', '--non-interactive'])
+      expect(out.stdout).toContain('x.com')
+      expect(await db.store.getProfile('x.com')).toBeNull()
     } finally {
       await db.cleanup()
     }
