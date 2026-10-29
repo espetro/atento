@@ -1,5 +1,11 @@
 packages:
   - packages/*
+  - evals
 allowBuilds:
   better-sqlite3: true
   esbuild: true
+minimumReleaseAgeExclude:
+  - '@ai-sdk/gateway@3.0.224'
+  - '@ai-sdk/openai-compatible@2.0.88'
+  - '@ai-sdk/provider-utils@4.0.63'
+  - ai@6.0.318

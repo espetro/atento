@@ -1,0 +1,39 @@
+{
+  "name": "@linkinbox/enrich",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Structured-output enrichment for linkinbox: one model call per link",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "^2.0.88",
+    "@ai-sdk/provider": "3.0.19",
+    "@linkinbox/core": "workspace:*",
+    "ai": "^6.0.318",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
