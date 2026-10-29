@@ -33,6 +33,8 @@ if (live) {
       expiresAt: null,
       expiryReason: null,
       status: 'inbox' as const,
+      state: 'created',
+      stateData: null,
       category: null,
       priority: null,
       action: null,
