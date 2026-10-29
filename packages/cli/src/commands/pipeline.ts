@@ -60,6 +60,7 @@ export async function runEnrich(ctx: CliContext, enrichFn: EnrichFn, limit?: num
   const outcome = await enrich(ctx.store, {
     enrich: enrichFn,
     limit,
+    ttl: ctx.config.ttl,
     logger: pipelineLogger('enrich'),
   })
   printStage(outcome)
@@ -106,6 +107,7 @@ export async function runAll(
   const enrichOutcome = await enrich(ctx.store, {
     enrich: enrichFn,
     limit: options.limit,
+    ttl: ctx.config.ttl,
     logger: pipelineLogger('enrich'),
   })
   result.enrich = enrichOutcome
