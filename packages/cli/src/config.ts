@@ -10,6 +10,8 @@ import {
   limitsFromToml,
   mediaFromToml,
   ttlFromToml,
+  captureFromToml,
+  type CaptureConfig,
   type LimitsConfig,
   type MediaConfig,
   type TomlTable,
@@ -24,6 +26,8 @@ export interface AppConfig {
   limits: LimitsConfig
   /** Tiered media stage configuration from `[media]`. */
   media: MediaConfig
+  /** Capture endpoint configuration from `[capture]`. */
+  capture: CaptureConfig
   /** Directory holding agent-browser login profiles. */
   profilesDir: string
   /** Directory holding config.toml. */
@@ -87,6 +91,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ttl: ttlFromToml(toml),
     limits: limitsFromToml(toml),
     media: mediaFromToml(toml),
+    capture: captureFromToml(toml as unknown as Record<string, unknown>),
     profilesDir: defaultProfilesDir(env),
     dir,
   }

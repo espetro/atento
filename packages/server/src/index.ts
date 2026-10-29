@@ -20,6 +20,12 @@ import {
   UI_DETAIL_FIELDS,
   DEFAULT_TTL_CONFIG,
   parseRange,
+  DEFAULT_CAPTURE_CONFIG,
+  captureIngest,
+  captureToken,
+  parseCapture,
+  tokensEqual,
+  type CaptureConfig,
 } from '@linkinbox/core'
 import type { Store, Status, TtlConfig, TriageAction } from '@linkinbox/core'
 
@@ -32,6 +38,10 @@ export interface ServerOptions {
   port?: number
   ttl?: TtlConfig
   hostname?: string
+  /** Capture endpoint config. Default: token from LINKINBOX_CAPTURE_TOKEN. */
+  capture?: CaptureConfig
+  /** Env the capture token is read from. Default process.env (tests inject). */
+  env?: NodeJS.ProcessEnv
 }
 
 const STATUSES: readonly string[] = ['inbox', 'scheduled', 'archived', 'discarded']
@@ -47,9 +57,75 @@ function errMsg(err: unknown): string {
  */
 export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store'>> = {}): Hono {
   const ttl = opts.ttl ?? DEFAULT_TTL_CONFIG
+  const capture = opts.capture ?? DEFAULT_CAPTURE_CONFIG
+  const env = opts.env ?? process.env
   const app = new Hono()
 
   app.onError((err, c) => c.json({ error: errMsg(err) }, 500))
+
+  // ---- capture endpoint ----------------------------------------------
+  //
+  // Any client that can POST JSON can use it (a browser extension, a
+  // script). Bearer-token auth, CORS restricted to the configured origins
+  // and a hard body-size cap. The endpoint only exists when the token env
+  // var is set: an unset token means capture is disabled, not open.
+
+  app.use('/capture', async (c, next) => {
+    // CORS: only the configured origins get browser-facing headers. An
+    // extension origin (chrome-extension://<id>) is listed explicitly in the
+    // config; nothing is wildcarded.
+    const origin = c.req.header('origin')
+    if (origin !== undefined && capture.allowedOrigins.includes(origin)) {
+      c.header('access-control-allow-origin', origin)
+      c.header('access-control-allow-methods', 'POST, OPTIONS')
+      c.header('access-control-allow-headers', 'authorization, content-type')
+      c.header('vary', 'origin')
+    }
+    if (c.req.method === 'OPTIONS') return c.body(null, 204)
+    await next()
+  })
+
+  app.post('/capture', async (c) => {
+    const token = captureToken(capture, env)
+    if (token === null) {
+      // Refuse to serve when the token is unset: the endpoint is disabled.
+      return c.json({ error: 'capture endpoint is disabled (token not configured)' }, 403)
+    }
+    const auth = c.req.header('authorization') ?? ''
+    const presented = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
+    if (presented === '' || !tokensEqual(presented, token)) {
+      return c.json({ error: 'unauthorized' }, 401)
+    }
+
+    const raw = await c.req.arrayBuffer()
+    if (raw.byteLength > capture.maxBodyBytes) {
+      return c.json({ error: `body too large (max ${capture.maxBodyBytes} bytes)` }, 413)
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(new TextDecoder().decode(raw))
+    } catch {
+      return c.json({ error: 'body must be valid JSON' }, 400)
+    }
+    let captureBody
+    try {
+      captureBody = parseCapture(parsed)
+    } catch (err) {
+      return c.json(
+        { error: errMsg(err), issues: (err as { issues?: string[] }).issues ?? [] },
+        400,
+      )
+    }
+    const result = await captureIngest(store, captureBody)
+    return c.json(
+      {
+        id: result.link.id,
+        url: result.link.url,
+        outcome: result.outcome,
+      },
+      result.outcome === 'created' ? 201 : 200,
+    )
+  })
 
   app.get('/api/links', async (c) => {
     const q = c.req.query()
@@ -225,7 +301,7 @@ export function createFullApp(opts: ServerOptions): Hono {
   }
 
   app.use('*', async (c, next) => {
-    if (c.req.path.startsWith('/api/')) return next()
+    if (c.req.path.startsWith('/api/') || c.req.path === '/capture') return next()
     const file = await readStaticFile(dist, c.req.path)
     if (file) return new Response(file.body, { headers: file.headers })
     // SPA fallback: unknown non-api paths serve index.html.
@@ -246,7 +322,13 @@ export async function startServer(opts: ServerOptions): Promise<StartedServer> {
   const app = createFullApp(opts)
   const envPort = Number(process.env['LINKINBOX_PORT'] ?? '')
   const port = opts.port ?? (Number.isFinite(envPort) && envPort > 0 ? envPort : DEFAULT_PORT)
-  const server: ServerType = serve({ fetch: app.fetch, port, hostname: opts.hostname })
+  const server: ServerType = serve({
+    fetch: app.fetch,
+    port,
+    // Loopback by default: the capture endpoint must never be exposed on a
+    // public interface without a deliberate override.
+    hostname: opts.hostname ?? '127.0.0.1',
+  })
   await new Promise<void>((res) => {
     if (server.listening) return res()
     server.once('listening', () => res())

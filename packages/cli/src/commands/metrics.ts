@@ -165,6 +165,8 @@ export async function runServe(
     port: effective,
     store: ctx.store,
     config: ctx.config,
+    hostname: '127.0.0.1',
+    capture: ctx.config.capture,
   })) as { port: number; close(): Promise<void> }
   onStart?.(started)
   return true
