@@ -124,6 +124,29 @@ describe('cli show', () => {
     }
   })
 
+  it('prints the media report when the link has one', async () => {
+    const db = await tempDb()
+    try {
+      await seeded(db)
+      const ctx = await contextFor(db)
+      await db.store.setMediaReport(1, {
+        url: 'https://example.com/alpha',
+        tiers: [
+          { tier: 'caption', status: 'ok' },
+          { tier: 'transcript', status: 'failed', error: 'no ASR provider configured' },
+          { tier: 'frames', status: 'unsupported', reason: 'frame analysis not implemented' },
+        ],
+      })
+      const out = await capture(() => runShow(ctx, 1, false))
+      expect(out.stdout).toContain('--- media report ---')
+      expect(out.stdout).toMatch(/caption\s+ok/)
+      expect(out.stdout).toMatch(/transcript\s+failed\s+no ASR provider configured/)
+      expect(out.stdout).toMatch(/frames\s+unsupported\s+frame analysis not implemented/)
+    } finally {
+      await db.cleanup()
+    }
+  })
+
   it('reports a missing link', async () => {
     const db = await tempDb()
     try {
