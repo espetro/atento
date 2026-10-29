@@ -78,7 +78,7 @@ export interface Metric {
   stage: string
   key: string
   value: number
-  tags: Record<string, string> | null
+  tags?: Record<string, string> | null
 }
 
 /** agent-browser profile path for a host. */
@@ -95,11 +95,31 @@ export type ProfileInput = Pick<Profile, 'host' | 'path'> &
 /** Data needed to insert or update a link, keyed on urlHash. */
 export type LinkInput = Omit<
   Link,
-  'id' | 'createdAt' | 'updatedAt' | 'category' | 'priority' | 'action' | 'confidence' | 'readMinutes'
+  | 'id'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'category'
+  | 'priority'
+  | 'action'
+  | 'confidence'
+  | 'readMinutes'
+  | 'extractedContent'
+  | 'extractedAt'
+  | 'enrichment'
+  | 'expiresAt'
+  | 'expiryReason'
 > & {
   id?: number
   createdAt?: Date
   updatedAt?: Date
+  /** Optional: set by the extract stage. */
+  extractedContent?: string | null
+  extractedAt?: Date | null
+  /** Optional: set by the enrich stage. */
+  enrichment?: Enrichment | null
+  /** Optional: set by the enrich stage (from enrichment.expires_at). */
+  expiresAt?: Date | null
+  expiryReason?: string | null
   /** Optional flattened enrichment columns; usually derived from `enrichment`. */
   category?: string | null
   priority?: Enrichment['priority'] | null
