@@ -1,0 +1,46 @@
+{
+  "name": "@linkinbox/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "linkinbox command line interface: thin wrapper over the core ops and pipeline functions",
+  "bin": {
+    "linkinbox": "./dist/bin.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testkit": {
+      "types": "./dist/testkit/index.d.ts",
+      "default": "./dist/testkit/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@linkinbox/core": "workspace:*",
+    "@linkinbox/db": "workspace:*",
+    "@linkinbox/extractors": "workspace:*",
+    "@linkinbox/importers": "workspace:*",
+    "commander": "^15.0.0",
+    "smol-toml": "^1.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

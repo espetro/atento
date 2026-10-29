@@ -3,6 +3,7 @@ import type { Link } from '../types.js'
 import type { StageResult, StageOptions, LinkOutcome, EnrichFn } from './types.js'
 import { STAGES, noopLogger } from './types.js'
 import { recordRunMetrics } from './ingest.js'
+import { ttlDaysForCategory, type TtlConfig } from '../ttl.js'
 
 export interface EnrichOptions extends StageOptions {
   /** Injected enrichment function (implemented by @linkinbox/enrich). */
@@ -11,6 +12,11 @@ export interface EnrichOptions extends StageOptions {
   limit?: number
   /** Only enrich links in these statuses. Default: inbox. */
   statuses?: Link['status'][]
+  /**
+   * TTL config used when the enrichment carries no expires_at: the link then
+   * expires ttl_days_for_category(category) days from now.
+   */
+  ttl?: TtlConfig
 }
 
 export interface EnrichResult extends StageResult {
@@ -57,7 +63,15 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
       const result = await options.enrich(link)
       if (result.ok) {
         modelId = result.modelId
-        await store.setEnrichment(link.id, result.enrichment, now())
+        const enrichment = result.enrichment
+        await store.setEnrichment(link.id, enrichment, now())
+        // When the enrichment carries no expiry, derive one from the ttl
+        // config (by_category first, then default_days).
+        if (!enrichment.expires_at && options.ttl) {
+          const days = ttlDaysForCategory(options.ttl, enrichment.category)
+          const expiresAt = new Date(now().getTime() + days * 24 * 60 * 60 * 1000)
+          await store.setExpiry(link.id, expiresAt, enrichment.expiry_reason, now())
+        }
         okCount += 1
         tokensIn += result.tokensIn
         tokensOut += result.tokensOut

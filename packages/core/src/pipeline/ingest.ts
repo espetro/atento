@@ -73,11 +73,11 @@ export async function ingest(
       if (existing) duplicates += 1
       linkIds.push(link.id)
       okCount += 1
-      logger.info('ingested {url} as link {linkId} (source {source}{duplicate})', {
+      logger.info('ingested {url} as link {linkId} (source {source}, duplicate {duplicate})', {
         url,
         linkId: link.id,
         source: raw.source,
-        duplicate: existing ? ', duplicate' : '',
+        duplicate: existing,
       })
       outcomes.push({ linkId: link.id, url, ok: true })
     } catch (err) {
