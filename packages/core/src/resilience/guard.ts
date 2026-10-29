@@ -139,12 +139,18 @@ export async function guardRun<T>(
     }
   }
 
-  // Run with retry. Retry-After from a 429 flows through the classifier.
+  // Run with retry. Every failed attempt is reported to the breaker right
+  // away, so a hard block opens it on the first failure and the rest of the
+  // batch stops hammering the upstream. Retry-After from a 429 flows through
+  // the classifier into the backoff.
   const outcome = await retry(fn, {
     ...deps.config.retry,
     clock: deps.clock,
     random: deps.random,
     sleep: deps.sleep,
+    onRetry: ({ signal }) => {
+      if (signal.block) void breakerReport(bDeps, key, 'failure', signal)
+    },
   })
 
   if (outcome.ok) {

@@ -14,6 +14,7 @@ import type {
   LinkStateName,
   TransitionOutcome,
   LinkHistoryEntry,
+  HostState,
 } from '../src/index.js'
 import {
   normalizeUrl,
@@ -36,6 +37,8 @@ export class FakeStore implements Store {
   metrics: Metric[] = []
   profiles: Profile[] = []
   meta = new Map<string, string>()
+  /** Per-host limiter and breaker state, like the host_state table. */
+  hostStates = new Map<string, HostState>()
   private nextLinkId = 1
   private nextRunId = 1
   private nextProfileId = 1
@@ -395,6 +398,18 @@ export class FakeStore implements Store {
     const before = this.profiles.length
     this.profiles = this.profiles.filter((p) => p.host !== host)
     return before - this.profiles.length
+  }
+
+  async getHostState(key: string): Promise<HostState | null> {
+    return this.hostStates.get(key) ?? null
+  }
+
+  async saveHostState(state: HostState): Promise<void> {
+    this.hostStates.set(state.key, { ...state })
+  }
+
+  async listHostStates(): Promise<HostState[]> {
+    return [...this.hostStates.values()].map((s) => ({ ...s }))
   }
 
   async getMeta(key: string): Promise<string | null> {

@@ -78,6 +78,9 @@ export function classifyError(err: UpstreamError): ErrorSignal {
   const message = messageOf(err)
 
   if (status === 429 || status === 403 || status === 999) {
+    // 429 is retryable (Retry-After is honored) but it is also a hard block:
+    // the breaker opens on the first one so the host stops being hammered.
+    // 403 and 999 are never retried.
     return { retryable: status === 429, block: true, reason: `http_${status}` }
   }
   if (status !== undefined && FATAL_STATUS.has(status)) {
@@ -213,7 +216,9 @@ export async function retry<T>(
     } catch (err) {
       const signal = classifyError(err as UpstreamError)
       lastSignal = signal
-      if (!signal.retryable || attempt >= maxAttempts) {
+      // A block signal ends the loop: the breaker owns the wait now, and
+      // retrying a blocked call only hammers the upstream.
+      if ((!signal.retryable || signal.block) || attempt >= maxAttempts) {
         return { ok: false, error: signal, attempts: attempt, retryAfterMs: signal.retryAfterMs }
       }
       const delay =
