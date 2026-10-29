@@ -12,12 +12,13 @@ import type { ImportResult } from './types.js'
  * - [link text](https://example.com/page?utm_source=x)
  * ```
  *
+ * The list bullet is optional: browser tab exports are bare `[title](url)` lines.
  * A `## heading` sets the title for the links that follow it until the next
  * heading. Links without a heading use their anchor text as the title.
  */
 export const MARKDOWN_SOURCE = 'markdown'
 
-const LINK_RE = /^\s*[-*+]\s+\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)(?:\s+.*)?$/
+const LINK_RE = /^\s*(?:[-*+]\s+)?\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)(?:\s+.*)?$/
 const HEADING_RE = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/
 
 export function parseMarkdown(text: string): { links: RawLink[]; warnings: string[] } {

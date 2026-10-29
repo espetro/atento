@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { importMarkdown } from '../src/markdown.js'
+import { importMarkdown, parseMarkdown } from '../src/markdown.js'
 import { importJson } from '../src/json.js'
 import { importUrlList } from '../src/url-list.js'
 import { importSafariReadingList } from '../src/safari-reading-list.js'
@@ -191,6 +191,17 @@ describe('markdown importer', () => {
     const result = await importMarkdown(join(fixtures, 'does-not-exist.md'))
     expect(result.links).toEqual([])
     expect(result.warnings[0]).toContain('does-not-exist.md')
+  })
+})
+
+describe('markdown importer, bare link lines', () => {
+  it('reads browser tab exports without list bullets', () => {
+    const text = '[(2) Home / X](https://x.com/home)\n[Docs](https://example.com/docs "tip")\nplain text\n'
+    const { links } = parseMarkdown(text)
+    expect(links.map((l) => [l.title, l.url])).toEqual([
+      ['(2) Home / X', 'https://x.com/home'],
+      ['Docs', 'https://example.com/docs'],
+    ])
   })
 })
 
