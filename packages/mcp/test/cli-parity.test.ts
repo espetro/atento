@@ -17,7 +17,7 @@ export const CLI_ONLY_EXCEPTIONS: Record<string, string> = {
   login: 'interactive browser login needs a terminal; the browser profile is a CLI concern',
   serve: 'starts the web server; not an agent operation',
   eval: 'golden-set runner for developers; the eval report is not an agent operation',
-  prune: 'hard delete with an interactive confirmation prompt; deliberately CLI-only',
+  prune: 'tombstone delete (purges content) with an interactive confirmation prompt; deliberately CLI-only',
 }
 
 /** Which MCP tool(s) cover which CLI command. */
@@ -30,6 +30,7 @@ export const CLI_TO_TOOL: Record<string, string[]> = {
   list: ['links_list'],
   show: ['links_get'],
   triage: ['links_triage'],
+  restore: ['links_restore'],
   sweep: ['links_sweep'],
   metrics: ['metrics_get'],
 }
@@ -39,6 +40,7 @@ const SPEC_TOOLS = [
   'links.list',
   'links.get',
   'links.triage',
+  'links.restore',
   'links.sweep',
   'ingest.run',
   'extract.run',

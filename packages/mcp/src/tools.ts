@@ -9,6 +9,7 @@ import {
   listLinks,
   getLink,
   triage,
+  restore,
   sweep,
   applySweep,
   metricsSummary,
@@ -144,6 +145,22 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
         const result = await triage(ctx.store, args.ids, args.action)
         return json(result)
       }
+    },
+  )
+
+  server.registerTool(
+    'links_restore',
+    {
+      description:
+        'Restore parked links (archived, discarded, errored) back to the inbox. ' +
+        'Deleted links are tombstones and are reported as blocked, never resurrected.',
+      inputSchema: {
+        ids: z.array(z.number().int().positive()).min(1),
+      },
+    },
+    async (args: { ids: number[] }) => {
+      const ctx = await deps.ctx()
+      return json(await restore(ctx.store, args.ids))
     },
   )
 

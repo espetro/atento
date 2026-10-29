@@ -26,6 +26,6 @@ exports[`mcp/core parity > links_triage output matches triage for the same ids a
     2,
   ],
   "status": "scheduled",
-  "updated": 2,
+  "updated": 1,
 }
 `;

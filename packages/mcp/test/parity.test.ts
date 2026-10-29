@@ -73,13 +73,15 @@ describe('mcp/core parity', () => {
   })
 
   it('links_triage output matches triage for the same ids and action', async () => {
+    // Two identically seeded harnesses: triage moves links through the FSM, so
+    // a second call on the same store would not start from the same state.
     const h = await createHarness()
+    const hCore = await createHarness()
     try {
       const { a, b } = await seed(h)
+      await seed(hCore)
       const action: TriageAction = 'schedule'
-      const viaCore = await triage(h.store, [a, b], action)
-      // fresh state for the mcp call
-      await h.store.updateStatus([a, b], 'inbox')
+      const viaCore = await triage(hCore.store, [a, b], action)
       const viaMcp = callJson(
         await h.client.callTool({
           name: 'links_triage',
@@ -90,6 +92,7 @@ describe('mcp/core parity', () => {
       expect(viaMcp.data).toMatchSnapshot()
     } finally {
       await h.cleanup()
+      await hCore.cleanup()
     }
   })
 

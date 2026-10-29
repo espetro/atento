@@ -37,6 +37,7 @@ export const TOOL_NAME_MAP: Record<string, string> = {
   links_list: 'links.list',
   links_get: 'links.get',
   links_triage: 'links.triage',
+  links_restore: 'links.restore',
   links_sweep: 'links.sweep',
   ingest_run: 'ingest.run',
   extract_run: 'extract.run',

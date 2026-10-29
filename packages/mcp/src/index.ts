@@ -9,6 +9,7 @@
  *   links_list    = links.list
  *   links_get     = links.get
  *   links_triage  = links.triage   (the one aggregate tool: ids + action)
+ *   links_restore = links.restore  (parked states back to inbox, never from deleted)
  *   links_sweep   = links.sweep
  *   ingest_run    = ingest.run
  *   extract_run   = extract.run
@@ -16,7 +17,7 @@
  *   metrics_get   = metrics.get
  *
  * CLI commands with no tool (documented exceptions): login, serve, eval and
- * prune. prune is deliberately CLI-only: it hard-deletes and keeps its
+ * prune. prune is deliberately CLI-only: it tombstone-deletes and keeps its
  * confirmation prompt behind the terminal.
  */
 export { createMcpServer } from './server.js'
