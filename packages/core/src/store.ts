@@ -40,6 +40,10 @@ export interface Store {
     needsBrowser: boolean,
     extractedAt?: Date,
   ): Promise<number>
+  /** Set the link title, if it does not have one yet. */
+  updateTitle(id: number, title: string, updatedAt?: Date): Promise<number>
+  /** Mark a link as captured: the `captured` flag plus the capture timestamp. */
+  markCaptured(id: number, capturedAt: Date, updatedAt?: Date): Promise<number>
 
   /**
    * FSM: apply one event atomically with a compare-and-set on the current

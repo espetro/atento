@@ -41,6 +41,8 @@ if (live) {
       confidence: null,
       readMinutes: null,
       needsBrowser: false,
+      captured: false,
+      capturedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     }

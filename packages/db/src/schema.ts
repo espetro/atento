@@ -34,6 +34,9 @@ export const links = sqliteTable(
     action: text('action'),
     confidence: real('confidence'),
     needsBrowser: integer('needs_browser', { mode: 'boolean' }).notNull().default(false),
+    /** Client-side capture marker (0005_capture). */
+    captured: integer('captured', { mode: 'boolean' }).notNull().default(false),
+    capturedAt: integer('captured_at', { mode: 'timestamp_ms' }),
     /** FSM discriminant. */
     state: text('state').notNull().default('created'),
     /** FSM variant payload (json). */

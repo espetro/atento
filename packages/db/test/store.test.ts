@@ -55,14 +55,14 @@ describe('SqliteStore', () => {
   it('records applied migrations and does not reapply them', async () => {
     const dbPath = join(dir, 'migrations.db')
     const store = await openStore({ path: dbPath })
-    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial'])
+    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_capture'])
     await store.migrate()
-    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial'])
+    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_capture'])
     await store.close()
 
     // reopening an existing database keeps the same migration set
     const reopened = await openStore({ path: dbPath })
-    expect(reopened.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial'])
+    expect(reopened.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_capture'])
     expect(await reopened.countLinks()).toBe(0)
     await reopened.close()
   })

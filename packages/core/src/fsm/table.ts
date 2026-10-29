@@ -48,6 +48,9 @@ const TABLE: StateTable = {
     },
     // The expiry passed before the link was ever processed: archive it.
     EXPIRE: (_s, _e, at) => ({ state: 'archived', archivedAt: at.toISOString(), reason: 'expired' }),
+    // Client capture: content arrived already extracted from the user's own
+    // session, so the headless extract step is skipped entirely.
+    EXTRACTED: (_s, e) => ({ state: 'extracted', chars: e.chars }),
     DELETE: (_s, _e, at) => ({ state: 'deleted', deletedAt: at.toISOString() }),
   },
 
