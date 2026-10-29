@@ -9,6 +9,7 @@ import {
   metrics,
   profiles,
   runs,
+  hostState,
   type LinkRow,
 } from './schema.js'
 import { runMigrations } from './migrations.js'
@@ -29,6 +30,7 @@ import type {
   LinkStateName,
   TransitionOutcome,
   LinkHistoryEntry,
+  HostState,
 } from '@linkinbox/core'
 import {
   transition,
@@ -618,6 +620,34 @@ export class SqliteStore implements Store {
     return this.db.delete(profiles).where(eq(profiles.host, host)).run().changes
   }
 
+  async getHostState(key: string): Promise<HostState | null> {
+    const row = this.db.select().from(hostState).where(eq(hostState.key, key)).get()
+    return row ? hostStateFromRow(row) : null
+  }
+
+  async saveHostState(state: HostState): Promise<void> {
+    const values = {
+      key: state.key,
+      lastRequestAt: state.lastRequestAt,
+      windowStart: state.windowStart,
+      windowCount: state.windowCount,
+      consecutiveFailures: state.consecutiveFailures,
+      breakerState: state.breakerState,
+      openedUntil: state.openedUntil,
+      cooldownLevel: state.cooldownLevel,
+      lastError: state.lastError,
+    }
+    this.db
+      .insert(hostState)
+      .values(values)
+      .onConflictDoUpdate({ target: hostState.key, set: values })
+      .run()
+  }
+
+  async listHostStates(): Promise<HostState[]> {
+    return this.db.select().from(hostState).orderBy(hostState.key).all().map(hostStateFromRow)
+  }
+
   async getMeta(key: string): Promise<string | null> {
     const row = this.db.select().from(meta).where(eq(meta.key, key)).get()
     return row?.value ?? null
@@ -637,6 +667,33 @@ export class SqliteStore implements Store {
 }
 
 // ---- FSM helpers ----
+
+// ---- host state helpers ----
+
+/** Map a host_state row to the core HostState record. */
+function hostStateFromRow(row: {
+  key: string
+  lastRequestAt: number | null
+  windowStart: number | null
+  windowCount: number
+  consecutiveFailures: number
+  breakerState: string
+  openedUntil: number | null
+  cooldownLevel: number
+  lastError: string | null
+}): HostState {
+  return {
+    key: row.key,
+    lastRequestAt: row.lastRequestAt,
+    windowStart: row.windowStart,
+    windowCount: row.windowCount,
+    consecutiveFailures: row.consecutiveFailures,
+    breakerState: row.breakerState as HostState['breakerState'],
+    openedUntil: row.openedUntil,
+    cooldownLevel: row.cooldownLevel,
+    lastError: row.lastError,
+  }
+}
 
 /** The FSM state a legacy status column maps to. */
 function stateForLegacyStatus(status: string): string {

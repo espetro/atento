@@ -116,6 +116,19 @@ export const profiles = sqliteTable(
   },
 )
 
+/** Per-host limiter + breaker state, shared across CLI runs, server and MCP. */
+export const hostState = sqliteTable('host_state', {
+  key: text('key').primaryKey(),
+  lastRequestAt: integer('last_request_at'),
+  windowStart: integer('window_start'),
+  windowCount: integer('window_count').notNull().default(0),
+  consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+  breakerState: text('breaker_state').notNull().default('closed'),
+  openedUntil: integer('opened_until'),
+  cooldownLevel: integer('cooldown_level').notNull().default(0),
+  lastError: text('last_error'),
+})
+
 /** Schema version and config snapshots. */
 export const meta = sqliteTable(
   'meta',
@@ -134,4 +147,4 @@ export type ProfileRow = typeof profiles.$inferSelect
 export type MetaRow = typeof meta.$inferSelect
 export type LinkEventRow = typeof linkEvents.$inferSelect
 
-export const SCHEMA_VERSION = '2'
+export const SCHEMA_VERSION = '3'

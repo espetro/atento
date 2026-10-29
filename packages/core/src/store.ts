@@ -11,6 +11,7 @@ import type {
   ProfileInput,
 } from './types.js'
 import type { LinkEvent, LinkState, LinkStateName } from './fsm/index.js'
+import type { HostState } from './resilience/types.js'
 
 /**
  * Repository layer. Hides the storage engine (drizzle/sqlite today, maybe pg
@@ -93,6 +94,11 @@ export interface Store {
   getProfile(host: string): Promise<Profile | null>
   upsertProfile(profile: ProfileInput): Promise<Profile>
   deleteProfile(host: string): Promise<number>
+
+  // host resilience state (limiter + breaker budget, shared across processes)
+  getHostState(key: string): Promise<HostState | null>
+  saveHostState(state: HostState): Promise<void>
+  listHostStates(): Promise<HostState[]>
 
   // meta / maintenance
   getMeta(key: string): Promise<string | null>
