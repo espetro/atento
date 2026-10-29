@@ -257,12 +257,16 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     'metrics_get',
     {
       description: 'Per-stage metrics summary (spec name metrics.get), range like 24h, 7d, 2w.',
-      inputSchema: { range: z.string().optional() },
+      inputSchema: { range: z.string().optional(), now: z.string().datetime().optional() },
     },
-    async (args: { range?: string }) => {
+    async (args: { range?: string; now?: string }) => {
       const ctx = await deps.ctx()
       {
-        const summary = await metricsSummary(ctx.store, args.range ?? '7d')
+        const summary = await metricsSummary(
+          ctx.store,
+          args.range ?? '7d',
+          args.now !== undefined ? new Date(args.now) : new Date(),
+        )
         return json(summary)
       }
     },

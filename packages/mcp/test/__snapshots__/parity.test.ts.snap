@@ -1,0 +1,31 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`mcp/core parity > links_list output matches listLinks for the same options 1`] = `
+[
+  {
+    "action": null,
+    "category": null,
+    "expiresAt": null,
+    "expiryReason": null,
+    "id": 1,
+    "needsBrowser": false,
+    "priority": null,
+    "readMinutes": null,
+    "status": "inbox",
+    "title": "One",
+    "url": "https://example.com/one",
+  },
+]
+`;
+
+exports[`mcp/core parity > links_triage output matches triage for the same ids and action 1`] = `
+{
+  "missing": [],
+  "requested": [
+    1,
+    2,
+  ],
+  "status": "scheduled",
+  "updated": 2,
+}
+`;
