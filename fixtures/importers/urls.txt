@@ -1,0 +1,6 @@
+https://example.com/list/1
+# a comment line
+https://example.com/list/2?utm_source=x&fbclid=y
+
+not-a-url
+https://example.com/list/3/
