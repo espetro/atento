@@ -2,6 +2,8 @@
  * metrics, eval and serve commands.
  */
 import type { Command } from 'commander'
+import { spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { metricsSummary, type MetricsSummary } from '@linkinbox/core'
 import type { CliContext } from '../context.js'
@@ -67,6 +69,17 @@ export interface EvalResult {
  * available instead of failing.
  */
 export async function runEval(ctx: CliContext, runnerPath?: string): Promise<EvalResult> {
+  if (runnerPath === undefined) {
+    const bin = evalBinCandidates().find((candidate) => existsSync(candidate))
+    if (bin !== undefined) {
+      // The repo's eval bin loads the fixtures, prints the report and exits
+      // non-zero on a regression. Its output and exit code pass straight through.
+      const res = spawnSync(process.execPath, [bin], { stdio: 'inherit', env: process.env })
+      const exitCode = res.status ?? 1
+      if (exitCode !== 0) process.exitCode = exitCode
+      return { available: true, exitCode }
+    }
+  }
   const mod = await loadEvalModule(runnerPath)
   if (!mod) {
     console.log('evals not available: no evals/ runner found')
@@ -86,6 +99,11 @@ export async function runEval(ctx: CliContext, runnerPath?: string): Promise<Eva
     process.exitCode = 1
   }
   return { available: true, exitCode: passed ? 0 : 1, report }
+}
+
+/** Built eval bin: <repo>/evals/dist/bin.js, four levels up from src/ and dist/ commands. */
+function evalBinCandidates(): string[] {
+  return [fileURLToPath(new URL('../../../../evals/dist/bin.js', import.meta.url))]
 }
 
 type EvalModule = { runEval?: (opts: unknown) => Promise<unknown> } | null
@@ -189,8 +207,19 @@ export function registerReportingCommands(
     .option('--port <port>', 'port to listen on', Number)
     .action(async (opts: { port?: number }) => {
       const ctx = await deps.ctx()
+      let server: { close(): Promise<void> } | undefined
       try {
-        await runServe(ctx, opts.port)
+        await runServe(ctx, opts.port, (started) => {
+          server = started
+        })
+        if (server !== undefined) {
+          // The store has to outlive the action: keep it open until a signal.
+          await new Promise<void>((resolve) => {
+            process.once('SIGINT', resolve)
+            process.once('SIGTERM', resolve)
+          })
+          await server.close()
+        }
       } finally {
         await ctx.close()
       }

@@ -143,7 +143,7 @@ describe('program: run then list then triage', () => {
   it('reports that evals are not available when no runner exists', async () => {
     const db = await tempDb()
     try {
-      const out = await runProgram(db, ['eval'])
+      const out = await runProgram(db, ['eval', '--runner', join(db.dir, 'missing-runner.js')])
       expect(out.stdout).toContain('evals not available')
     } finally {
       await db.cleanup()
