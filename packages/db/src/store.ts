@@ -151,9 +151,18 @@ export class SqliteStore implements Store {
     // FSM: a freshly stored link starts in the state that matches its
     // legacy status column, so old rows and new rows agree.
     if (!input.state) {
-      const legacy = row.status ?? 'inbox'
-      row.state = stateForLegacyStatus(legacy)
-      row.stateData = dataForLegacyStatus(legacy, row, now)
+      // Derive the initial state from the actual data, so a link with
+      // enrichment content but no explicit state still lands in inbox.
+      if (row.enrichment !== null || (row.category !== null && row.category !== undefined)) {
+        row.state = 'inbox'
+        row.stateData = { enriched: true }
+      } else if (row.extractedContent !== null && row.extractedContent !== undefined) {
+        row.state = 'extracted'
+        row.stateData = { chars: row.extractedContent.length }
+      } else {
+        row.state = input.status ? stateForLegacyStatus(row.status ?? 'inbox') : 'created'
+        row.stateData = input.status ? dataForLegacyStatus(row.status ?? 'inbox', row, now) : {}
+      }
     }
     const inserted = this.db
       .insert(links)
@@ -606,7 +615,8 @@ function stateForLegacyStatus(status: string): string {
     case 'archived': return 'archived'
     case 'discarded': return 'discarded'
     case 'scheduled': return 'scheduled'
-    default: return 'inbox'
+    // A fresh link with no explicit state starts at the extraction queue.
+    default: return 'created'
   }
 }
 
@@ -622,8 +632,10 @@ function dataForLegacyStatus(
       return { discardedAt: new Date(row.updatedAt ?? now).toISOString() }
     case 'scheduled':
       return { scheduledFor: null }
-    default:
+    case 'inbox':
       return { enriched: row.enrichment !== null || row.category !== null }
+    default:
+      return {}
   }
 }
 

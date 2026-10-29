@@ -83,9 +83,20 @@ export class FakeStore implements Store {
       createdAt: input.createdAt ?? now,
       updatedAt: input.updatedAt ?? now,
     }
-    // FSM: the legacy status column seeds the initial state.
-    link.state = input.state ?? stateForLegacyStatus(link.status)
-    link.stateData = input.stateData ?? dataForLegacyStatus(link.status, link, now)
+    // FSM: derive the initial state from the actual data.
+    if (input.state) {
+      link.state = input.state
+      link.stateData = input.stateData ?? null
+    } else if (link.enrichment !== null || link.category !== null) {
+      link.state = 'inbox'
+      link.stateData = { enriched: true }
+    } else if (link.extractedContent !== null) {
+      link.state = 'extracted'
+      link.stateData = { chars: link.extractedContent.length }
+    } else {
+      link.state = stateForLegacyStatus(link.status)
+      link.stateData = dataForLegacyStatus(link.status, link, now)
+    }
     this.links.push(link)
     return link
   }
@@ -395,7 +406,8 @@ function stateForLegacyStatus(status: Status): string {
     case 'archived': return 'archived'
     case 'discarded': return 'discarded'
     case 'scheduled': return 'scheduled'
-    default: return 'inbox'
+    // A fresh link with no explicit state starts at the extraction queue.
+    default: return 'created'
   }
 }
 
@@ -407,8 +419,10 @@ function dataForLegacyStatus(status: Status, link: Link, now: Date): Record<stri
       return { discardedAt: now.toISOString() }
     case 'scheduled':
       return { scheduledFor: null }
-    default:
+    case 'inbox':
       return { enriched: link.enrichment !== null || link.category !== null }
+    default:
+      return {}
   }
 }
 

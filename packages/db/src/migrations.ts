@@ -101,7 +101,10 @@ CREATE TABLE IF NOT EXISTS link_events (
 CREATE INDEX IF NOT EXISTS link_events_link_idx ON link_events (link_id);
 CREATE INDEX IF NOT EXISTS link_events_at_idx ON link_events (at);
 
--- Backfill FSM state from the legacy status column. History rows are
+-- Backfill the FSM discriminant from the legacy status column.
+UPDATE links SET state = status;
+
+-- History rows are
 -- synthesized so the log is complete for pre-FSM links.
 INSERT INTO link_events (link_id, from_state, to_state, event, data, at)
 SELECT id, 'created', CASE status
@@ -121,7 +124,8 @@ SELECT id, 'created', CASE status
 FROM links;
 
 UPDATE links SET state_data = json_object(
-  'enriched', CASE WHEN enrichment IS NOT NULL OR category IS NOT NULL THEN 1 ELSE 0 END
+  'enriched', CASE WHEN enrichment IS NOT NULL OR category IS NOT NULL
+    THEN json('true') ELSE json('false') END
 ) WHERE state = 'inbox';
 
 UPDATE links SET state_data = json_object('scheduledFor', NULL) WHERE state = 'scheduled';

@@ -46,6 +46,8 @@ const TABLE: StateTable = {
         case 'discard': return { state: 'discarded', discardedAt: at.toISOString() }
       }
     },
+    // The expiry passed before the link was ever processed: archive it.
+    EXPIRE: (_s, _e, at) => ({ state: 'archived', archivedAt: at.toISOString(), reason: 'expired' }),
     DELETE: (_s, _e, at) => ({ state: 'deleted', deletedAt: at.toISOString() }),
   },
 
@@ -88,6 +90,7 @@ const TABLE: StateTable = {
         case 'discard': return { state: 'discarded', discardedAt: at.toISOString() }
       }
     },
+    EXPIRE: (_s, _e, at) => ({ state: 'archived', archivedAt: at.toISOString(), reason: 'expired' }),
     DELETE: (_s, _e, at) => ({ state: 'deleted', deletedAt: at.toISOString() }),
   },
 
