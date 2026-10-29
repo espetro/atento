@@ -1,0 +1,20 @@
+@import 'tailwindcss';
+@plugin 'daisyui' {
+  themes: light --default, dark --prefersdark;
+}
+
+/* Layout scaffolding only. Colors come from daisyUI semantic tokens. */
+html,
+body {
+  height: 100%;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+.app-shell {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
