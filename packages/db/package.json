@@ -19,7 +19,8 @@
   "dependencies": {
     "@linkinbox/core": "workspace:*",
     "better-sqlite3": "^12.4.1",
-    "drizzle-orm": "^0.45.1"
+    "drizzle-orm": "^0.45.1",
+    "@linkinbox/importers": "workspace:*"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

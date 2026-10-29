@@ -113,25 +113,36 @@ describe('planPrune', () => {
   it('deletes only archived or discarded links past delete_after_days', () => {
     const oldArchived = makeLink({
       status: 'archived',
-      addedAt: new Date(NOW.getTime() - 400 * DAY),
+      expiresAt: new Date(NOW.getTime() - 400 * DAY),
     })
-    const oldInbox = makeLink({ status: 'inbox', addedAt: new Date(NOW.getTime() - 400 * DAY) })
+    const oldInbox = makeLink({
+      status: 'inbox',
+      expiresAt: new Date(NOW.getTime() - 400 * DAY),
+    })
     const recentArchived = makeLink({
       status: 'archived',
-      addedAt: new Date(NOW.getTime() - 10 * DAY),
+      expiresAt: new Date(NOW.getTime() - 10 * DAY),
     })
     const plan = planPrune([oldArchived, oldInbox, recentArchived], { now: NOW, ttl })
     expect(plan.totals.delete).toBe(1)
     expect(plan.items[0]?.linkId).toBe(oldArchived.id)
   })
 
-  it('falls back to createdAt when addedAt is missing', () => {
-    const old = makeLink({
+  it('falls back to addedAt, then createdAt, when expiresAt is missing', () => {
+    const noExpiry = makeLink({
       status: 'archived',
+      expiresAt: null,
       addedAt: null,
       createdAt: new Date(NOW.getTime() - 400 * DAY),
     })
-    expect(planPrune([old], { now: NOW, ttl }).totals.delete).toBe(1)
+    expect(planPrune([noExpiry], { now: NOW, ttl }).totals.delete).toBe(1)
+
+    const onlyAdded = makeLink({
+      status: 'archived',
+      expiresAt: null,
+      addedAt: new Date(NOW.getTime() - 400 * DAY),
+    })
+    expect(planPrune([onlyAdded], { now: NOW, ttl }).totals.delete).toBe(1)
   })
 
   it('respects a custom delete_after_days', () => {
@@ -140,11 +151,11 @@ describe('planPrune', () => {
     })
     const old = makeLink({
       status: 'archived',
-      addedAt: new Date(NOW.getTime() - 40 * DAY),
+      expiresAt: new Date(NOW.getTime() - 40 * DAY),
     })
     const newer = makeLink({
       status: 'archived',
-      addedAt: new Date(NOW.getTime() - 20 * DAY),
+      expiresAt: new Date(NOW.getTime() - 20 * DAY),
     })
     const plan = planPrune([old, newer], { now: NOW, ttl: custom })
     expect(plan.totals.delete).toBe(1)

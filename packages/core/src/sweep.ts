@@ -41,7 +41,7 @@ export interface PruneItem {
   url: string
   title: string | null
   category: string | null
-  /** The date used for the age check (addedAt, else createdAt). */
+  /** The date used for the age check (expiresAt, else addedAt, else createdAt). */
   referenceDate: Date
   ageDays: number
 }
@@ -105,8 +105,8 @@ export function planSweep(links: Link[], opts: SweepOptions): SweepPlan {
 /**
  * Pure prune planner: the only delete path. Candidates are links that are
  * already actioned (archived or discarded) and older than `delete_after_days`
- * measured from `addedAt` (falling back to `createdAt`). The confirmation
- * prompt and the actual delete live in the CLI layer.
+ * measured from `expiresAt` when present, else `addedAt`, else `createdAt`.
+ * The confirmation prompt and the actual delete live in the CLI layer.
  */
 export function planPrune(links: Link[], opts: SweepOptions): PrunePlan {
   const cutoff = opts.now.getTime() - opts.ttl.delete_after_days * DAY_MS
@@ -115,8 +115,7 @@ export function planPrune(links: Link[], opts: SweepOptions): PrunePlan {
 
   for (const link of links) {
     if (!deletable.includes(link.status)) continue
-    const ref = link.addedAt ?? link.createdAt
-    if (ref === null) continue
+    const ref = link.expiresAt ?? link.addedAt ?? link.createdAt
     if (ref.getTime() >= cutoff) continue
     items.push({
       linkId: link.id,
