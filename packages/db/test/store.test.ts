@@ -46,23 +46,23 @@ function linkInput(overrides: Partial<LinkInput> = {}): LinkInput {
 describe('SqliteStore', () => {
   it('migrates idempotently and records schema version', async () => {
     const store = await openStore({ path: join(dir, 'test.db') })
-    expect(await store.schemaVersion()).toBe('6')
+    expect(await store.schemaVersion()).toBe('7')
     await store.migrate() // second run must not throw
-    expect(await store.schemaVersion()).toBe('6')
+    expect(await store.schemaVersion()).toBe('7')
     await store.close()
   })
 
   it('records applied migrations and does not reapply them', async () => {
     const dbPath = join(dir, 'migrations.db')
     const store = await openStore({ path: dbPath })
-    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_capture', '0006_human_pacing'])
+    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_capture', '0006_human_pacing', '0007_media'])
     await store.migrate()
-    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_capture', '0006_human_pacing'])
+    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_capture', '0006_human_pacing', '0007_media'])
     await store.close()
 
     // reopening an existing database keeps the same migration set
     const reopened = await openStore({ path: dbPath })
-    expect(reopened.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_capture', '0006_human_pacing'])
+    expect(reopened.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_capture', '0006_human_pacing', '0007_media'])
     expect(await reopened.countLinks()).toBe(0)
     await reopened.close()
   })
@@ -204,6 +204,43 @@ describe('SqliteStore', () => {
     await store.upsertLink(linkInput({ urlHash: 'x' }))
     expect(await store.countLinks()).toBe(1)
     await store.close()
+  })
+
+  it('the media report round-trips on a link', async () => {
+    const store = await openStore({ path: join(dir, 'media-report.db') })
+    const link = await store.upsertLink({
+      urlHash: 'hash-media',
+      url: 'https://video.example/reel/1',
+      source: 'test',
+      status: 'inbox',
+      needsBrowser: false,
+    })
+    await store.setMediaReport(link.id, {
+      url: 'https://video.example/reel/1',
+      tiers: [
+        { tier: 'caption', status: 'ok' },
+        { tier: 'frames', status: 'unsupported', reason: 'frame analysis not implemented' },
+      ],
+    })
+    const row = await store.getLink(link.id)
+    expect(row?.mediaReport?.tiers).toHaveLength(2)
+    expect(row?.mediaReport?.tiers[1]?.status).toBe('unsupported')
+    await store.close()
+  })
+
+  it('the media budget survives a reopen (restart persistence)', async () => {
+    const dbPath = join(dir, 'media-budget.db')
+    const store = await openStore({ path: dbPath })
+    await store.saveMediaBudget('2026-10-29', { total: 3, byTier: { transcript: 2 } })
+    await store.close()
+
+    const reopened = await openStore({ path: dbPath })
+    expect(await reopened.getMediaBudget('2026-10-29')).toEqual({
+      total: 3,
+      byTier: { transcript: 2 },
+    })
+    expect(await reopened.getMediaBudget('2026-10-30')).toEqual({ total: 0, byTier: {} })
+    await reopened.close()
   })
 
   it('host trial state survives a reopen (restart persistence)', async () => {
