@@ -23,6 +23,12 @@ import {
   mathRandom,
   systemClock,
 } from './types.js'
+import {
+  DEFAULT_PACING,
+  OUTSIDE_HOURS_REASON,
+  pacingGate,
+  type PacingConfig,
+} from './human-pacing.js'
 
 export interface HostLimit {
   /** Minimum ms between requests to this host. */
@@ -344,12 +350,20 @@ export interface LimiterDeps {
   config: LimitsConfig
   /** True when the host has a saved browser profile (walled garden). */
   hasProfile(host: string): Promise<boolean>
+  /** The human pacing profile applied to strict hosts (default applies). */
+  pacing?: PacingConfig
 }
 
 export interface LimiterGate {
   admitted: boolean
   waitMs: number
-  reason?: 'spacing' | 'daily_cap' | 'concurrency' | 'rate_limited'
+  reason?:
+    | 'spacing'
+    | 'daily_cap'
+    | 'concurrency'
+    | 'rate_limited'
+    | 'human_break'
+    | 'outside_hours'
   windowResetsAt?: number
   state?: HostState
 }
@@ -370,6 +384,38 @@ export async function limiterGate(deps: LimiterDeps, key: string): Promise<Limit
   if (rateLimitWait > 0) {
     return { admitted: false, waitMs: rateLimitWait, reason: 'rate_limited' }
   }
+
+  // Strict (walled-garden) hosts are paced like a human instead of a
+  // metronome: sampled dwell, occasional longer breaks, a working-hours
+  // window and the pacing daily cap. Ordinary hosts keep the fixed
+  // token-bucket rules. No host names here: the pacing profile follows the
+  // shared hostPolicy verdict.
+  const policy = key === LLM_KEY
+    ? { strict: false }
+    : hostPolicy(deps.config, key, { hasProfile, trialState: state.trialState, loginGated: state.loginGated })
+  if (policy.strict) {
+    const pacing = deps.pacing ?? DEFAULT_PACING
+    const verdict = pacingGate(state, pacing, now, deps.random)
+    if (!verdict.admitted) {
+      await deps.save(verdict.state)
+      return {
+        admitted: false,
+        waitMs: verdict.waitMs,
+        reason: verdict.reason === 'break'
+          ? 'human_break'
+          : verdict.reason === OUTSIDE_HOURS_REASON
+            ? 'outside_hours'
+            : verdict.reason,
+        windowResetsAt: verdict.reason === 'daily_cap'
+          ? (verdict.state.windowStart ?? now) + DAY_MS
+          : undefined,
+        state: verdict.state,
+      }
+    }
+    await deps.save(verdict.state)
+    return { admitted: true, waitMs: 0, state: verdict.state }
+  }
+
   const verdict = gateHost(state, limit, now, 0, deps.random)
   if (verdict.admitted) {
     await deps.save(verdict.state)

@@ -13,6 +13,10 @@ import {
   WALLED_GARDEN_LIMIT,
   type LimitsConfig,
 } from './resilience/index.js'
+import {
+  DEFAULT_PACING,
+  type PacingConfig,
+} from './resilience/human-pacing.js'
 
 /**
  * Parse the `[ttl]` table out of raw TOML text. The only TOML the pipeline
@@ -105,6 +109,62 @@ export function parseMediaConfig(tomlText: string): MediaConfig {
   return mediaFromToml(parseToml(tomlText) as TomlTable)
 }
 
+/**
+ * Parse the `[pacing]` table. Shape:
+ *
+ *   [pacing]
+ *   dwell_median_s = 20
+ *   dwell_max_s = 90
+ *   break_every_min = 5
+ *   break_every_max = 12
+ *   break_min_s = 120
+ *   break_max_s = 360
+ *   daily_cap = 40
+ *   hours_start = 8
+ *   hours_end = 23
+ *
+ * The table is additive: a missing table keeps the defaults, and garbage
+ * values are ignored. Set `daily_cap` very high (or `hours_start = 0` with
+ * `hours_end = 24`) to disable the pacing profile.
+ */
+export function pacingFromToml(toml: TomlTable): PacingConfig {
+  const out: PacingConfig = { ...DEFAULT_PACING }
+  const pacing = toml['pacing']
+  if (!pacing || typeof pacing !== 'object' || Array.isArray(pacing)) return out
+  const table = pacing as TomlTable
+
+  const dwellMedian = num(table['dwell_median_s'])
+  if (dwellMedian !== undefined) out.dwellMedianS = Math.max(1, dwellMedian)
+  const dwellMax = num(table['dwell_max_s'])
+  if (dwellMax !== undefined) out.dwellMaxS = Math.max(1, dwellMax)
+  const breakEveryMin = num(table['break_every_min'])
+  if (breakEveryMin !== undefined) out.breakEveryMin = Math.max(1, breakEveryMin)
+  const breakEveryMax = num(table['break_every_max'])
+  if (breakEveryMax !== undefined) out.breakEveryMax = Math.max(1, breakEveryMax)
+  const breakMin = num(table['break_min_s'])
+  if (breakMin !== undefined) out.breakMinS = Math.max(0, breakMin)
+  const breakMax = num(table['break_max_s'])
+  if (breakMax !== undefined) out.breakMaxS = Math.max(0, breakMax)
+  const dailyCap = num(table['daily_cap'])
+  if (dailyCap !== undefined) out.dailyCap = Math.max(0, dailyCap)
+  const hoursStart = num(table['hours_start'])
+  if (hoursStart !== undefined) out.hoursStart = Math.min(24, Math.max(0, hoursStart))
+  const hoursEnd = num(table['hours_end'])
+  if (hoursEnd !== undefined) out.hoursEnd = Math.min(24, Math.max(0, hoursEnd))
+
+  // The dwell cap can never sit below the median: the sampler would then
+  // always return the cap and the median would be meaningless.
+  if (out.dwellMaxS < out.dwellMedianS) out.dwellMaxS = out.dwellMedianS
+  if (out.breakEveryMax < out.breakEveryMin) out.breakEveryMax = out.breakEveryMin
+  if (out.breakMaxS < out.breakMinS) out.breakMaxS = out.breakMinS
+  return out
+}
+
+/** Parse the `[pacing]` table out of raw TOML text. */
+export function parsePacingConfig(tomlText: string): PacingConfig {
+  return pacingFromToml(parseToml(tomlText) as TomlTable)
+}
+
 export { DEFAULT_LIMITS, ORDINARY_LIMIT, WALLED_GARDEN_LIMIT }
 
-export type { LimitsConfig }
+export type { LimitsConfig, PacingConfig }

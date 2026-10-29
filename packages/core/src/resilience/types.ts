@@ -58,6 +58,10 @@ export interface HostState {
   loginGated: boolean
   /** The upstream asked us to slow down until this time (ms epoch). */
   rateLimitedUntil: number | null
+  /** Pages served since the last long human-pacing break. */
+  pagesSinceBreak?: number
+  /** Pages after which the next long human-pacing break is due. */
+  breakEvery?: number
 }
 
 export function emptyHostState(key: string): HostState {
