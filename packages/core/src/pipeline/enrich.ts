@@ -32,13 +32,16 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
   const now = options.now ?? (() => new Date())
   const startedAt = now()
 
-  // `extracted` links are the normal queue. `created` links are eligible
-  // only when extraction has not run (or was skipped): enrichment can still
-  // read the url on its own.
+  // Candidates: links that still need enrichment. `extracted` has content and
+  // waits for the model, `created` was never extracted, `inbox` was enriched
+  // before but lost its enrichment (or was seeded without one).
   const extracted = await store.listByStates(['extracted'])
   const created = await store.listByStates(['created'])
-  const batch = [...extracted, ...created].slice(0, options.limit ?? undefined)
-  const pending = batch.filter((l) => l.extractedContent !== null || l.state === 'created')
+  const inbox = await store.listByStates(['inbox'])
+  const batch = [...extracted, ...created, ...inbox]
+    .filter((l) => l.enrichment === null)
+    .slice(0, options.limit ?? undefined)
+  const pending = batch
 
   const run = await store.startRun(STAGES.enrich, pending.length, startedAt)
   logger.info('enrich run {runId} started with {inputCount} links', {

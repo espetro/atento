@@ -128,6 +128,12 @@ const TABLE: StateTable = {
 
   // inbox: triage moves a link to its action-mapped state.
   inbox: {
+    // An inbox link without enrichment can still be enriched later.
+    ENRICH_STARTED: (_s, e, at) => ({
+      state: 'enriching',
+      startedAt: at.toISOString(),
+      attempt: e.attempt ?? 1,
+    }),
     TRIAGE: (_s, e, at) => {
       switch (e.action) {
         case 'read_now': return { state: 'inbox', enriched: true }
