@@ -2,6 +2,7 @@
  * metrics, eval and serve commands.
  */
 import type { Command } from 'commander'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { metricsSummary, type MetricsSummary } from '@linkinbox/core'
 import type { CliContext } from '../context.js'
 import { formatNumber, formatUsd, renderTable } from '../render.js'
@@ -82,16 +83,30 @@ export async function runEval(ctx: CliContext, runnerPath?: string): Promise<Eva
 
 type EvalModule = { runEval?: (opts: unknown) => Promise<unknown> } | null
 
+/**
+ * Candidate runner locations: an explicit path first, then the repo's evals/
+ * directory (js, mjs and ts variants).
+ */
+export function evalRunnerCandidates(runnerPath?: string): string[] {
+  if (runnerPath) return [runnerPath]
+  const roots = [
+    new URL('../../../../evals/', import.meta.url),
+    new URL('../../../evals/', import.meta.url),
+  ]
+  const names = ['runner.js', 'runner.mjs', 'runner.ts']
+  const out: string[] = []
+  for (const root of roots) {
+    for (const name of names) {
+      out.push(fileURLToPath(new URL(name, root)))
+    }
+  }
+  return out
+}
+
 async function loadEvalModule(runnerPath?: string): Promise<EvalModule> {
-  const candidates = runnerPath
-    ? [runnerPath]
-    : [
-        new URL('../../../evals/runner.js', import.meta.url).pathname,
-        new URL('../../../evals/runner.ts', import.meta.url).pathname,
-      ]
-  for (const candidate of candidates) {
+  for (const candidate of evalRunnerCandidates(runnerPath)) {
     try {
-      return (await import(candidate)) as EvalModule
+      return (await import(pathToFileURL(candidate).href)) as EvalModule
     } catch {
       // try the next candidate
     }
