@@ -8,6 +8,7 @@ import {
   getLink,
   triage,
   restore,
+  retryHeadless,
   linkHistory,
   LINK_STATES,
   type LinkField,
@@ -215,6 +216,40 @@ export function applyFilter(rows: Record<string, unknown>[], filter?: string): R
   )
 }
 
+export interface RetryHeadlessOptions {
+  ids: number[]
+  /** Must be true: the headless retry is opt-in only. */
+  headless: boolean
+}
+
+/**
+ * retry <ids...> --headless: re-trigger headless extraction for a captured
+ * link. Optional and never automatic; captured content is only replaced when
+ * the headless run produces something better (lower-trust rules apply).
+ */
+export async function runRetryHeadless(
+  ctx: CliContext,
+  opts: RetryHeadlessOptions,
+): Promise<void> {
+  if (opts.headless !== true) {
+    throw new Error('retry needs --headless; captured content is never re-fetched implicitly')
+  }
+  const result = await retryHeadless(ctx.store, opts.ids)
+  if (result.updated.length > 0) {
+    console.log(
+      `${result.updated.length} link${result.updated.length === 1 ? '' : 's'} requeued for headless extraction: ${result.updated.join(', ')}`,
+    )
+  }
+  if (result.missing.length > 0) {
+    console.log(`missing: ${result.missing.join(', ')}`)
+    process.exitCode = 1
+  }
+  if (result.blocked.length > 0) {
+    console.log(`blocked (state does not allow a retry): ${result.blocked.join(', ')}`)
+    process.exitCode = 1
+  }
+}
+
 /** restore <ids...>: move archived/discarded/errored links back to the inbox. */
 export async function runRestore(ctx: CliContext, ids: number[]): Promise<void> {
   const result = await restore(ctx.store, ids)
@@ -274,6 +309,23 @@ export function registerLinkCommands(
       const ctx = await deps.ctx()
       try {
         await runRestore(ctx, ids.map((id) => Number(id)))
+      } finally {
+        await ctx.close()
+      }
+    })
+
+  program
+    .command('retry')
+    .description('re-trigger headless extraction for a captured link (explicit, never automatic)')
+    .argument('<ids...>')
+    .option('--headless', 're-run the headless extractor over the link')
+    .action(async (ids: string[], opts: { headless?: boolean }) => {
+      const ctx = await deps.ctx()
+      try {
+        await runRetryHeadless(ctx, {
+          ids: ids.map((id) => Number(id)),
+          headless: opts.headless === true,
+        })
       } finally {
         await ctx.close()
       }

@@ -83,6 +83,9 @@ const TABLE: StateTable = {
       startedAt: at.toISOString(),
       attempt: e.attempt ?? 1,
     }),
+    // An explicit `retry --headless`: back to the extraction queue so the
+    // headless extractor runs again over the captured link.
+    RETRY: () => ({ state: 'created' }),
     TRIAGE: (_s, e, at) => {
       switch (e.action) {
         // The content exists but was never enriched: `read_now` keeps it
