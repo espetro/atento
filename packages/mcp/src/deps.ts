@@ -23,7 +23,12 @@ export interface McpContext {
 export interface McpDeps {
   /** Resolve the context. Called once per tool call; memoize if you want one store. */
   ctx(): Promise<McpContext>
-  extractFn(): Promise<ExtractFn>
+  /**
+   * The extraction function. The context is passed in so the adapter can
+   * read the host policy (skip-list, canary state, saved profiles) from the
+   * same store.
+   */
+  extractFn(ctx?: McpContext): Promise<ExtractFn>
   enrichFn(): Promise<EnrichFn>
   /** Release anything the context factory opened (stdio shutdown). */
   close?(): Promise<void>

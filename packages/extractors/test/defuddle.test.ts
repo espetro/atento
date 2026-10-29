@@ -107,6 +107,12 @@ describe("defuddle extractor (test set B)", () => {
       fetch: async () => ({ status: 403, body: "forbidden" }),
     });
     const result = await extractor.extract("https://paywalled.example.dev/post");
-    expect(result).toEqual({ markdown: "", needsBrowser: true });
+    // The status travels along so the pipeline can detect a login wall.
+    expect(result).toEqual({
+      markdown: "",
+      needsBrowser: true,
+      status: 403,
+      finalUrl: "https://paywalled.example.dev/post",
+    });
   });
 });

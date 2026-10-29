@@ -1,10 +1,18 @@
 import type { Store } from '../store.js'
+import type { Link } from '../types.js'
 import type { StageResult, StageOptions, LinkOutcome, ExtractFn } from './types.js'
 import { STAGES, noopLogger } from './types.js'
 import { recordRunMetrics } from './ingest.js'
 import {
   DEFAULT_MAX_BATCH,
   breakerReport,
+  emptyHostState,
+  hostPolicy,
+  isLoginWall,
+  markFlagged,
+  markOpen,
+  pacingSignalMs,
+  trialStateOf,
   type GuardDeps,
   guardRun,
 } from '../resilience/index.js'
@@ -12,9 +20,15 @@ import {
   attemptsOf,
   deferOrError,
   guardDepsFromStore,
+  hostOf,
   releaseDueDeferred,
 } from './resilience.js'
 import { DEFAULT_MAX_ATTEMPTS } from './resilience-options.js'
+
+/** The reason recorded on links parked because their host is skip-listed. */
+export const SKIP_HOST_REASON = 'skip_host'
+/** The reason recorded on links parked behind a login wall. */
+export const LOGIN_WALL_REASON = 'login_wall'
 
 export interface ExtractOptions extends StageOptions {
   /** Injected extraction function (the CLI adapts the extractors router). */
@@ -45,6 +59,10 @@ export interface ExtractResult extends StageResult {
   deferredCount: number
   /** Suggested wait in ms before the next batch should run (additive). */
   retryAfter: number
+  /** Number of links parked (discarded) because their host is skip-listed. */
+  skippedHostCount: number
+  /** Hosts whose canary was tried in this run: host -> flag/open. */
+  canaryTrials: Record<string, 'open' | 'flagged'>
 }
 
 /**
@@ -89,6 +107,7 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
   let errorCount = 0
   let needsBrowserCount = 0
   let deferredCount = 0
+  let skippedHostCount = 0
   let retryAfter = 0
   const errorsByExtractor = new Map<string, number>()
   const needsBrowserByExtractor = new Map<string, number>()
@@ -99,6 +118,34 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
   const deferralsByHost = new Map<string, number>()
   const bumpDeferral = (host: string): void => {
     deferralsByHost.set(host, (deferralsByHost.get(host) ?? 0) + 1)
+  }
+  /** Canary state per host, decided by the first link of the host. */
+  /** Hosts whose canary was flagged this run. */
+  const canaryTrials: Record<string, 'open' | 'flagged'> = {}
+  /** Flag reasons per host for this run. */
+  const canaryReasons = new Map<string, string>()
+  /** Hosts whose canary succeeded this run: remaining links proceed. */
+  const openHosts = new Set<string>()
+
+  /** The config-backed policy for a host, enriched with the store state. */
+  const policyFor = async (host: string) => {
+    const state = (await store.getHostState(host)) ?? undefined
+    const hasProfile = (await store.getProfile(host)) !== null
+    const config = guard?.config.limits
+    // The trial state honours the flag expiry: a flagged host is re-trialed
+    // once the flag is older than the cooldown.
+    const trialState = trialStateOf(state ?? null, now().getTime())
+    return {
+      policy: config
+        ? hostPolicy(config, host, {
+            hasProfile,
+            trialState,
+            loginGated: state?.loginGated ?? false,
+          })
+        : { strict: false, browser: false, skipped: false, reason: null },
+      hasProfile,
+      trialState,
+    }
   }
 
   for (const link of batch) {
@@ -121,26 +168,71 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
       continue
     }
 
-    // A host whose breaker opened mid-batch is skipped without a fetch: the
-    // link is deferred with the breaker's reopen time.
-    if (blockedHosts.has(host)) {
-      deferredCount += 1
-      bumpDeferral(host)
+    // The host policy: skip-list, manual override, canary flag, profile.
+    const { policy, trialState } = await policyFor(host)
+
+    // Skip-listed hosts are never fetched: the link is parked in the
+    // terminal-ish `discarded` state with a clear reason. The lease is
+    // released first (LEASE_EXPIRED), because TRIAGE is only legal from the
+    // queue state.
+    if (policy.skipped) {
+      skippedHostCount += 1
       await store.applyEvent(link.id, {
-        type: 'DEFER',
-        stage: 'extract',
-        nextAttemptAt: new Date(startedAt.getTime() + 60 * 60 * 1000).toISOString(),
-        attempts: (await preAttempts(store, link.id)) + 1,
-        reason: 'breaker_open',
+        type: 'LEASE_EXPIRED',
         at: now().toISOString(),
+      })
+      await store.applyEvent(link.id, {
+        type: 'TRIAGE',
+        action: 'discard',
+        at: now().toISOString(),
+      })
+      await store.setExpiry(link.id, null, SKIP_HOST_REASON, now())
+      logger.info('{host} is skip-listed: {url} parked as discarded', {
+        host,
+        url: link.url,
       })
       outcomes.push({
         linkId: link.id,
         url: link.url,
         ok: true,
         skipped: true,
-        error: 'deferred: breaker_open',
+        error: `skipped: ${SKIP_HOST_REASON}`,
       })
+      continue
+    }
+
+    // Canary probing: the first link of a host is the canary. When an
+    // earlier link of this host was flagged (rate limited, blocked, login
+    // wall), the remaining links are deferred without a fetch. A canary
+    // verdict is also read from the persisted trial state, so a restart
+    // keeps honouring the flag. This check runs before the breaker check:
+    // a flagged host defers with the flag name, not a generic breaker one.
+    if (canaryTrials[host] === 'flagged' || trialState === 'flagged' || blockedHosts.has(host)) {
+      deferredCount += 1
+      bumpDeferral(host)
+      const flagReason = canaryTrials[host] === 'flagged'
+        ? `canary_flagged:${canaryReasons.get(host) ?? 'blocked'}`
+        : `canary_flagged:${(await store.getHostState(host))?.trialReason ?? 'blocked'}`
+      const decision = await deferOrError(
+        store, link, 'extract', flagReason, 60 * 60 * 1000, maxAttempts, now(),
+      )
+      logger.info('{host} is flagged ({reason}): {url} deferred', {
+        host,
+        reason: flagReason,
+        url: link.url,
+      })
+      if (decision.errored) {
+        errorCount += 1
+        outcomes.push({ linkId: link.id, url: link.url, ok: false, error: flagReason })
+      } else {
+        outcomes.push({
+          linkId: link.id,
+          url: link.url,
+          ok: true,
+          skipped: true,
+          error: `deferred: ${flagReason}`,
+        })
+      }
       continue
     }
 
@@ -166,7 +258,31 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
         deferredCount += 1
         bumpDeferral(host)
         retryAfter = Math.max(retryAfter, result.retryAfterMs)
-        if (result.breakerOpen) blockedHosts.add(host)
+        if (result.breakerOpen) {
+          blockedHosts.add(host)
+          // The canary failed: flag the host so its remaining links are
+          // deferred (state `deferred`, reason names the flag) instead of
+          // hammering it.
+          const flagReason = result.reason.startsWith('blocked:')
+            ? result.reason.slice('blocked:'.length)
+            : result.reason.replace(/^breaker_open:/, '')
+          await flagHost(store, host, now().getTime(), flagReason, flagReason === LOGIN_WALL_REASON)
+          canaryTrials[host] = 'flagged'
+          canaryReasons.set(host, flagReason)
+          // An upstream Retry-After extends the host spacing until then.
+          if (result.retryAfterMs > 0) {
+            const state = await store.getHostState(host)
+            if (state) {
+              await store.saveHostState({
+                ...state,
+                rateLimitedUntil: Math.max(
+                  state.rateLimitedUntil ?? 0,
+                  now().getTime() + result.retryAfterMs,
+                ),
+              })
+            }
+          }
+        }
         const decision = await deferOrError(
           store, link, 'extract', result.reason, result.retryAfterMs, maxAttempts, now(),
         )
@@ -199,16 +315,71 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
         needsBrowser?: boolean
         blocked?: boolean
         blockReason?: string
+        gone?: number
+        finalUrl?: string
+        status?: number
+        html?: string
       }
+
+      // A 404/410 is only "gone" for an ordinary open host. A flagged host,
+      // a host with a profile or a login-gated host answers anonymous
+      // requests to private pages with a 404 too: that is a login wall.
+      if (raw.gone !== undefined) {
+        const { policy, hasProfile } = await policyFor(host)
+        const trial = (await store.getHostState(host))?.trialState ?? 'unknown'
+        const strict = policy.strict || policy.browser || hasProfile || trial === 'flagged'
+        if (strict) {
+          needsBrowserCount += 1
+          bump(needsBrowserByExtractor, extractor)
+          const wallReason = raw.gone === 404 ? 'private_404' : 'private_410'
+          await recordLoginWall(store, link, host, now(), wallReason)
+          await flagHost(store, host, now().getTime(), wallReason, true)
+          canaryTrials[host] = 'flagged'
+          canaryReasons.set(host, wallReason)
+          logger.warn('private page on {host} (link {linkId}): run `linkinbox login {host}`', {
+            host,
+            linkId: link.id,
+          })
+          outcomes.push({
+            linkId: link.id,
+            url: link.url,
+            ok: true,
+            needsBrowser: true,
+            error: `deferred: login_wall (http_${raw.gone})`,
+          })
+          okCount += 1
+          continue
+        }
+        errorCount += 1
+        bump(errorsByExtractor, extractor)
+        await store.applyEvent(link.id, {
+          type: 'EXTRACT_FAILED',
+          error: `page is gone (HTTP ${raw.gone})`,
+          retryable: false,
+          at: now().toISOString(),
+        })
+        outcomes.push({
+          linkId: link.id,
+          url: link.url,
+          ok: false,
+          error: `page is gone (HTTP ${raw.gone})`,
+        })
+        continue
+      }
+
       // A login wall or captcha: the host refused the session. Open its
-      // breaker so the rest of the batch stops hammering it, and defer.
+      // breaker so the rest of the batch stops hammering it, flag the host
+      // and defer.
       if (raw.blocked === true) {
         deferredCount += 1
         bumpDeferral(host)
         blockedHosts.add(host)
-        const reason = `blocked:${raw.blockReason ?? 'login_wall'}`
+        const reason = `blocked:${raw.blockReason ?? LOGIN_WALL_REASON}`
         const waitMs = await openBreakerForHost(guard, host, now().getTime())
         retryAfter = Math.max(retryAfter, waitMs)
+        await flagHost(store, host, now().getTime(), raw.blockReason ?? LOGIN_WALL_REASON, true)
+        canaryTrials[host] = 'flagged'
+        canaryReasons.set(host, raw.blockReason ?? LOGIN_WALL_REASON)
         const decision = await deferOrError(store, link, 'extract', reason, waitMs, maxAttempts, now())
         logger.warn('extraction blocked on {host} (link {linkId}): run `linkinbox login {host}`', {
           host,
@@ -229,7 +400,37 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
         }
         continue
       }
+
       const markdown = raw.markdown ?? ''
+
+      // Login-wall detection on a page that returned content: the host
+      // wants a session we do not have.
+      const wall = detectLoginWall(raw, link.url, await policyFor(host))
+      if (wall) {
+        needsBrowserCount += 1
+        bump(needsBrowserByExtractor, extractor)
+        await recordLoginWall(store, link, host, now(), wall)
+        // A login wall is a flag: the rest of this host's links wait.
+        await flagHost(store, host, now().getTime(), wall, true)
+        canaryTrials[host] = 'flagged'
+        canaryReasons.set(host, wall)
+        outcomes.push({
+          linkId: link.id,
+          url: link.url,
+          ok: true,
+          needsBrowser: true,
+          error: `deferred: ${LOGIN_WALL_REASON}`,
+        })
+        okCount += 1
+        continue
+      }
+
+      // The canary succeeded: the host is open, the remaining links of this
+      // host proceed under the ordinary limits.
+      await openHost(store, host, now().getTime())
+      canaryTrials[host] = 'open'
+      openHosts.add(host)
+
       const needsBrowser = raw.needsBrowser === true || markdown.trim() === ''
       if (needsBrowser) {
         needsBrowserCount += 1
@@ -237,7 +438,8 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
         await store.setExtractedContent(link.id, markdown, true, now())
         await store.applyEvent(link.id, {
           type: 'NEEDS_BROWSER',
-          host: hostOf(link.url),
+          host,
+          reason: wall ?? undefined,
           at: now().toISOString(),
         })
         logger.warn('extraction needs a browser for {url} (link {linkId}, extractor {extractor})', {
@@ -406,6 +608,8 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
     needsBrowserCount,
     deferredCount,
     retryAfter,
+    skippedHostCount,
+    canaryTrials,
   }
 }
 
@@ -428,22 +632,89 @@ async function openBreakerForHost(
     },
     host,
     'failure',
-    { retryable: false, block: true, reason: 'login_wall' },
+    { retryable: false, block: true, reason: LOGIN_WALL_REASON },
   )
   return report.state.openedUntil !== null ? Math.max(0, report.state.openedUntil - now) : 0
+}
+
+/**
+ * Flag a host: the canary was rate limited or blocked. The flag lives in
+ * the host_state row, so it survives restarts.
+ */
+async function flagHost(
+  store: Store,
+  host: string,
+  now: number,
+  reason: string,
+  loginGated = false,
+): Promise<void> {
+  const state = (await store.getHostState(host)) ?? {
+    ...emptyHostState(host),
+    key: host,
+  }
+  await store.saveHostState(markFlagged(state, now, reason, { loginGated }))
+}
+
+/** Mark a host as open: the canary succeeded. */
+async function openHost(store: Store, host: string, now: number): Promise<void> {
+  const state = (await store.getHostState(host)) ?? {
+    ...emptyHostState(host),
+    key: host,
+  }
+  await store.saveHostState(markOpen(state, now))
+}
+
+/**
+ * Park a link behind a login wall: the link moves to `needs_browser` with
+ * the reason `login_wall` in its state data.
+ */
+async function recordLoginWall(
+  store: Store,
+  link: Link,
+  host: string,
+  now: Date,
+  reason: string,
+): Promise<void> {
+  await store.setExtractedContent(link.id, '', true, now)
+  const outcome = await store.applyEvent(link.id, {
+    type: 'NEEDS_BROWSER',
+    host,
+    reason,
+    at: now.toISOString(),
+  })
+  if (!outcome.ok) {
+    // The link is no longer in a state that accepts the event: nothing to
+    // park.
+    return
+  }
+  // The expiry reason carries the wall reason for the login command.
+  await store.setExpiry(link.id, null, reason, now)
+}
+
+/**
+ * Decide whether the extracted page is a login wall. Returns the reason or
+ * null when the page is real content.
+ */
+function detectLoginWall(
+  raw: { markdown?: string; html?: string; finalUrl?: string; status?: number },
+  url: string,
+  policy: { hasProfile: boolean },
+): string | null {
+  const body = raw.html ?? raw.markdown ?? ''
+  if (isLoginWall({
+    url: raw.finalUrl ?? url,
+    body,
+    status: raw.status,
+    hasProfile: policy.hasProfile,
+  })) {
+    return LOGIN_WALL_REASON
+  }
+  return null
 }
 
 /** Attempts burned so far, read from the link's FSM history. */
 async function preAttempts(store: Store, linkId: number): Promise<number> {
   return attemptsOf(store, linkId)
-}
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host
-  } catch {
-    return ''
-  }
 }
 
 function bump(map: Map<string, number>, key: string): void {

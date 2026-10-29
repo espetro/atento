@@ -24,8 +24,7 @@ export interface ProgramOptions extends ContextOptions {
   enrichFn?: EnrichFn
 }
 
-export function createProgram(options: ProgramOptions = {}): Command {
-  const program = new Command()
+export function createProgram(options: ProgramOptions = {}): Command {  const program = new Command()
   program
     .name('linkinbox')
     .description('CLI/MCP-first link triage pipeline')
@@ -45,10 +44,14 @@ export function createProgram(options: ProgramOptions = {}): Command {
 
   const ttl = (): TtlConfig => options.config?.ttl ?? loadConfig(options.env).ttl
 
-  const extractFn = async (): Promise<ExtractFn> => {
+  const extractFn = async (ctx: CliContext): Promise<ExtractFn> => {
     if (options.extractFn) return options.extractFn
     const config = options.config ?? loadConfig(options.env)
-    return createExtractFn({ profilesDir: config.profilesDir })
+    return createExtractFn({
+      profilesDir: config.profilesDir,
+      limits: config.limits,
+      store: ctx.store,
+    })
   }
 
   const enrichFn = async (): Promise<EnrichFn> => {

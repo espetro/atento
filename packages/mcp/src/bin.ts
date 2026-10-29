@@ -22,7 +22,12 @@ const context: McpContext = {
 
 export const deps: McpDeps = {
   ctx: async () => context,
-  extractFn: async () => createExtractFn({ profilesDir: config.profilesDir }),
+  extractFn: async (ctx) =>
+    createExtractFn({
+      profilesDir: config.profilesDir,
+      limits: config.limits,
+      store: (ctx ?? context).store,
+    }),
   enrichFn: () => createEnrichFn(),
   close: async () => {
     await store.close()

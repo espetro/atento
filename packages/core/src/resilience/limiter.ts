@@ -7,16 +7,18 @@
  * Spacing rule: consecutive requests to the same host are at least
  * `intervalMs` apart, where the effective interval is the configured value
  * jittered by up to +/- 30 percent. On top of spacing, a host may admit at
- * most `dailyCap` requests per rolling calendar day. A host whose saved
- * browser profile exists or which matches the walled-garden list gets the
- * conservative profile by default.
+ * most `dailyCap` requests per rolling calendar day.
+ *
+ * There is no hardcoded list of walled gardens. A host gets the strict
+ * profile when the config lists it, when the canary probe flagged it, when
+ * it is login gated, or when it has a saved browser profile. The policy is
+ * decided by `hostPolicy`, the single source of truth shared with the router.
  */
 import {
   type Clock,
   type HostState,
   type Random,
   LLM_KEY,
-  WALLED_GARDENS,
   emptyHostState,
   mathRandom,
   systemClock,
@@ -62,8 +64,18 @@ export interface LimitsConfig {
   maxBatch: number
   /** Concurrency override for the llm key. */
   llmConcurrency: number
-  /** Hosts treated as walled gardens (config and defaults merged). */
+  /**
+   * Manual walled-garden override: listed hosts are FORCED onto the strict
+   * limits and browser routing. Ships empty by default; walled gardens are
+   * discovered by canary probing, not hardcoded.
+   */
   walledGardens: string[]
+  /**
+   * Hosts that are never fetched. Exact host (`gemini.google.com`) or a
+   * `*.suffix` wildcard (`*.duckduckgo.com` matches every subdomain too when
+   * the bare suffix is listed? No: the bare suffix must be listed itself).
+   */
+  skipHosts: string[]
   /** Per-host overrides keyed by host, e.g. from `[limits.hosts."x.com"]`. */
   hosts: Record<string, Partial<HostLimit>>
   /** When true, the pipeline skips the limiter and the breaker entirely. */
@@ -74,7 +86,8 @@ export const DEFAULT_LIMITS: LimitsConfig = {
   globalConcurrency: GLOBAL_CONCURRENCY,
   maxBatch: DEFAULT_MAX_BATCH,
   llmConcurrency: LLM_LIMIT.concurrency,
-  walledGardens: [...WALLED_GARDENS],
+  walledGardens: [],
+  skipHosts: [],
   hosts: {},
 }
 
@@ -82,8 +95,62 @@ const DAY_MS = 24 * 60 * 60 * 1000
 /** Jitter band applied to the spacing interval, as a fraction. */
 const JITTER_FRACTION = 0.3
 
-export function isWalledGarden(config: LimitsConfig, host: string, hasProfile: boolean): boolean {
-  return hasProfile || config.walledGardens.includes(host)
+/** How a host is policed. One shared decision for the router and the limiter. */
+export type HostPolicy = {
+  /** True when the host gets the strict (walled-garden) limits. */
+  strict: boolean
+  /** True when the host must be routed to the browser extractor. */
+  browser: boolean
+  /** True when links on this host are never fetched (skip-listed). */
+  skipped: boolean
+  /** Why the policy applies (skip-list, config override, canary flag, profile). */
+  reason: string | null
+}
+
+/**
+ * The single source of truth for a host's policy. The router injects this
+ * (via the pipeline) and the limiter calls it, so both surfaces agree.
+ *
+ * `trial` is the persisted canary outcome, `hasProfile` whether a browser
+ * login profile exists.
+ */
+export function hostPolicy(
+  config: LimitsConfig,
+  host: string,
+  options: {
+    hasProfile?: boolean
+    trialState?: HostState['trialState']
+    loginGated?: boolean
+  } = {},
+): HostPolicy {
+  if (matchesPattern(config.skipHosts, host)) {
+    return { strict: false, browser: false, skipped: true, reason: 'skip_list' }
+  }
+  if (config.walledGardens.includes(host)) {
+    return { strict: true, browser: true, skipped: false, reason: 'config_override' }
+  }
+  if (options.trialState === 'flagged') {
+    return { strict: true, browser: false, skipped: false, reason: 'canary_flagged' }
+  }
+  if (options.loginGated === true) {
+    return { strict: true, browser: true, skipped: false, reason: 'login_gated' }
+  }
+  if (options.hasProfile === true) {
+    return { strict: true, browser: true, skipped: false, reason: 'has_profile' }
+  }
+  return { strict: false, browser: false, skipped: false, reason: null }
+}
+
+/** True when the host matches the skip-list entry (exact host or `*.suffix`). */
+export function matchesPattern(patterns: string[], host: string): boolean {
+  const lower = host.toLowerCase()
+  return patterns.some((pattern) => {
+    if (pattern.startsWith('*.')) {
+      const suffix = pattern.slice(2).toLowerCase()
+      return lower === suffix || lower.endsWith(`.${suffix}`)
+    }
+    return lower === pattern.toLowerCase()
+  })
 }
 
 /** The effective limit for a host after config merges. */
@@ -91,11 +158,14 @@ export function limitForHost(
   config: LimitsConfig,
   host: string,
   hasProfile: boolean,
+  trialState: HostState['trialState'] = 'unknown',
+  loginGated = false,
 ): HostLimit {
   if (host === LLM_KEY) {
     return { ...LLM_LIMIT, concurrency: config.llmConcurrency }
   }
-  const base = isWalledGarden(config, host, hasProfile) ? WALLED_GARDEN_LIMIT : ORDINARY_LIMIT
+  const policy = hostPolicy(config, host, { hasProfile, trialState, loginGated })
+  const base = policy.strict ? WALLED_GARDEN_LIMIT : ORDINARY_LIMIT
   const override = config.hosts[host]
   if (override === undefined) return base
   return {
@@ -103,6 +173,21 @@ export function limitForHost(
     dailyCap: override.dailyCap ?? base.dailyCap,
     concurrency: override.concurrency ?? base.concurrency,
   }
+}
+
+/**
+ * Back-compat helper: the strict (walled-garden) verdict for a host. Strict
+ * now means "config override, flagged canary, login gate or saved profile".
+ */
+export function isWalledGarden(
+  config: LimitsConfig,
+  host: string,
+  hasProfile: boolean,
+  trialState: HostState['trialState'] = 'unknown',
+  loginGated = false,
+): boolean {
+  if (host === LLM_KEY) return false
+  return hostPolicy(config, host, { hasProfile, trialState, loginGated }).strict
 }
 
 /**
@@ -203,6 +288,54 @@ function retrySpacing(
   return { waitMs: Math.max(0, state.lastRequestAt + interval - now) }
 }
 
+/**
+ * Read the upstream pacing signals from a response and turn them into the
+ * moment the host may be contacted again.
+ *
+ * `Retry-After` is seconds or an HTTP date. `X-RateLimit-Reset` is a unix
+ * timestamp in seconds, `X-RateLimit-Remaining: 0` means "no budget left"
+ * and falls back to the host spacing. The strongest signal wins.
+ */
+export function pacingSignalMs(
+  headers: Record<string, string | undefined> | undefined,
+  now: number,
+  fallbackMs: number,
+): number {
+  if (!headers) return 0
+  const lower = new Map<string, string>()
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value === 'string') lower.set(key.toLowerCase(), value)
+  }
+
+  let waitMs = 0
+  const retryAfter = lower.get('retry-after')
+  if (retryAfter !== undefined) {
+    const seconds = Number(retryAfter.trim())
+    if (Number.isFinite(seconds)) waitMs = Math.max(waitMs, seconds * 1000)
+    else {
+      const at = Date.parse(retryAfter)
+      if (Number.isFinite(at)) waitMs = Math.max(waitMs, at - now)
+    }
+  }
+
+  const reset = lower.get('x-ratelimit-reset')
+  if (reset !== undefined) {
+    const seconds = Number(reset.trim())
+    if (Number.isFinite(seconds)) {
+      // The header is a unix timestamp in seconds; a small value is a delta.
+      const at = seconds > 1_000_000_000 ? seconds * 1000 : now + seconds * 1000
+      waitMs = Math.max(waitMs, at - now)
+    }
+  }
+
+  const remaining = lower.get('x-ratelimit-remaining')
+  if (remaining !== undefined && Number(remaining.trim()) === 0) {
+    waitMs = Math.max(waitMs, fallbackMs)
+  }
+
+  return Math.max(0, waitMs)
+}
+
 export interface LimiterDeps {
   load(key: string): Promise<HostState | null>
   save(state: HostState): Promise<void>
@@ -216,7 +349,7 @@ export interface LimiterDeps {
 export interface LimiterGate {
   admitted: boolean
   waitMs: number
-  reason?: 'spacing' | 'daily_cap' | 'concurrency'
+  reason?: 'spacing' | 'daily_cap' | 'concurrency' | 'rate_limited'
   windowResetsAt?: number
   state?: HostState
 }
@@ -229,8 +362,14 @@ export interface LimiterGate {
 export async function limiterGate(deps: LimiterDeps, key: string): Promise<LimiterGate> {
   const now = deps.clock()
   const hasProfile = key !== LLM_KEY ? await deps.hasProfile(key) : false
-  const limit = limitForHost(deps.config, key, hasProfile)
   const state = (await deps.load(key)) ?? emptyHostState(key)
+  const limit = limitForHost(deps.config, key, hasProfile, state.trialState, state.loginGated)
+  // An upstream "slow down" signal (Retry-After, X-RateLimit-Reset) extends
+  // the host spacing until that moment, whatever the configured interval is.
+  const rateLimitWait = state.rateLimitedUntil !== null ? Math.max(0, state.rateLimitedUntil - now) : 0
+  if (rateLimitWait > 0) {
+    return { admitted: false, waitMs: rateLimitWait, reason: 'rate_limited' }
+  }
   const verdict = gateHost(state, limit, now, 0, deps.random)
   if (verdict.admitted) {
     await deps.save(verdict.state)

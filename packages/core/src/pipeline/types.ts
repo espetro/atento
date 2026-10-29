@@ -40,6 +40,18 @@ export type ExtractFn = (url: string) => Promise<{
   blocked?: boolean
   /** Short reason for the block, e.g. "login_wall". */
   blockReason?: string
+  /**
+   * The HTTP status when the page is permanently gone (404 or 410). For a
+   * flagged, profile-backed or login-gated host a 404 means "private page",
+   * not "gone".
+   */
+  gone?: number
+  /** The final URL after redirects, for login-wall detection. */
+  finalUrl?: string
+  /** The HTTP status of the final response. */
+  status?: number
+  /** The raw HTML, for login-wall detection. */
+  html?: string
 }>
 
 /** Stage names, used as the `stage` column in `runs` and `metrics`. */

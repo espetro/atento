@@ -54,7 +54,7 @@ const TABLE: StateTable = {
   // extracting (leased): extraction finishes, gives up, defers, or dies.
   extracting: {
     EXTRACTED: (_s, e) => ({ state: 'extracted', chars: e.chars }),
-    NEEDS_BROWSER: (_s, e) => ({ state: 'needs_browser', host: e.host ?? '' }),
+    NEEDS_BROWSER: (_s, e) => ({ state: 'needs_browser', host: e.host ?? '', reason: e.reason }),
     EXTRACT_FAILED: (_s, e) => ({
       state: 'errored',
       stage: 'extract',

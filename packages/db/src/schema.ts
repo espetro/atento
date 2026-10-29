@@ -127,6 +127,11 @@ export const hostState = sqliteTable('host_state', {
   openedUntil: integer('opened_until'),
   cooldownLevel: integer('cooldown_level').notNull().default(0),
   lastError: text('last_error'),
+  trialState: text('trial_state').notNull().default('unknown'),
+  trialReason: text('trial_reason'),
+  trialAt: integer('trial_at'),
+  loginGated: integer('login_gated', { mode: 'boolean' }).notNull().default(false),
+  rateLimitedUntil: integer('rate_limited_until'),
 })
 
 /** Schema version and config snapshots. */
@@ -147,4 +152,4 @@ export type ProfileRow = typeof profiles.$inferSelect
 export type MetaRow = typeof meta.$inferSelect
 export type LinkEventRow = typeof linkEvents.$inferSelect
 
-export const SCHEMA_VERSION = '3'
+export const SCHEMA_VERSION = '4'

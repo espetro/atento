@@ -18,10 +18,11 @@ const needsBrowser = (): ExtractResult => ({ markdown: "", needsBrowser: true })
 
 function routerWith(
   overrides: Partial<Record<RouteChoice, Extractor>>,
-  opts: { minChars?: number } = {},
+  opts: { minChars?: number; hostPolicy?: (host: string) => { browser?: boolean; skipped?: boolean } } = {},
 ) {
   return createRouter({
-    ...opts,
+    minChars: opts.minChars,
+    hostPolicy: opts.hostPolicy,
     extractors: {
       defuddle: overrides.defuddle ?? fakeExtractor("defuddle", ok()),
       readability: overrides.readability ?? fakeExtractor("readability", ok()),
@@ -43,11 +44,22 @@ describe("routeFor (spec table)", () => {
     expect(routeFor("https://example.dev/paper.PDF")).toBe("pdf");
   });
 
-  it("routes walled gardens to browser", () => {
-    expect(routeFor("https://x.com/user/status/1")).toBe("browser");
-    expect(routeFor("https://twitter.com/user/status/1")).toBe("browser");
-    expect(routeFor("https://instagram.com/p/abc")).toBe("browser");
-    expect(routeFor("https://linkedin.com/posts/abc")).toBe("browser");
+  it("routes policy-gated hosts to browser (injected policy)", async () => {
+    const { createRouter } = await import("../src/router.js");
+    const router = createRouter({
+      hostPolicy: (host) => (host === "x.com" ? { browser: true } : {}),
+      extractors: {
+        defuddle: fakeExtractor("defuddle", ok()),
+        readability: fakeExtractor("readability", ok()),
+        browser: fakeExtractor("browser", ok()),
+        ytdlp: fakeExtractor("ytdlp", ok()),
+        pdf: fakeExtractor("pdf", ok()),
+      },
+    });
+    expect(await router.routeForWithPolicy("https://x.com/user/status/1")).toBe("browser");
+    expect(await router.routeForWithPolicy("https://example.com/post")).toBe("defuddle");
+    // Without a policy the bare rule-based route applies.
+    expect(routeFor("https://x.com/user/status/1")).toBe("defuddle");
   });
 
   it("routes everything else to defuddle", () => {
@@ -112,17 +124,23 @@ describe("router low-yield fallback chain", () => {
     expect(result.route).toBe("readability");
   });
 
-  it("walled-garden route goes straight to browser without defuddle fallback", async () => {
+  it("policy-gated route goes straight to browser without defuddle fallback", async () => {
     const calls: string[] = [];
-    const router = routerWith({
-      browser: fakeExtractor("browser", () => {
-        calls.push("browser");
-        return ok();
-      }),
-      defuddle: fakeExtractor("defuddle", () => {
-        calls.push("defuddle");
-        return ok();
-      }),
+    const router = createRouter({
+      hostPolicy: () => ({ browser: true }),
+      extractors: {
+        browser: fakeExtractor("browser", () => {
+          calls.push("browser");
+          return ok();
+        }),
+        defuddle: fakeExtractor("defuddle", () => {
+          calls.push("defuddle");
+          return ok();
+        }),
+        readability: fakeExtractor("readability", ok()),
+        ytdlp: fakeExtractor("ytdlp", ok()),
+        pdf: fakeExtractor("pdf", ok()),
+      },
     });
     const result = await router.extract("https://x.com/user/status/123");
     expect(result.route).toBe("browser");
@@ -132,7 +150,7 @@ describe("router low-yield fallback chain", () => {
   it("browser needsBrowser (no profile) is terminal, not escalated", async () => {
     const router = routerWith({
       browser: fakeExtractor("browser", needsBrowser()),
-    });
+    }, { hostPolicy: () => ({ browser: true }) });
     const result = await router.extract("https://instagram.com/p/xyz");
     expect(result.route).toBe("browser");
     expect(result.needsBrowser).toBe(true);

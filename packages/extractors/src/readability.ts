@@ -15,10 +15,14 @@ export function createReadabilityExtractor(options: ReadabilityExtractorOptions)
     name: "readability",
     async extract(url: string): Promise<ExtractResult> {
       let body: string;
+      let lastStatus: number | undefined;
       try {
         const res = await options.fetch(url);
+        lastStatus = res.status;
         if (res.status === 404 || res.status === 410) return { markdown: "", gone: res.status };
-        if (res.status >= 400) return { markdown: "", needsBrowser: true };
+        if (res.status >= 400) {
+          return { markdown: "", needsBrowser: true, status: res.status, finalUrl: url };
+        }
         body = res.body;
       } catch {
         return { markdown: "", needsBrowser: true };
@@ -54,6 +58,9 @@ export function createReadabilityExtractor(options: ReadabilityExtractorOptions)
             byline: article.byline || undefined,
             lang: article.lang || undefined,
           },
+          status: lastStatus,
+          finalUrl: url,
+          html: body,
         };
       } catch {
         return { markdown: "", needsBrowser: true };

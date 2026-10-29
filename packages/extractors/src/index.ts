@@ -22,4 +22,5 @@ export type {
   RouteChoice,
   RoutedExtractResult,
   ExtractAttempt,
+  HostRoutePolicy,
 } from "./router.js";

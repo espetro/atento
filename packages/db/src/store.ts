@@ -636,6 +636,11 @@ export class SqliteStore implements Store {
       openedUntil: state.openedUntil,
       cooldownLevel: state.cooldownLevel,
       lastError: state.lastError,
+      trialState: state.trialState,
+      trialReason: state.trialReason,
+      trialAt: state.trialAt,
+      loginGated: state.loginGated,
+      rateLimitedUntil: state.rateLimitedUntil,
     }
     this.db
       .insert(hostState)
@@ -681,6 +686,11 @@ function hostStateFromRow(row: {
   openedUntil: number | null
   cooldownLevel: number
   lastError: string | null
+  trialState?: string | null
+  trialReason?: string | null
+  trialAt?: number | null
+  loginGated?: boolean | number | null
+  rateLimitedUntil?: number | null
 }): HostState {
   return {
     key: row.key,
@@ -692,6 +702,11 @@ function hostStateFromRow(row: {
     openedUntil: row.openedUntil,
     cooldownLevel: row.cooldownLevel,
     lastError: row.lastError,
+    trialState: (row.trialState as HostState['trialState'] | null | undefined) ?? 'unknown',
+    trialReason: row.trialReason ?? null,
+    trialAt: row.trialAt ?? null,
+    loginGated: row.loginGated === true || row.loginGated === 1,
+    rateLimitedUntil: row.rateLimitedUntil ?? null,
   }
 }
 

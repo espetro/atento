@@ -270,6 +270,11 @@ describe('mcp limits_status', () => {
         openedUntil: Date.now() + 3600_000,
         cooldownLevel: 1,
         lastError: 'http_429',
+        trialState: 'flagged',
+        trialReason: 'http_429',
+        trialAt: Date.now(),
+        loginGated: false,
+        rateLimitedUntil: null,
       })
       const res = await h.client.callTool({ name: 'limits_status', arguments: {} })
       const { isError, data } = callJson(res)

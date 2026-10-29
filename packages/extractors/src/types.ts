@@ -20,6 +20,12 @@ export interface ExtractResult {
    * cannot fix this, so the router stops escalating and the caller errors.
    */
   gone?: number;
+  /** The HTTP status of the final response, for login-wall detection. */
+  status?: number;
+  /** The final URL after redirects, for login-wall detection. */
+  finalUrl?: string;
+  /** The raw HTML, so the caller can detect a password form. */
+  html?: string;
 }
 
 export interface Extractor {
@@ -34,7 +40,15 @@ export interface Extractor {
  * headers, and caching.
  */
 export interface Fetcher {
-  fetch(url: string): Promise<{ status: number; body: string; contentType?: string }>;
+  fetch(url: string): Promise<{
+    status: number
+    body: string
+    contentType?: string
+    /** Response headers (Retry-After, X-RateLimit-*), when available. */
+    headers?: Record<string, string | undefined>
+    /** The final URL after redirects. */
+    finalUrl?: string
+  }>
 }
 
 export type FetchLike = Fetcher["fetch"];

@@ -4,7 +4,6 @@
  */
 import type { Command } from 'commander'
 import {
-  DEFAULT_LIMITS,
   LLM_KEY,
   guardStatuses,
   guardDepsFromStore,
@@ -12,12 +11,11 @@ import {
 } from '@linkinbox/core'
 import type { CliContext } from '../context.js'
 
-/** Hosts to report: every tracked host_state key plus the defaults and llm. */
+/** Hosts to report: every tracked host_state key plus the llm key. */
 export async function statusKeys(ctx: CliContext): Promise<string[]> {
   const states = await ctx.store.listHostStates()
   const keys = new Set<string>(states.map((s) => s.key))
   keys.add(LLM_KEY)
-  for (const garden of DEFAULT_LIMITS.walledGardens) keys.add(garden)
   return [...keys].sort()
 }
 
@@ -31,6 +29,9 @@ export function renderStatus(
     remainingToday: number
     consecutiveFailures: number
     lastError: string | null
+    trialState?: string
+    trialReason?: string | null
+    rateLimitedUntil?: string | null
   }>,
 ): string[] {
   return rows.map((row) => {
@@ -39,7 +40,10 @@ export function renderStatus(
       : `${row.remainingToday}/${row.dailyCap} left`
     const reopen = row.reopensAt !== null ? ` reopens ${row.reopensAt}` : ''
     const err = row.lastError !== null ? ` last=${row.lastError}` : ''
-    return `${row.key}: breaker=${row.breakerState} budget=${cap}${reopen}${err}`
+    const trial = row.trialState !== undefined && row.trialState !== 'unknown'
+      ? ` trial=${row.trialState}${row.trialReason ? `:${row.trialReason}` : ''}`
+      : ''
+    return `${row.key}: breaker=${row.breakerState} budget=${cap}${reopen}${err}${trial}`
   })
 }
 

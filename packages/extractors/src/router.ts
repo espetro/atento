@@ -28,17 +28,20 @@ const VIDEO_HOSTS = new Set([
   "www.dailymotion.com",
 ]);
 
-/** Walled gardens: content behind auth/anti-bot, agent-browser required. */
-const WALLED_GARDENS = new Set([
-  "x.com",
-  "www.x.com",
-  "twitter.com",
-  "www.twitter.com",
-  "instagram.com",
-  "www.instagram.com",
-  "linkedin.com",
-  "www.linkedin.com",
-]);
+/**
+ * The routing decision for one host.
+ *
+ * The router has no hardcoded list of walled gardens: the host policy is
+ * injected by the caller (the pipeline reads it from the core host policy
+ * function, which knows about saved profiles, flagged canaries and the
+ * config skip-list).
+ */
+export interface HostRoutePolicy {
+  /** True when the host must be fetched with the browser extractor. */
+  browser?: boolean;
+  /** True when the host is skip-listed: its links are never fetched. */
+  skipped?: boolean;
+}
 
 export interface RouterOptions {
   fetch?: DefuddleExtractorOptions["fetch"] & ReadabilityExtractorOptions["fetch"];
@@ -50,11 +53,17 @@ export interface RouterOptions {
   minChars?: number;
   /** Overrides, mainly for tests. */
   extractors?: Partial<Record<RouteChoice, Extractor>>;
+  /**
+   * The host policy, injected from the core package: the single source of
+   * truth shared with the rate limiter.
+   */
+  hostPolicy?: (host: string) => HostRoutePolicy | Promise<HostRoutePolicy>;
 }
 
 export interface RouterDeps {
   extractors: Record<RouteChoice, Extractor>;
   minChars: number;
+  hostPolicy?: RouterOptions["hostPolicy"];
 }
 
 export function buildRouterDeps(options: RouterOptions = {}): RouterDeps {
@@ -62,6 +71,7 @@ export function buildRouterDeps(options: RouterOptions = {}): RouterDeps {
   const parseHtml = options.parseHtml;
   return {
     minChars: options.minChars ?? 200,
+    hostPolicy: options.hostPolicy,
     extractors: {
       defuddle: options.extractors?.defuddle ??
         createDefuddleExtractor({ fetch: fetch!, parseHtml: parseHtml! }),
@@ -87,7 +97,6 @@ export function routeFor(url: string): RouteChoice {
 
   if (pathname.endsWith(".pdf")) return "pdf";
   if (VIDEO_HOSTS.has(host)) return "ytdlp";
-  if (WALLED_GARDENS.has(host)) return "browser";
   return "defuddle";
 }
 
@@ -114,6 +123,25 @@ export function createRouter(options: RouterOptions = {}) {
 
   return {
     routeFor,
+    /**
+     * Route a URL. When a host policy is injected, a host that must use the
+     * browser (a saved profile, a flagged canary, a login gate or a manual
+     * config override) routes to the browser extractor.
+     */
+    async routeForWithPolicy(url: string): Promise<RouteChoice> {
+      const base = routeFor(url);
+      if (!deps.hostPolicy) return base;
+      let host: string;
+      try {
+        host = new URL(url).hostname.toLowerCase();
+      } catch {
+        return base;
+      }
+      const policy = await deps.hostPolicy(host);
+      if (policy?.skipped) return base;
+      if (policy?.browser) return "browser";
+      return base;
+    },
     async extract(url: string): Promise<RoutedExtractResult> {
       const attempts: ExtractAttempt[] = [];
       const tryOne = async (route: RouteChoice): Promise<RoutedExtractResult | null> => {
@@ -133,7 +161,7 @@ export function createRouter(options: RouterOptions = {}) {
         return null;
       };
 
-      const route = routeFor(url);
+      const route = await this.routeForWithPolicy(url);
       const first = await tryOne(route);
       if (first) return first;
 
