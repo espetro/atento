@@ -33,7 +33,8 @@
     "@linkinbox/extractors": "workspace:*",
     "@linkinbox/importers": "workspace:*",
     "commander": "^15.0.0",
-    "smol-toml": "^1.9.1"
+    "smol-toml": "^1.9.1",
+    "@linkinbox/server": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

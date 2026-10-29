@@ -10,6 +10,7 @@ import { dirname } from 'node:path'
 import type { EnrichFn, ExtractFn } from '@linkinbox/core'
 import { capture, tempDb, type TempDb } from './helpers.js'
 import { createProgram } from '../src/program.js'
+import { runServe } from '../src/commands/metrics.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fixtures = join(here, '..', '..', '..', 'fixtures', 'importers')
@@ -35,6 +36,25 @@ const mockEnrich: EnrichFn = async () => ({
   tokensOut: 5,
   modelId: 'mock-model',
 })
+
+function serveContext(db: TempDb): never {
+  return {
+    store: db.store,
+    config: {
+      dbPath: db.path,
+      ttl: {
+        default_days: 30,
+        by_category: {},
+        archive_after_days: 90,
+        delete_after_days: 365,
+      },
+      profilesDir: '/tmp',
+      dir: '/tmp',
+    },
+    logger: { info() {}, error() {}, warn() {}, debug() {} },
+    close: async () => {},
+  } as never
+}
 
 async function runProgram(
   db: TempDb,
@@ -127,11 +147,41 @@ describe('program: run then list then triage', () => {
     }
   })
 
-  it('reports that the server is not available when the package is missing', async () => {
+  it('serve hands over to @linkinbox/server and serves the api', async () => {
     const db = await tempDb()
     try {
-      const out = await runProgram(db, ['serve'])
-      expect(out.stdout).toContain('server not available')
+      const out = await capture(async () => {
+        const started = await new Promise<{ port: number; close(): Promise<void> }>(
+          (resolveServer) => {
+            void runServe(serveContext(db), 0, resolveServer)
+          },
+        )
+        const res = await fetch(`http://127.0.0.1:${started.port}/api/links`)
+        expect(res.status).toBe(200)
+        const body = (await res.json()) as { items: unknown[] }
+        expect(Array.isArray(body.items)).toBe(true)
+        await started.close()
+      })
+      expect(out.stdout).toContain('serving on http://localhost:')
+    } finally {
+      await db.cleanup()
+    }
+  })
+
+  it('serve starts the real server and answers /api/links', async () => {
+    const db = await tempDb()
+    try {
+      const out = await capture(async () => {
+        const started = await new Promise<{ port: number; close(): Promise<void> }>(
+          (resolveServer) => {
+            void runServe(serveContext(db), 0, resolveServer)
+          },
+        )
+        const res = await fetch(`http://127.0.0.1:${started.port}/`)
+        expect(res.status).toBeGreaterThan(0)
+        await started.close()
+      })
+      expect(out.stdout).toContain('serving on http://localhost:')
     } finally {
       await db.cleanup()
     }

@@ -121,8 +121,13 @@ async function loadEvalModule(runnerPath?: string): Promise<EvalModule> {
   return null
 }
 
-/** serve: stub that hands over to @linkinbox/server when it is installed. */
-export async function runServe(ctx: CliContext, port?: number): Promise<boolean> {
+/** serve: hands over to @linkinbox/server, which serves api and ui on one port. */
+export async function runServe(
+  ctx: CliContext,
+  port?: number,
+  /** Test hook: receives the started server handle. */
+  onStart?: (server: { port: number; close(): Promise<void> }) => void,
+): Promise<boolean> {
   let mod: { startServer?: (opts: unknown) => Promise<unknown> } | null = null
   try {
     // Indirected so @linkinbox/server stays optional at build time.
@@ -135,7 +140,15 @@ export async function runServe(ctx: CliContext, port?: number): Promise<boolean>
     console.log('server not available: @linkinbox/server is not installed')
     return false
   }
-  await mod.startServer({ port, store: ctx.store, config: ctx.config })
+  const envPort = Number(process.env['LINKINBOX_PORT'] ?? '')
+  const effective = port ?? (Number.isFinite(envPort) && envPort > 0 ? envPort : 4173)
+  console.log(`serving on http://localhost:${effective}`)
+  const started = (await mod.startServer({
+    port: effective,
+    store: ctx.store,
+    config: ctx.config,
+  })) as { port: number; close(): Promise<void> }
+  onStart?.(started)
   return true
 }
 
