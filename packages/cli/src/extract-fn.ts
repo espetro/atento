@@ -107,6 +107,9 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
     return {
       markdown: result.markdown,
       title: result.title,
+      // Site metadata (og:type, twitter:card, author, ...): the media stage
+      // detects video pages from it. Booleans and plain values only.
+      meta: stripMeta(meta),
       needsBrowser: result.needsBrowser === true,
       extractor: result.route,
       blocked: blockedMeta || (wall && result.needsBrowser !== true),
@@ -123,6 +126,17 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
       html: result.html,
     }
   }
+}
+
+/** Keep only JSON-safe scalar metadata values. */
+function stripMeta(meta: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(meta)) {
+    if (value === null || value === undefined) continue
+    const t = typeof value
+    if (t === 'string' || t === 'boolean' || t === 'number') out[key] = value
+  }
+  return out
 }
 
 /** Adapt the plain test fetch into the shape the router wants. */
