@@ -12,6 +12,7 @@ import {
   hostPolicy,
   isLoginWall,
   type LimitsConfig,
+  type PacingConfig,
   type Store,
 } from '@linkinbox/core'
 import { createRouter, type RouterOptions } from '@linkinbox/extractors'
@@ -30,6 +31,8 @@ export interface RouterExtractOptions extends RouterOptions {
   }>
   /** The config limits: the skip-list and the manual walled-garden override. */
   limits?: LimitsConfig
+  /** The human pacing profile: the dwell time before reading a page. */
+  pacing?: PacingConfig
   /** The store, for the persisted canary state and the saved profiles. */
   store?: Store
 }
@@ -42,11 +45,30 @@ export interface RouterExtractOptions extends RouterOptions {
 export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
   const limits = options.limits
   const store = options.store
+  const pacing = options.pacing
   const router = createRouter({
     ...options,
     fetch: options.fetchImpl ? adaptFetch(options.fetchImpl) : defaultFetch,
     browser: {
       profilesDir: options.profilesDir,
+      // Human pacing: dwell the sampled time and scroll a little before
+      // reading, so a logged-in session does not look like a script. The
+      // sleep is the real one; tests inject fakes at the extractor level.
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms).unref?.()),
+      scroll: async (px) => {
+        const { execFile } = await import('node:child_process')
+        await new Promise<void>((resolve) => {
+          execFile(
+            options.browser?.command ?? 'agent-browser',
+            ['scroll', 'down', String(px)],
+            { timeout: 10_000 },
+            () => resolve(),
+          )
+        })
+      },
+      dwellMs: options.pacing
+        ? Math.min(options.pacing.dwellMaxS, options.pacing.dwellMedianS) * 1000
+        : undefined,
       ...options.browser,
     },
     // The host policy: one shared function from the core package. Skipped

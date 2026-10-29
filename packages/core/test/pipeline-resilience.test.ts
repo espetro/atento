@@ -483,8 +483,10 @@ describe('pipeline: limiter state survives a store reload', () => {
     clock.advance(1000)
     expect(await gate(guard2)).toBe('defer')
 
-    // After the full interval the budget is available again.
-    clock.advance(WALLED_GARDEN_LIMIT.intervalMs * 1.35)
+    // After the full human-pacing spacing window the budget is back: the
+    // sampled spacing is at most dwellMax * 1.3 seconds, so six minutes
+    // clears any draw.
+    clock.advance(6 * 60 * 1000)
     expect(await gate(guard2)).toBe('ok')
     await store1.close()
   })

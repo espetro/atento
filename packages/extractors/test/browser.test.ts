@@ -103,3 +103,59 @@ describe("browser extractor: login wall detection", () => {
     expect(result.meta?.["emptyPage"]).toBe(true);
   });
 });
+
+describe("browser extractor: human pacing", () => {
+  it("waits the dwell time and scrolls before reading, in order", async () => {
+    const events: string[] = [];
+    let scrolls: number[] = [];
+    const exec: ExecLike = async () => {
+      events.push("read");
+      return { code: 0, stdout: "# page\n\ncontent", stderr: "" };
+    };
+    const extractor = createBrowserExtractor({
+      exec,
+      profileExists: () => true,
+      dwellMs: 20_000,
+      scrollPx: 350,
+      sleep: async (ms) => {
+        events.push(`dwell:${ms}`);
+      },
+      scroll: async (px) => {
+        scrolls.push(px);
+        events.push("scroll");
+      },
+    });
+    const result = await extractor.extract("https://x.com/post/3");
+    expect(result.markdown).toBe("# page\n\ncontent");
+    expect(events).toEqual(["dwell:20000", "scroll", "read"]);
+    expect(scrolls).toEqual([350]);
+  });
+
+  it("does not sleep or scroll when the functions are not injected", async () => {
+    const calls: string[][] = [];
+    const exec: ExecLike = async (_file, args) => {
+      calls.push(args);
+      return { code: 0, stdout: "content", stderr: "" };
+    };
+    const extractor = createBrowserExtractor({ exec, profileExists: () => true });
+    await extractor.extract("https://x.com/post/4");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("does not dwell when the profile is missing", async () => {
+    let slept = false;
+    const extractor = createBrowserExtractor({
+      exec: execOk("unreachable"),
+      profileExists: () => false,
+      sleep: async () => {
+        slept = true;
+      },
+      scroll: async () => {
+        slept = true;
+      },
+    });
+    const result = await extractor.extract("https://x.com/post/5");
+    expect(result.meta?.["missingProfile"]).toBe(true);
+    expect(slept).toBe(false);
+  });
+});

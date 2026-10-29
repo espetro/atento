@@ -28,6 +28,11 @@ import {
   type LimiterGate,
 } from './limiter.js'
 import { retry, type RetryPolicy, type Sleep } from './retry.js'
+import {
+  DEFAULT_PACING,
+  pacingGate,
+  type PacingConfig,
+} from './human-pacing.js'
 
 /** The persistence surface the guard needs from the Store. */
 export interface HostStateStore {
@@ -39,11 +44,14 @@ export interface GuardConfig {
   limits: LimitsConfig
   breaker: BreakerProfile
   retry: RetryPolicy
+  /** Human pacing profile for strict (walled-garden) hosts. */
+  pacing?: PacingConfig
 }
 
 export const DEFAULT_GUARD_CONFIG: GuardConfig = {
   limits: DEFAULT_LIMITS,
   breaker: DEFAULT_BREAKER,
+  pacing: DEFAULT_PACING,
   retry: {
     maxAttempts: 3,
     baseDelayMs: 1000,
@@ -257,6 +265,7 @@ function limiterDepsOf(deps: GuardDeps): Parameters<typeof limiterGate>[0] {
     random: deps.random,
     config: deps.config.limits,
     hasProfile: (host) => deps.hasProfile(host),
+    pacing: deps.config.pacing,
   }
 }
 

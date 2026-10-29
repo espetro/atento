@@ -15,9 +15,29 @@ export interface BrowserExtractorOptions {
   timeoutMs?: number;
   /** Override profile-existence check (tests). */
   profileExists?: (dir: string) => boolean;
+  /**
+   * Wait before reading the page, so a logged-in session looks human.
+   * Injected so tests never really sleep. When absent no dwell happens.
+   */
+  sleep?: (ms: number) => Promise<void>;
+  /**
+   * Human-like scroll before reading. Injected so tests need no browser.
+   * When absent no scroll happens.
+   */
+  scroll?: (pixels: number) => Promise<void>;
+  /** Sampled dwell time in ms; defaults to the pacing median (20s). */
+  dwellMs?: number;
+  /** Sampled scroll distance in px; defaults to a small human-like step. */
+  scrollPx?: number;
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
+
+/** Default dwell before reading a page: the pacing median. */
+const DEFAULT_DWELL_MS = 20_000;
+
+/** Default scroll distance: a small, human-sized step. */
+const DEFAULT_SCROLL_PX = 420;
 
 /**
  * Markers of a login wall or a block page. When one of these shows up the
@@ -95,6 +115,8 @@ export function createBrowserExtractor(options: BrowserExtractorOptions = {}): E
   const exec = options.exec ?? defaultExec;
   const exists =
     options.profileExists ?? ((dir: string) => existsSync(dir));
+  const dwellMs = options.dwellMs ?? DEFAULT_DWELL_MS;
+  const scrollPx = options.scrollPx ?? DEFAULT_SCROLL_PX;
 
   return {
     name: "browser",
@@ -104,6 +126,12 @@ export function createBrowserExtractor(options: BrowserExtractorOptions = {}): E
         return { markdown: "", needsBrowser: true, meta: { missingProfile: true } };
       }
       try {
+        // Human pacing: after the page loads, wait the sampled dwell time
+        // and scroll a little before reading, so the session does not look
+        // like a script. Both are injected, so tests never sleep and never
+        // need a browser.
+        if (options.sleep) await options.sleep(dwellMs);
+        if (options.scroll) await options.scroll(scrollPx);
         const result = await exec(
           command,
           ["--headless", "--profile", profileDir, "read", url],

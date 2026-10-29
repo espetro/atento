@@ -204,6 +204,15 @@ ALTER TABLE links ADD COLUMN captured INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE links ADD COLUMN captured_at INTEGER;
 `,
   },
+  {
+    name: '0006_human_pacing',
+    sql: `
+-- Human pacing for strict hosts: pages served since the last long break and
+-- the drawn pages-per-cycle, so the break cadence survives restarts.
+ALTER TABLE host_state ADD COLUMN pages_since_break INTEGER;
+ALTER TABLE host_state ADD COLUMN break_every INTEGER;
+`,
+  },
 ]
 
 const META_TABLE = `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`

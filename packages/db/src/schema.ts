@@ -135,6 +135,9 @@ export const hostState = sqliteTable('host_state', {
   trialAt: integer('trial_at'),
   loginGated: integer('login_gated', { mode: 'boolean' }).notNull().default(false),
   rateLimitedUntil: integer('rate_limited_until'),
+  /** Human pacing: pages since the last long break, and the drawn cycle. */
+  pagesSinceBreak: integer('pages_since_break'),
+  breakEvery: integer('break_every'),
 })
 
 /** Schema version and config snapshots. */
@@ -155,4 +158,4 @@ export type ProfileRow = typeof profiles.$inferSelect
 export type MetaRow = typeof meta.$inferSelect
 export type LinkEventRow = typeof linkEvents.$inferSelect
 
-export const SCHEMA_VERSION = '4'
+export const SCHEMA_VERSION = '6'
