@@ -24,13 +24,13 @@
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
     "defuddle": "~0.19.6",
+    "linkedom": "^0.18.14",
     "pdfjs-dist": "^6.4.299",
     "turndown": "^7.2.4"
   },
   "devDependencies": {
     "@types/node": "^25.0.0",
     "@types/turndown": "^5.0.5",
-    "linkedom": "^0.18.0",
     "typescript": "^5.9.0",
     "vitest": "^3.0.0"
   },

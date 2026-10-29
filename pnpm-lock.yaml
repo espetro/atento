@@ -181,6 +181,9 @@ importers:
       defuddle:
         specifier: ~0.19.6
         version: 0.19.6
+      linkedom:
+        specifier: ^0.18.14
+        version: 0.18.14
       pdfjs-dist:
         specifier: ^6.4.299
         version: 6.4.299
@@ -194,9 +197,6 @@ importers:
       '@types/turndown':
         specifier: ^5.0.5
         version: 5.0.6
-      linkedom:
-        specifier: ^0.18.0
-        version: 0.18.14
       typescript:
         specifier: ^5.9.0
         version: 5.9.3
