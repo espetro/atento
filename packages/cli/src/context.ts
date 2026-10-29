@@ -36,6 +36,7 @@ export async function createContext(options: ContextOptions = {}): Promise<CliCo
   const env = options.env ?? process.env
   const config = loadConfig(env)
   mkdirSync(dirname(config.dbPath), { recursive: true })
+  const ownsStore = options.store === undefined
   const store = options.store ?? (await openStore({ path: config.dbPath }))
   const logging = setupLogging({
     path: options.logPath ?? env['LINKINBOX_LOG_FILE'],
@@ -47,7 +48,8 @@ export async function createContext(options: ContextOptions = {}): Promise<CliCo
     store,
     logger: pipelineLogger('cli'),
     async close() {
-      await store.close()
+      // An injected store belongs to the caller: only close what we opened.
+      if (ownsStore) await store.close()
       disposeLogging()
     },
   }

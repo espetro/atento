@@ -141,7 +141,12 @@ export async function runTriage(ctx: CliContext, opts: TriageOptions): Promise<v
 
   let ids = opts.ids ?? []
   if (opts.batch) {
-    const rows = await listLinks(ctx.store, { fields: ['id'], limit: 100000 })
+    // The batch filter needs the fields it filters on, so they are requested
+    // explicitly (the default projection is deliberately compact).
+    const rows = await listLinks(ctx.store, {
+      fields: ['id', 'status', 'category', 'title'],
+      limit: 100000,
+    })
     const filtered = applyFilter(rows, opts.filter)
     ids = filtered.map((r) => Number(r['id']))
     if (ids.length === 0) {
