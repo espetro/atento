@@ -14,6 +14,7 @@ import {
   type EnrichFn,
   type ExtractFn,
   type GuardDeps,
+  type MediaFn,
 } from '@linkinbox/core'
 import { loadConfig } from '../config.js'
 import type { CliContext } from '../context.js'
@@ -25,6 +26,25 @@ function guardFor(ctx: CliContext): GuardDeps | undefined {
   return guardDepsFromStore(ctx.store, {
     config: { limits, pacing: ctx.config.pacing },
   })
+}
+
+/** Extract options shared by the extract and run commands. */
+function extractOptions(
+  ctx: CliContext,
+  extractFn: ExtractFn,
+  mediaFn: MediaFn | undefined,
+  limit?: number,
+) {
+  return {
+    extract: extractFn,
+    limit,
+    guard: guardFor(ctx),
+    maxBatch: (ctx.config.limits ?? DEFAULT_LIMITS).maxBatch,
+    // The media stage runs inside extract for video links; the store-backed
+    // budget lives in the media adapter, so no budget wiring here.
+    ...(mediaFn ? { media: mediaFn } : {}),
+    logger: pipelineLogger('extract'),
+  }
 }
 
 export interface RunOutcome {
@@ -61,14 +81,9 @@ export async function runExtract(
   ctx: CliContext,
   extractFn: ExtractFn,
   limit?: number,
+  mediaFn?: MediaFn,
 ): Promise<void> {
-  const outcome = await extract(ctx.store, {
-    extract: extractFn,
-    limit,
-    guard: guardFor(ctx),
-    maxBatch: (ctx.config.limits ?? DEFAULT_LIMITS).maxBatch,
-    logger: pipelineLogger('extract'),
-  })
+  const outcome = await extract(ctx.store, extractOptions(ctx, extractFn, mediaFn, limit))
   printStage(outcome)
   if (outcome.deferredCount > 0) {
     console.log(`(${outcome.deferredCount} deferred; retry in ${Math.round(outcome.retryAfter / 1000)}s)`)
@@ -77,6 +92,9 @@ export async function runExtract(
     console.log(
       `(${outcome.needsBrowserCount} need a browser; run \`linkinbox login <host>\` and re-run)`,
     )
+  }
+  if (outcome.mediaCount > 0) {
+    console.log(`(${outcome.mediaCount} media link${outcome.mediaCount === 1 ? '' : 's'} processed)`)
   }
 }
 
@@ -108,7 +126,7 @@ export async function runAll(
   files: string[],
   extractFn: ExtractFn,
   enrichFn: EnrichFn,
-  options: { limit?: number } = {},
+  options: { limit?: number; mediaFn?: MediaFn } = {},
 ): Promise<RunAllResult> {
   const result: RunAllResult = {}
   if (files.length > 0) {
@@ -126,13 +144,10 @@ export async function runAll(
     printStage(outcome)
   }
 
-  const extractOutcome = await extract(ctx.store, {
-    extract: extractFn,
-    limit: options.limit,
-    guard: guardFor(ctx),
-    maxBatch: (ctx.config.limits ?? DEFAULT_LIMITS).maxBatch,
-    logger: pipelineLogger('extract'),
-  })
+  const extractOutcome = await extract(
+    ctx.store,
+    extractOptions(ctx, extractFn, options.mediaFn, options.limit),
+  )
   result.extract = extractOutcome
   printStage(extractOutcome)
 
@@ -155,6 +170,7 @@ export function registerPipelineCommands(
     ctx: () => Promise<CliContext>
     extractFn: (ctx: CliContext) => Promise<ExtractFn>
     enrichFn: () => Promise<EnrichFn>
+    mediaFn?: (ctx: CliContext) => Promise<MediaFn>
   },
 ): void {
   program
@@ -178,7 +194,7 @@ export function registerPipelineCommands(
     .action(async (opts: { limit?: number }) => {
       const ctx = await deps.ctx()
       try {
-        await runExtract(ctx, await deps.extractFn(ctx), opts.limit)
+        await runExtract(ctx, await deps.extractFn(ctx), opts.limit, await deps.mediaFn?.(ctx))
       } finally {
         await ctx.close()
       }
@@ -205,7 +221,10 @@ export function registerPipelineCommands(
     .action(async (files: string[], opts: { limit?: number }) => {
       const ctx = await deps.ctx()
       try {
-        await runAll(ctx, files, await deps.extractFn(ctx), await deps.enrichFn(), opts)
+        await runAll(ctx, files, await deps.extractFn(ctx), await deps.enrichFn(), {
+          limit: opts.limit,
+          mediaFn: await deps.mediaFn?.(ctx),
+        })
       } finally {
         await ctx.close()
       }

@@ -68,16 +68,15 @@ export function createProgram(options: ProgramOptions = {}): Command {  const pr
     return createEnrichFn()
   }
 
-  const mediaFn = (): Promise<MediaFn> => {
+  const mediaFn = (ctx: CliContext): Promise<MediaFn> => {
     if (options.mediaFn) return Promise.resolve(options.mediaFn)
     const build = async (): Promise<MediaFn> => {
-      const context = await ctx()
       const config = options.config ?? loadConfig(options.env)
       const limits = config.limits ?? DEFAULT_LIMITS
       const guard =
         limits.disabled === true
           ? undefined
-          : guardDepsFromStore(context.store, {
+          : guardDepsFromStore(ctx.store, {
               config: { limits, pacing: config.pacing },
             })
       return createMediaFn({
@@ -85,18 +84,27 @@ export function createProgram(options: ProgramOptions = {}): Command {  const pr
         config: config.media,
         guard,
         asr: options.asr,
+        store: ctx.store,
       })
     }
     return build()
   }
 
-  registerPipelineCommands(program, { ctx, extractFn, enrichFn })
+  registerPipelineCommands(program, {
+    ctx,
+    extractFn,
+    enrichFn,
+    mediaFn: (ctx: CliContext) => mediaFn(ctx),
+  })
   registerLinkCommands(program, { ctx })
   registerMaintenanceCommands(program, { ctx, ttl })
   registerLoginCommand(program, { ctx })
   registerReportingCommands(program, { ctx })
   registerResilienceCommands(program, { ctx })
-  registerMediaCommand(program, { ctx, mediaFn })
+  registerMediaCommand(program, {
+    ctx,
+    mediaFn: async () => await mediaFn(await ctx()),
+  })
 
   return program
 }
