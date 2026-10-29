@@ -151,7 +151,7 @@ export function registerPipelineCommands(
   program: Command,
   deps: {
     ctx: () => Promise<CliContext>
-    extractFn: () => Promise<ExtractFn>
+    extractFn: (ctx: CliContext) => Promise<ExtractFn>
     enrichFn: () => Promise<EnrichFn>
   },
 ): void {
@@ -176,7 +176,7 @@ export function registerPipelineCommands(
     .action(async (opts: { limit?: number }) => {
       const ctx = await deps.ctx()
       try {
-        await runExtract(ctx, await deps.extractFn(), opts.limit)
+        await runExtract(ctx, await deps.extractFn(ctx), opts.limit)
       } finally {
         await ctx.close()
       }
@@ -203,7 +203,7 @@ export function registerPipelineCommands(
     .action(async (files: string[], opts: { limit?: number }) => {
       const ctx = await deps.ctx()
       try {
-        await runAll(ctx, files, await deps.extractFn(), await deps.enrichFn(), opts)
+        await runAll(ctx, files, await deps.extractFn(ctx), await deps.enrichFn(), opts)
       } finally {
         await ctx.close()
       }

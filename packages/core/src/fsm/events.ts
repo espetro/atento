@@ -41,6 +41,8 @@ export const extractedEvent = baseEvent.extend({
 export const needsBrowserEvent = baseEvent.extend({
   type: z.literal('NEEDS_BROWSER'),
   host: z.string().optional(),
+  /** Why a browser is needed, e.g. `login_wall` or `private_404`. */
+  reason: z.string().optional(),
 })
 export const extractFailedEvent = baseEvent.extend({
   type: z.literal('EXTRACT_FAILED'),

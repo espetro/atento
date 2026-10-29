@@ -235,7 +235,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
       {
         const guard: GuardDeps = guardDepsFromStore(ctx.store)
         const outcome = await extract(ctx.store, {
-          extract: await deps.extractFn(),
+          extract: await deps.extractFn(ctx),
           limit: args.limit,
           guard,
           maxBatch: DEFAULT_LIMITS.maxBatch,
@@ -297,10 +297,11 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
       const ctx = await deps.ctx()
       {
         const guard: GuardDeps = guardDepsFromStore(ctx.store)
+        // Report the hosts that have state; there is no hardcoded default
+        // list, so an untouched install reports only the llm key.
         const states = await ctx.store.listHostStates()
         const keys = new Set<string>(states.map((s) => s.key))
         keys.add(LLM_KEY)
-        for (const garden of DEFAULT_LIMITS.walledGardens) keys.add(garden)
         const rows = await guardStatuses(guard, [...keys].sort())
         return json({
           hosts: rows.map((row) => ({
@@ -315,6 +316,10 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
             lastRequestAt: row.lastRequestAt,
             consecutiveFailures: row.consecutiveFailures,
             lastError: row.lastError,
+            trialState: row.trialState,
+            trialReason: row.trialReason,
+            rateLimitedUntil: row.rateLimitedUntil,
+            policy: row.policy,
           })),
         })
       }
