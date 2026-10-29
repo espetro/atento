@@ -6,6 +6,9 @@
  */
 import type { Store, LinkFilter } from './store.js'
 import type { Link, Status, Enrichment } from './types.js'
+import type { LinkStateName, LinkState } from './fsm/index.js'
+import type { LinkHistoryEntry } from './store.js'
+import { isTerminal, parseLinkState } from './fsm/index.js'
 import { planSweep, planPrune, type SweepPlan, type PrunePlan } from './sweep.js'
 import type { TtlConfig } from './ttl.js'
 
@@ -33,6 +36,8 @@ export type LinkField =
   | 'needsBrowser'
   | 'createdAt'
   | 'updatedAt'
+  | 'state'
+  | 'stateData'
 
 /** Default projection: identity + triage state, no bulky content. */
 export const DEFAULT_LINK_FIELDS: LinkField[] = [
@@ -84,6 +89,8 @@ export function projectLink(link: Link, fields?: LinkField[]): LinkProjection {
       case 'needsBrowser': out.needsBrowser = link.needsBrowser; break
       case 'createdAt': out.createdAt = iso(link.createdAt); break
       case 'updatedAt': out.updatedAt = iso(link.updatedAt); break
+      case 'state': out.state = link.state; break
+      case 'stateData': out.stateData = link.stateData; break
     }
   }
   return out
@@ -92,6 +99,8 @@ export function projectLink(link: Link, fields?: LinkField[]): LinkProjection {
 /** Filter accepted by ops.listLinks (a superset of the store filter). */
 export interface ListLinksOptions {
   status?: Status
+  /** Filter on the FSM state instead of the legacy status projection. */
+  state?: LinkStateName
   category?: string
   /** Include only links whose expiresAt has passed as of now. */
   stale?: boolean
@@ -110,7 +119,8 @@ export async function listLinks(
 ): Promise<LinkProjection[]> {
   const now = options.now ?? new Date()
   const filter: LinkFilter = {
-    status: options.status,
+    status: options.state !== undefined ? (options.state as Status) : options.status,
+    byState: options.state !== undefined,
     category: options.category,
     staleAsOf: options.stale ? now : undefined,
     offset: options.offset,
@@ -244,11 +254,64 @@ export async function prune(
   return planPrune(links, { now, ttl })
 }
 
-/** Execute a prune plan: hard-delete. Called only after user confirmation. */
+/**
+ * Execute a prune plan. FSM semantics: the row is NOT removed. The link moves
+ * to the terminal `deleted` state and the bulky content is purged, but
+ * `url_hash` is kept so a re-import of the same URL is a no-op and can never
+ * resurrect it. This refines the plan's hard-delete wording.
+ */
 export async function applyPrune(store: Store, plan: PrunePlan): Promise<number> {
   const ids = plan.items.map((i) => i.linkId)
   if (ids.length === 0) return 0
   return store.deleteLinks(ids)
+}
+
+/** Restore links to the inbox. Only parked states are restorable. */
+export async function restore(
+  store: Store,
+  ids: number[],
+  now: Date = new Date(),
+): Promise<{ requested: number[]; updated: number; missing: number[]; blocked: number[] }> {
+  const unique = [...new Set(ids)]
+  const missing: number[] = []
+  const blocked: number[] = []
+  let updated = 0
+  for (const id of unique) {
+    const link = await store.getLink(id)
+    if (!link) {
+      missing.push(id)
+      continue
+    }
+    const state = parseLinkState(link.state, link.stateData)
+    if (isTerminal(state)) {
+      blocked.push(id)
+      continue
+    }
+    const outcome = await store.applyEvent(id, { type: 'RESTORE', at: now.toISOString() })
+    if (outcome.ok) updated += 1
+    else blocked.push(id)
+  }
+  return { requested: unique, updated, missing, blocked }
+}
+
+/** Append-only transition history for one link. */
+export async function linkHistory(
+  store: Store,
+  id: number,
+): Promise<LinkHistoryEntry[]> {
+  return store.getHistory(id)
+}
+
+/** Current FSM state of one link. */
+export async function linkState(store: Store, id: number): Promise<LinkState | null> {
+  return store.getState(id)
+}
+
+/** Histogram: how many links sit in each state. */
+export async function stateHistogram(
+  store: Store,
+): Promise<Record<LinkStateName, number>> {
+  return store.countByState()
 }
 
 /** Range strings accepted by metricsSummary: `24h`, `7d`, `30d`, `2w`. */
@@ -281,6 +344,8 @@ export interface MetricsSummary {
   since: string
   until: string
   stages: StageSummary[]
+  /** Histogram of links per FSM state. */
+  states: Record<LinkStateName, number>
 }
 
 /**
@@ -375,5 +440,6 @@ export async function metricsSummary(
   }
 
   const stages = [...byStage.values()].sort((a, b) => a.stage.localeCompare(b.stage))
-  return { since: since.toISOString(), until: now.toISOString(), stages }
+  const states = await store.countByState()
+  return { since: since.toISOString(), until: now.toISOString(), stages, states }
 }

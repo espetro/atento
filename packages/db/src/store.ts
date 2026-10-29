@@ -151,8 +151,9 @@ export class SqliteStore implements Store {
     // FSM: a freshly stored link starts in the state that matches its
     // legacy status column, so old rows and new rows agree.
     if (!input.state) {
-      row.state = stateForLegacyStatus(row.status)
-      row.stateData = dataForLegacyStatus(row.status, row, now)
+      const legacy = row.status ?? 'inbox'
+      row.state = stateForLegacyStatus(legacy)
+      row.stateData = dataForLegacyStatus(legacy, row, now)
     }
     const inserted = this.db
       .insert(links)
@@ -611,7 +612,7 @@ function stateForLegacyStatus(status: string): string {
 
 function dataForLegacyStatus(
   status: string,
-  row: LinkRow,
+  row: Partial<LinkRow>,
   now: Date,
 ): Record<string, unknown> | null {
   switch (status) {
