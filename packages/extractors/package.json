@@ -1,0 +1,42 @@
+{
+  "name": "@linkinbox/extractors",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Content extraction for linkinbox: defuddle primary, readability fallback, browser/ytdlp/pdf subprocess extractors, rule-based router",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "defuddle": "~0.19.6",
+    "jsdom": "^30.1.3",
+    "pdfjs-dist": "^6.4.299",
+    "turndown": "^7.2.4"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^25.0.0",
+    "@types/turndown": "^5.0.5",
+    "linkedom": "^0.18.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
