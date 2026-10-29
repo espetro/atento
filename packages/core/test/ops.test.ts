@@ -69,7 +69,10 @@ describe('ops.listLinks', () => {
 
     const rows = await listLinks(store, { now: NOW })
     expect(rows).toHaveLength(3)
-    expect(Object.keys(rows[0]!).sort()).toEqual(['category', 'id', 'status', 'title', 'url'])
+    expect(Object.keys(rows[0]!).sort()).toEqual([
+      'action', 'category', 'expiresAt', 'expiryReason', 'id', 'needsBrowser',
+      'priority', 'readMinutes', 'status', 'title', 'url',
+    ])
     expect(rows[0]).not.toHaveProperty('extracted_content')
     expect(JSON.stringify(rows)).not.toContain('a long markdown body')
   })
@@ -155,7 +158,10 @@ describe('ops.projectLink', () => {
       createdAt: NOW,
       updatedAt: NOW,
     }
-    expect(Object.keys(projectLink(link))).toEqual(['id', 'url', 'title', 'status', 'category'])
+    expect(Object.keys(projectLink(link))).toEqual([
+      'id', 'url', 'title', 'status', 'category', 'priority', 'action',
+      'expiresAt', 'expiryReason', 'readMinutes', 'needsBrowser',
+    ])
     expect(Object.keys(projectLink(link, ['url', 'extracted_content']))).toEqual([
       'url',
       'extracted_content',
@@ -305,15 +311,27 @@ describe('ops snapshots', () => {
     expect(stable(sorted)).toMatchInlineSnapshot(`
       [
         {
+          "action": null,
           "category": "job",
+          "expiresAt": "2026-10-27T12:00:00.000Z",
+          "expiryReason": null,
           "id": 1,
+          "needsBrowser": false,
+          "priority": null,
+          "readMinutes": null,
           "status": "inbox",
           "title": "One",
           "url": "https://example.com/one",
         },
         {
+          "action": null,
           "category": "event",
+          "expiresAt": "2026-11-03T12:00:00.000Z",
+          "expiryReason": null,
           "id": 2,
+          "needsBrowser": false,
+          "priority": null,
+          "readMinutes": null,
           "status": "inbox",
           "title": "Two",
           "url": "https://example.com/two",

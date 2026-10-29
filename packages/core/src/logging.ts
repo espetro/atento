@@ -21,6 +21,16 @@ import {
 import { getFileSink } from '@logtape/file'
 import type { PipelineLogger } from './pipeline/types.js'
 
+/** A console object that writes every method to stderr. */
+const stderrConsole: Console = {
+  log: (...args: unknown[]) => console.error(...args),
+  info: (...args: unknown[]) => console.error(...args),
+  warn: (...args: unknown[]) => console.error(...args),
+  error: (...args: unknown[]) => console.error(...args),
+  debug: (...args: unknown[]) => console.error(...args),
+  trace: (...args: unknown[]) => console.error(...args),
+} as Console
+
 export const DEFAULT_LOG_PATH = join(homedir(), '.linkinbox', 'log.jsonl')
 
 export interface LoggingOptions {
@@ -71,7 +81,9 @@ export function setupLogging(options: LoggingOptions = {}): LoggingSetup {
     ),
   }
   if (options.console !== false) {
-    sinks['console'] = withFilter(getConsoleSink(), consoleLevel)
+    // Everything goes to stderr so command output (json, tables) stays clean
+    // on stdout.
+    sinks['console'] = withFilter(getConsoleSink({ console: stderrConsole }), consoleLevel)
   }
   const sinkIds = Object.keys(sinks)
 

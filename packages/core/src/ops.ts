@@ -35,7 +35,19 @@ export type LinkField =
   | 'updatedAt'
 
 /** Default projection: identity + triage state, no bulky content. */
-export const DEFAULT_LINK_FIELDS: LinkField[] = ['id', 'url', 'title', 'status', 'category']
+export const DEFAULT_LINK_FIELDS: LinkField[] = [
+  'id',
+  'url',
+  'title',
+  'status',
+  'category',
+  'priority',
+  'action',
+  'expiresAt',
+  'expiryReason',
+  'readMinutes',
+  'needsBrowser',
+]
 
 /** Compact link projection: only requested fields, extracted content opt-in. */
 export type LinkProjection = Record<string, unknown>
