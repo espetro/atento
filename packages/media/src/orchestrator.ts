@@ -81,7 +81,12 @@ export async function runMediaStage(
     }
 
     // transcript
-    const budget = options.budget ?? createInMemoryBudget({ dailyCap: config?.dailyCap ?? 20 })
+    const budget =
+      options.budget ??
+      createInMemoryBudget({
+        dailyCap: config?.dailyCap ?? 20,
+        dailyCaps: config?.dailyCaps,
+      })
     const allowed = await budget.consume('transcript')
     if (!allowed) {
       results.push({
