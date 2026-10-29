@@ -1,0 +1,6 @@
+{
+  "items": [
+    { "url": "https://example.com/items/1", "title": "First item" },
+    { "url": "https://example.com/items/2", "title": "Second item", "tags": "a,b" }
+  ]
+}

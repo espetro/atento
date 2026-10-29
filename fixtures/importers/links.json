@@ -1,0 +1,19 @@
+[
+  {
+    "url": "https://example.com/json-array/1",
+    "title": "First JSON item",
+    "note": "array form",
+    "tags": ["json", "array"],
+    "addedAt": "2026-01-05T10:00:00.000Z"
+  },
+  {
+    "url": "https://example.com/json-array/2",
+    "title": "Second JSON item",
+    "tags": ["json"]
+  },
+  "https://example.com/json-array/3",
+  {
+    "url": "https://example.com/json-array/4?utm_source=rss",
+    "description": "stripped url"
+  }
+]

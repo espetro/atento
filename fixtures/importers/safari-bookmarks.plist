@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <key>WebBookmarkFileVersion</key>
+        <integer>1</integer>
+        <key>WebBookmarkType</key>
+        <string>WebBookmarkTypeList</string>
+        <key>Title</key>
+        <string>BookmarksBar</string>
+        <key>Children</key>
+        <array>
+            <dict>
+                <key>WebBookmarkType</key>
+                <string>WebBookmarkTypeList</string>
+                <key>Title</key>
+                <string>com.apple.ReadingList</string>
+                <key>WebBookmarkUUID</key>
+                <string>1d0a13e7-4d83-44cc-82c5-8fb5016ebaf7</string>
+                <key>Children</key>
+                <array>
+                    <dict>
+                        <key>WebBookmarkType</key>
+                        <string>WebBookmarkTypeLeaf</string>
+                        <key>URLString</key>
+                        <string>https://example.com/rl/job-posting</string>
+                        <key>URIDictionary</key>
+                        <dict>
+                            <key>title</key>
+                            <string>Senior Engineer at ExampleCo</string>
+                        </dict>
+                        <key>WebBookmarkUUID</key>
+                        <string>62c47451-5396-4311-8a55-32f3dae1e296</string>
+                        <key>ReadingList</key>
+                        <dict>
+                            <key>DateAdded</key>
+                            <date>2026-09-01T12:00:00Z</date>
+                            <key>PreviewText</key>
+                            <string>We are hiring a senior engineer...</string>
+                        </dict>
+                    </dict>
+                    <dict>
+                        <key>WebBookmarkType</key>
+                        <string>WebBookmarkTypeLeaf</string>
+                        <key>URLString</key>
+                        <string>https://example.com/rl/event-2026</string>
+                        <key>URIDictionary</key>
+                        <dict>
+                            <key>title</key>
+                            <string>ExampleConf 2026</string>
+                        </dict>
+                        <key>WebBookmarkUUID</key>
+                        <string>2a9b78c3-2a15-453a-ac1d-c181b2c7adb1</string>
+                        <key>ReadingList</key>
+                        <dict>
+                            <key>DateAdded</key>
+                            <date>2026-09-02T09:30:00Z</date>
+                            <key>PreviewText</key>
+                            <string>A conference about things.</string>
+                            <key>DateLastViewed</key>
+                            <date>2026-09-05T09:30:00Z</date>
+                        </dict>
+                    </dict>
+                    <dict>
+                        <key>WebBookmarkType</key>
+                        <string>WebBookmarkTypeLeaf</string>
+                        <key>URLString</key>
+                        <string>https://example.com/rl/guide-sqlite</string>
+                        <key>URIDictionary</key>
+                        <dict>
+                            <key>title</key>
+                            <string>SQLite guide</string>
+                        </dict>
+                        <key>WebBookmarkUUID</key>
+                        <string>7a39ec80-8de0-4999-93d0-108db0ab697f</string>
+                        <key>ReadingList</key>
+                        <dict>
+                            <key>DateAdded</key>
+                            <date>2026-09-10T18:00:00Z</date>
+                            <key>PreviewText</key>
+                            <string>How SQLite works, notes on internals.</string>
+                        </dict>
+                    </dict>
+                    <dict>
+                        <key>WebBookmarkType</key>
+                        <string>WebBookmarkTypeLeaf</string>
+                        <key>URLString</key>
+                        <string>https://example.com/rl/no-preview</string>
+                        <key>URIDictionary</key>
+                        <dict>
+                            <key>title</key>
+                            <string>No preview entry</string>
+                        </dict>
+                        <key>WebBookmarkUUID</key>
+                        <string>cc4c1974-da51-459d-bd6c-b5b54fe2f172</string>
+                        <key>ReadingList</key>
+                        <dict>
+                            <key>DateAdded</key>
+                            <date>2026-09-15T08:00:00Z</date>
+                        </dict>
+                    </dict>
+                    <dict>
+                        <key>WebBookmarkType</key>
+                        <string>WebBookmarkTypeLeaf</string>
+                        <key>URLString</key>
+                        <string>https://example.com/rl/tracked?utm_source=safari</string>
+                        <key>URIDictionary</key>
+                        <dict>
+                            <key>title</key>
+                            <string>Tracked link</string>
+                        </dict>
+                        <key>WebBookmarkUUID</key>
+                        <string>a1fef2b3-b5d9-49dc-b594-33acc74819bb</string>
+                        <key>ReadingList</key>
+                        <dict>
+                            <key>DateAdded</key>
+                            <date>2026-09-20T14:00:00Z</date>
+                            <key>PreviewText</key>
+                            <string>Has utm params.</string>
+                        </dict>
+                    </dict>
+                </array>
+            </dict>
+            <dict>
+                <key>WebBookmarkType</key>
+                <string>WebBookmarkTypeLeaf</string>
+                <key>URLString</key>
+                <string>https://example.com/bookmarks-bar/1</string>
+                <key>URIDictionary</key>
+                <dict>
+                    <key>title</key>
+                    <string>Plain bookmark, not Reading List</string>
+                </dict>
+                <key>WebBookmarkUUID</key>
+                <string>48d2cf5f-e695-457a-8011-147ac7f9a554</string>
+            </dict>
+            <dict>
+                <key>WebBookmarkType</key>
+                <string>WebBookmarkTypeProxy</string>
+                <key>Title</key>
+                <string>BookmarksMenu</string>
+            </dict>
+        </array>
+    </dict>
+</plist>
