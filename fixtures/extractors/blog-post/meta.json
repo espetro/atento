@@ -1,0 +1,8 @@
+{
+  "url": "https://example-blog.dev/posts/durable-link-inbox",
+  "slug": "blog-post",
+  "expectedTitle": "Building a Durable Link Inbox",
+  "charRange": { "min": 600, "max": 1800 },
+  "mustContain": ["archive the content when you ingest the link", "routing decision"],
+  "mustNotContain": ["Sign in", "Subscribe", "Cookie", "Archive\\n", "RSS"]
+}

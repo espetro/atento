@@ -1,0 +1,8 @@
+{
+  "url": "https://theoverthinker.substack.example/p/the-case-against-endless-saving",
+  "slug": "substack-post",
+  "expectedTitle": "The Case Against Endless Saving",
+  "charRange": { "min": 500, "max": 1800 },
+  "mustContain": ["tiny contract with your future self", "reason"],
+  "mustNotContain": ["Sign in", "Subscribe", "Cookie", "2 min read"]
+}

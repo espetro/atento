@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+<head>
+<title>Release Notes 4.2</title>
+<meta charset="utf-8">
+</head>
+<body>
+<h1>Release Notes 4.2</h1>
+<p>The 4.2 release focuses on extraction reliability and adds a configuration file that removes the need for environment variables in the common case.</p>
+<h2>Highlights</h2>
+<ul>
+  <li>Extraction yield is now measured per extractor and reported in the metrics output.</li>
+  <li>The router escalates to a browser extraction when a static pass returns almost nothing.</li>
+  <li>Video extraction prefers the auto-generated transcript over the description.</li>
+</ul>
+<h2>Fixes</h2>
+<p>Fixed an issue where pages with a large navigation element were leaking nav text into the extracted markdown.</p>
+<p>Fixed a crash when a saved link pointed at a URL that no longer resolved.</p>
+<h2>Upgrade notes</h2>
+<p>No schema migration is required. Existing databases keep working and the new columns are added on first run.</p>
+</body>
+</html>

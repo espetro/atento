@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Configuration | LinkInbox Docs</title>
+<meta name="description" content="Configure TTLs, extractors, and the enrichment provider.">
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="sidebar-toggle">Menu</div>
+    <a class="logo" href="/">LinkInbox Docs</a>
+    <form class="search"><input type="search" placeholder="Search docs"></form>
+    <a class="cta" href="/signup">Sign in</a>
+  </header>
+  <div class="layout">
+    <aside class="sidebar">
+      <nav>
+        <p class="nav-title">Getting started</p>
+        <a href="/docs/intro">Introduction</a>
+        <a href="/docs/install">Installation</a>
+        <p class="nav-title">Guides</p>
+        <a href="/docs/config">Configuration</a>
+        <a href="/docs/extractors">Extractors</a>
+        <a href="/docs/ttl">TTL and expiry</a>
+      </nav>
+    </aside>
+    <main class="content">
+      <article class="doc">
+        <h1>Configuration</h1>
+        <p>LinkInbox reads a single TOML file at <code>~/.linkinbox/config.toml</code>. Every value has a working default, so the file is optional until you want to change behaviour.</p>
+        <h2>TTL section</h2>
+        <p>The <code>ttl</code> section controls how long content stays fresh before it is proposed for archiving.</p>
+        <pre><code>[ttl]
+default_days = 30
+archive_after_days = 90
+delete_after_days = 365
+
+[ttl.by_category]
+job = 45
+event = 7
+guide = 90</code></pre>
+        <p>Category-specific values override <code>default_days</code>. Anything not listed falls back to the default.</p>
+        <h2>Extractor section</h2>
+        <p>The <code>extractors</code> section names the binaries used for browser-backed and video extraction.</p>
+        <pre><code>[extractors]
+browser_command = "agent-browser"
+ytdlp_command = "yt-dlp"</code></pre>
+        <h2>Enrichment section</h2>
+        <p>Enrichment calls one structured-output endpoint. The provider is selected by environment variable so no provider name is hardcoded.</p>
+        <pre><code>[enrich]
+model = "bifrost/structured"
+base_url = "${ENRICH_BASE_URL}"</code></pre>
+        <p>Session state is read from the browser profile, never from the config file.</p>
+        <h2>Notes</h2>
+        <ul>
+          <li>Precedence is section key, then environment variable, then default.</li>
+          <li>Relative paths in the config file resolve against the config file directory.</li>
+          <li>Restart is not required; config is re-read on each run.</li>
+        </ul>
+      </article>
+    </main>
+  </div>
+  <footer>
+    <p>Subscribe to the changelog</p>
+    <p>Cookie settings</p>
+  </footer>
+</div>
+</body>
+</html>

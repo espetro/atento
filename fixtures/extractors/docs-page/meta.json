@@ -1,0 +1,20 @@
+{
+  "url": "https://docs.example.dev/docs/config",
+  "slug": "docs-page",
+  "expectedTitle": "LinkInbox Docs",
+  "charRange": {
+    "min": 500,
+    "max": 2000
+  },
+  "mustContain": [
+    "default_days",
+    "extractors"
+  ],
+  "mustNotContain": [
+    "Sign in",
+    "Subscribe",
+    "Cookie",
+    "Search docs",
+    "sidebar-toggle"
+  ]
+}

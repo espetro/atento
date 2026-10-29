@@ -1,0 +1,18 @@
+{
+  "url": "https://releases.example.dev/4.2",
+  "slug": "plain-html",
+  "expectedTitle": "Release Notes 4.2",
+  "charRange": {
+    "min": 200,
+    "max": 1500
+  },
+  "mustContain": [
+    "4.2 release focuses on extraction reliability",
+    "schema migration"
+  ],
+  "mustNotContain": [
+    "Sign in",
+    "Subscribe",
+    "Cookie"
+  ]
+}

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Building a Durable Link Inbox - Signal and Noise</title>
+<meta name="description" content="Notes on building a link triage pipeline that survives real inbox rot.">
+<meta name="author" content="Ada Fields">
+<meta property="og:title" content="Building a Durable Link Inbox">
+<meta property="og:type" content="article">
+<meta name="article:published_time" content="2026-03-14T09:00:00.000Z">
+<link rel="canonical" href="https://example-blog.dev/posts/durable-link-inbox">
+</head>
+<body>
+<header class="site-header">
+  <nav class="site-nav">
+    <a href="/">Signal and Noise</a>
+    <a href="/archive">Archive</a>
+    <a href="/about">About</a>
+    <a href="/login">Sign in</a>
+    <a href="/subscribe">Subscribe</a>
+  </nav>
+</header>
+<main>
+  <article>
+    <h1>Building a Durable Link Inbox</h1>
+    <p class="byline">By Ada Fields, 14 March 2026</p>
+    <p>Every link you save is a promise to your future self. Most of those promises break quietly, because the page behind them changes, moves, or disappears without warning.</p>
+    <h2>Store content at ingest time</h2>
+    <p>The first rule is simple: archive the content when you ingest the link, not when you read it. By the time you come back, the live page may already be gone.</p>
+    <ul>
+      <li>Fetch once, store markdown alongside the URL.</li>
+      <li>Record which extractor produced the content.</li>
+      <li>Flag pages that need a real browser session.</li>
+    </ul>
+    <p>Storing the extracted markdown also means your triage views never depend on a page staying reachable. The link becomes a reference, not a dependency.</p>
+    <h2>Extraction is a solved problem, mostly</h2>
+    <p>Static pages extract cleanly with a DOM-based readability pass. The hard cases are the ones that need JavaScript, and the honest answer for those is to run a browser, not to write a better parser.</p>
+    <blockquote>
+      <p>Extraction quality is a routing decision, not a parsing problem.</p>
+    </blockquote>
+    <p>Measure yield per extractor. If a page comes back nearly empty, escalate to a different extractor rather than shipping empty content into your inbox.</p>
+    <h2>Expiry is a decision you can make later</h2>
+    <p>Nothing needs to be deleted automatically. A sweep proposes what is stale; you approve it. Archiving is cheap, deleting is not.</p>
+  </article>
+</main>
+<footer class="site-footer">
+  <nav>
+    <a href="/privacy">Privacy</a>
+    <a href="/terms">Terms</a>
+    <a href="/rss">RSS</a>
+  </nav>
+  <p>Cookie policy and preferences</p>
+</footer>
+</body>
+</html>
