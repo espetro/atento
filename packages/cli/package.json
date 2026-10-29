@@ -32,6 +32,7 @@
     "@linkinbox/db": "workspace:*",
     "@linkinbox/enrich": "workspace:*",
     "@linkinbox/extractors": "workspace:*",
+    "@linkinbox/media": "workspace:*",
     "@linkinbox/importers": "workspace:*",
     "commander": "^15.0.0",
     "smol-toml": "^1.9.1",

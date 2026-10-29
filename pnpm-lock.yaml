@@ -212,6 +212,9 @@ importers:
       '@linkinbox/importers':
         specifier: workspace:*
         version: link:../importers
+      '@linkinbox/media':
+        specifier: workspace:*
+        version: link:../media
       '@linkinbox/server':
         specifier: workspace:*
         version: link:../server
