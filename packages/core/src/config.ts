@@ -27,11 +27,18 @@ function num(value: unknown): number | undefined {
  *   global_concurrency = 8
  *   max_batch = 20
  *   llm_concurrency = 3
+ *   skip_hosts = ["gemini.google.com", "*.duckduckgo.com"]
+ *   walled_gardens = ["example.com"]
  *
  *   [limits.hosts."x.com"]
  *   interval_ms = 45000
  *   daily_cap = 40
  *   concurrency = 1
+ *
+ * `skip_hosts` are never fetched. `walled_gardens` is an optional manual
+ * override that FORCES the strict limits and browser routing for the listed
+ * hosts; it ships with no default entries because walled gardens are
+ * discovered by canary probing.
  */
 export function limitsFromToml(toml: TomlTable): LimitsConfig {
   const limits = toml['limits']
@@ -39,6 +46,7 @@ export function limitsFromToml(toml: TomlTable): LimitsConfig {
     ...DEFAULT_LIMITS,
     hosts: {},
     walledGardens: [...DEFAULT_LIMITS.walledGardens],
+    skipHosts: [...DEFAULT_LIMITS.skipHosts],
   }
   if (!limits || typeof limits !== 'object' || Array.isArray(limits)) return out
   const table = limits as TomlTable
@@ -51,7 +59,15 @@ export function limitsFromToml(toml: TomlTable): LimitsConfig {
   if (llmConcurrency !== undefined) out.llmConcurrency = Math.max(1, llmConcurrency)
   const gardens = table['walled_gardens']
   if (Array.isArray(gardens)) {
-    out.walledGardens = gardens.filter((g): g is string => typeof g === 'string')
+    out.walledGardens = gardens
+      .filter((g): g is string => typeof g === 'string')
+      .map((g) => g.toLowerCase())
+  }
+  const skipHosts = table['skip_hosts']
+  if (Array.isArray(skipHosts)) {
+    out.skipHosts = skipHosts
+      .filter((h): h is string => typeof h === 'string')
+      .map((h) => h.toLowerCase())
   }
 
   const hosts = table['hosts']

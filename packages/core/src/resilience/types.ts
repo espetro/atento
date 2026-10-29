@@ -17,6 +17,17 @@ export const mathRandom: Random = () => Math.random()
 export type BreakerStateName = 'closed' | 'open' | 'half_open'
 
 /**
+ * The canary trial outcome for a host.
+ *
+ * `unknown`: the host was never probed. The first link of the host is the
+ * canary and decides the outcome.
+ * `open`: the canary succeeded, the host behaves normally.
+ * `flagged`: the canary was rate limited or blocked, the host gets the
+ * conservative (walled-garden) limits until the flag expires.
+ */
+export type HostTrialState = 'unknown' | 'open' | 'flagged'
+
+/**
  * One row of the host_state table. Keyed by host or by the reserved key
  * `llm` for the enrichment gateway. The limiter and breaker load and save
  * through this record so CLI runs, the server and MCP share budget.
@@ -37,6 +48,16 @@ export interface HostState {
   /** Exponential cooldown level (0-based); grows per re-open. */
   cooldownLevel: number
   lastError: string | null
+  /** Canary trial outcome for this host. */
+  trialState: HostTrialState
+  /** Why the host was flagged (rate limit, challenge, login wall). */
+  trialReason: string | null
+  /** When the trial was recorded (ms epoch). */
+  trialAt: number | null
+  /** True when the host answered with a login wall. */
+  loginGated: boolean
+  /** The upstream asked us to slow down until this time (ms epoch). */
+  rateLimitedUntil: number | null
 }
 
 export function emptyHostState(key: string): HostState {
@@ -50,6 +71,11 @@ export function emptyHostState(key: string): HostState {
     openedUntil: null,
     cooldownLevel: 0,
     lastError: null,
+    trialState: 'unknown',
+    trialReason: null,
+    trialAt: null,
+    loginGated: false,
+    rateLimitedUntil: null,
   }
 }
 
@@ -69,15 +95,3 @@ export interface ErrorSignal {
 export type UpstreamError = { status?: number; code?: string; message?: string } | Error
 
 export const LLM_KEY = 'llm'
-
-/** Hosts whose automated access can get an account banned. */
-export const WALLED_GARDENS = [
-  'x.com',
-  'www.x.com',
-  'twitter.com',
-  'www.twitter.com',
-  'instagram.com',
-  'www.instagram.com',
-  'linkedin.com',
-  'www.linkedin.com',
-]

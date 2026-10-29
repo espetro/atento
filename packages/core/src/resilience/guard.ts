@@ -18,10 +18,11 @@ import {
 } from './breaker.js'
 import {
   DEFAULT_LIMITS,
+  hostPolicy,
   limitForHost,
   limiterGate,
   remainingBudget,
-  isWalledGarden,
+  type HostPolicy,
   type LimitsConfig,
   type LimiterDeps,
   type LimiterGate,
@@ -194,6 +195,14 @@ export interface GuardStatus {
   lastRequestAt: string | null
   consecutiveFailures: number
   lastError: string | null
+  /** Canary trial outcome for this host. */
+  trialState: HostState['trialState']
+  /** Why the host was flagged. */
+  trialReason: string | null
+  /** When the upstream "slow down" signal expires. */
+  rateLimitedUntil: string | null
+  /** The shared host policy (skip, strict, browser routing). */
+  policy: HostPolicy
 }
 
 /** Build the status row for every tracked key. */
@@ -204,22 +213,29 @@ export async function guardStatuses(
   const now = deps.clock()
   const out: GuardStatus[] = []
   for (const key of keys) {
-    const state = (await deps.getHostState(key)) ?? emptyHostState(key)
     const hasProfile = key !== LLM_KEY ? await deps.hasProfile(key) : false
-    const limit = limitForHost(deps.config.limits, key, hasProfile)
-    const remaining = remainingBudget(state, limit, now)
-    out.push({
-      key,
-      breakerState: state.breakerState,
-      reopensAt: state.breakerState === 'open' && state.openedUntil !== null
-        ? new Date(state.openedUntil).toISOString()
-        : null,
-      dailyCap: Number.isFinite(limit.dailyCap) ? limit.dailyCap : 'unlimited',
-      remainingToday: remaining === Number.POSITIVE_INFINITY ? Number.POSITIVE_INFINITY : remaining,
-      lastRequestAt: state.lastRequestAt !== null ? new Date(state.lastRequestAt).toISOString() : null,
-      consecutiveFailures: state.consecutiveFailures,
-      lastError: state.lastError,
-    })
+    const state = (await deps.getHostState(key)) ?? emptyHostState(key)
+    const limit = limitForHost(deps.config.limits, key, hasProfile, state.trialState, state.loginGated)
+  const remaining = remainingBudget(state, limit, now)
+  const policy = key !== LLM_KEY
+    ? hostPolicy(deps.config.limits, key, { hasProfile, trialState: state.trialState, loginGated: state.loginGated })
+    : { strict: false, browser: false, skipped: false, reason: null }
+  out.push({
+    key,
+    breakerState: state.breakerState,
+    reopensAt: state.breakerState === 'open' && state.openedUntil !== null
+      ? new Date(state.openedUntil).toISOString()
+      : null,
+    dailyCap: Number.isFinite(limit.dailyCap) ? limit.dailyCap : 'unlimited',
+    remainingToday: remaining === Number.POSITIVE_INFINITY ? Number.POSITIVE_INFINITY : remaining,
+    lastRequestAt: state.lastRequestAt !== null ? new Date(state.lastRequestAt).toISOString() : null,
+    consecutiveFailures: state.consecutiveFailures,
+    lastError: state.lastError,
+    trialState: state.trialState,
+    trialReason: state.trialReason,
+    rateLimitedUntil: state.rateLimitedUntil !== null ? new Date(state.rateLimitedUntil).toISOString() : null,
+    policy,
+  })
   }
   return out
 }
@@ -244,7 +260,7 @@ function limiterDepsOf(deps: GuardDeps): Parameters<typeof limiterGate>[0] {
   }
 }
 
-export { isWalledGarden }
+export { hostPolicy, isWalledGarden } from './limiter.js'
 
 /** Convenience re-exports for surfaces. */
 export type { ErrorSignal, HostState, LimiterGate }

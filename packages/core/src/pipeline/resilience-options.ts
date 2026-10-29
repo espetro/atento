@@ -13,5 +13,6 @@ export const UNLIMITED_LIMITS = {
   maxBatch: 1000,
   llmConcurrency: 1000,
   walledGardens: [] as string[],
+  skipHosts: [] as string[],
   hosts: {},
 }
