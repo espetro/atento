@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openStore, type SqliteStore } from '@linkinbox/db'
 import { normalizeUrl, type Link } from '@linkinbox/core'
+import { UNLIMITED_LIMITS } from '@linkinbox/core'
 
 export interface TempDb {
   path: string
@@ -28,6 +29,15 @@ export async function tempDb(): Promise<TempDb> {
       rmSync(dir, { recursive: true, force: true })
     },
   }
+}
+
+/**
+ * Limits config with no throttling at all. The CLI tests run many links
+ * against the same fake host in a second, so the production spacing and daily
+ * cap would defer them. The resilience tests inject their own limits.
+ */
+export function unlimitedLimits(): typeof UNLIMITED_LIMITS {
+  return UNLIMITED_LIMITS
 }
 
 /** Insert a link with the given fields into the store. */

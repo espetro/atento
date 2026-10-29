@@ -4,8 +4,26 @@
  */
 import type { Command } from 'commander'
 import { importFile } from '@linkinbox/importers'
-import { enrich, extract, ingest, pipelineLogger, type EnrichFn, type ExtractFn } from '@linkinbox/core'
+import {
+  enrich,
+  extract,
+  guardDepsFromStore,
+  ingest,
+  pipelineLogger,
+  DEFAULT_LIMITS,
+  type EnrichFn,
+  type ExtractFn,
+  type GuardDeps,
+} from '@linkinbox/core'
+import { loadConfig } from '../config.js'
 import type { CliContext } from '../context.js'
+
+/** Build a guard over the store, using the CLI config limits. */
+function guardFor(ctx: CliContext): GuardDeps | undefined {
+  const limits = ctx.config.limits ?? DEFAULT_LIMITS
+  if (limits.disabled === true) return undefined
+  return guardDepsFromStore(ctx.store, { config: { limits } })
+}
 
 export interface RunOutcome {
   stage: string
@@ -45,9 +63,14 @@ export async function runExtract(
   const outcome = await extract(ctx.store, {
     extract: extractFn,
     limit,
+    guard: guardFor(ctx),
+    maxBatch: (ctx.config.limits ?? DEFAULT_LIMITS).maxBatch,
     logger: pipelineLogger('extract'),
   })
   printStage(outcome)
+  if (outcome.deferredCount > 0) {
+    console.log(`(${outcome.deferredCount} deferred; retry in ${Math.round(outcome.retryAfter / 1000)}s)`)
+  }
   if (outcome.needsBrowserCount > 0) {
     console.log(
       `(${outcome.needsBrowserCount} need a browser; run \`linkinbox login <host>\` and re-run)`,
@@ -60,10 +83,15 @@ export async function runEnrich(ctx: CliContext, enrichFn: EnrichFn, limit?: num
   const outcome = await enrich(ctx.store, {
     enrich: enrichFn,
     limit,
+    guard: guardFor(ctx),
+    maxBatch: (ctx.config.limits ?? DEFAULT_LIMITS).maxBatch,
     ttl: ctx.config.ttl,
     logger: pipelineLogger('enrich'),
   })
   printStage(outcome)
+  if (outcome.deferredCount > 0) {
+    console.log(`(${outcome.deferredCount} deferred; retry in ${Math.round(outcome.retryAfter / 1000)}s)`)
+  }
 }
 
 export interface RunAllResult {
@@ -99,6 +127,8 @@ export async function runAll(
   const extractOutcome = await extract(ctx.store, {
     extract: extractFn,
     limit: options.limit,
+    guard: guardFor(ctx),
+    maxBatch: (ctx.config.limits ?? DEFAULT_LIMITS).maxBatch,
     logger: pipelineLogger('extract'),
   })
   result.extract = extractOutcome
@@ -107,6 +137,8 @@ export async function runAll(
   const enrichOutcome = await enrich(ctx.store, {
     enrich: enrichFn,
     limit: options.limit,
+    guard: guardFor(ctx),
+    maxBatch: (ctx.config.limits ?? DEFAULT_LIMITS).maxBatch,
     ttl: ctx.config.ttl,
     logger: pipelineLogger('enrich'),
   })

@@ -66,6 +66,8 @@ export interface LimitsConfig {
   walledGardens: string[]
   /** Per-host overrides keyed by host, e.g. from `[limits.hosts."x.com"]`. */
   hosts: Record<string, Partial<HostLimit>>
+  /** When true, the pipeline skips the limiter and the breaker entirely. */
+  disabled?: boolean
 }
 
 export const DEFAULT_LIMITS: LimitsConfig = {

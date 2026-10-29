@@ -8,9 +8,10 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
 import type { EnrichFn, ExtractFn } from '@linkinbox/core'
-import { capture, tempDb, type TempDb } from './helpers.js'
+import { capture, tempDb, unlimitedLimits, type TempDb } from './helpers.js'
 import { createProgram } from '../src/program.js'
 import { runServe } from '../src/commands/metrics.js'
+import { loadConfig } from '../src/config.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fixtures = join(here, '..', '..', '..', 'fixtures', 'importers')
@@ -60,11 +61,13 @@ async function runProgram(
   db: TempDb,
   args: string[],
 ): Promise<{ stdout: string; stderr: string }> {
+  const base = loadConfig({ LINKINBOX_DB: db.path })
   const program = createProgram({
     env: { LINKINBOX_DB: db.path },
     store: db.store,
     quiet: true,
     logPath: join(db.dir, 'log.jsonl'),
+    config: { ...base, limits: unlimitedLimits() },
     extractFn: mockExtract,
     enrichFn: mockEnrich,
   })

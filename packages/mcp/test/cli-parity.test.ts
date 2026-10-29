@@ -18,6 +18,8 @@ export const CLI_ONLY_EXCEPTIONS: Record<string, string> = {
   serve: 'starts the web server; not an agent operation',
   eval: 'golden-set runner for developers; the eval report is not an agent operation',
   prune: 'tombstone delete (purges content) with an interactive confirmation prompt; deliberately CLI-only',
+  breaker:
+    'breaker reset mutates the shared circuit breaker state; the MCP side exposes the read-only limits_status tool instead',
 }
 
 /** Which MCP tool(s) cover which CLI command. */
@@ -33,6 +35,7 @@ export const CLI_TO_TOOL: Record<string, string[]> = {
   restore: ['links_restore'],
   sweep: ['links_sweep'],
   metrics: ['metrics_get'],
+  status: ['limits_status'],
 }
 
 /** The spec surface, in the spec's own names. */
@@ -46,6 +49,7 @@ const SPEC_TOOLS = [
   'extract.run',
   'enrich.run',
   'metrics.get',
+  'limits.status',
 ]
 
 /** Flatten the commander command tree into names like `login list`. */
@@ -96,6 +100,9 @@ describe('cli/mcp parity', () => {
     }
     expect(CLI_ONLY_EXCEPTIONS['prune']).toBeDefined()
     expect(CLI_TO_TOOL['prune']).toBeUndefined()
+    // Breaker reset stays CLI-only: the MCP surface is read-only.
+    expect(CLI_ONLY_EXCEPTIONS['breaker']).toBeDefined()
+    expect(CLI_TO_TOOL['breaker']).toBeUndefined()
   })
 
   it('covers the CLI commands the spec calls out', () => {

@@ -7,20 +7,23 @@ import { join } from 'node:path'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ExtractFn } from '@linkinbox/core'
-import { capture, tempDb, type TempDb } from './helpers.js'
+import { capture, tempDb, unlimitedLimits, type TempDb } from './helpers.js'
 import { createContext, type CliContext } from '../src/context.js'
 import { runExtract, runImport } from '../src/commands/pipeline.js'
 import { runMetrics } from '../src/commands/metrics.js'
+import { loadConfig } from '../src/config.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fixtures = join(here, '..', '..', '..', 'fixtures', 'importers')
 
 async function contextFor(db: TempDb): Promise<CliContext> {
+  const base = loadConfig({ LINKINBOX_DB: db.path })
   return createContext({
     env: { LINKINBOX_DB: db.path },
     store: db.store,
     quiet: true,
     logPath: join(db.dir, 'log.jsonl'),
+    config: { ...base, limits: unlimitedLimits() },
   })
 }
 

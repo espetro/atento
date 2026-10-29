@@ -16,9 +16,14 @@ import {
   ingest,
   extract,
   enrich,
+  guardDepsFromStore,
+  guardStatuses,
+  DEFAULT_LIMITS,
+  LLM_KEY,
   type LinkField,
   type SweepPlan,
   type TriageAction,
+  type GuardDeps,
 } from '@linkinbox/core'
 import { importFile } from '@linkinbox/importers'
 import type { McpDeps } from './deps.js'
@@ -228,15 +233,20 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     async (args: { limit?: number }) => {
       const ctx = await deps.ctx()
       {
+        const guard: GuardDeps = guardDepsFromStore(ctx.store)
         const outcome = await extract(ctx.store, {
           extract: await deps.extractFn(),
           limit: args.limit,
+          guard,
+          maxBatch: DEFAULT_LIMITS.maxBatch,
           logger: ctx.logger,
         })
         return json({
           okCount: outcome.okCount,
           errorCount: outcome.errorCount,
           needsBrowserCount: outcome.needsBrowserCount,
+          deferredCount: outcome.deferredCount,
+          retryAfter: outcome.retryAfter,
         })
       }
     },
@@ -252,9 +262,12 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     async (args: { limit?: number }) => {
       const ctx = await deps.ctx()
       {
+        const guard: GuardDeps = guardDepsFromStore(ctx.store)
         const outcome = await enrich(ctx.store, {
           enrich: await deps.enrichFn(),
           limit: args.limit,
+          guard,
+          maxBatch: DEFAULT_LIMITS.maxBatch,
           ttl: ctx.ttl,
           logger: ctx.logger,
         })
@@ -262,9 +275,47 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
           linkIds: outcome.linkIds,
           okCount: outcome.okCount,
           errorCount: outcome.errorCount,
+          deferredCount: outcome.deferredCount,
+          retryAfter: outcome.retryAfter,
           tokensIn: outcome.tokensIn,
           tokensOut: outcome.tokensOut,
           costUsd: outcome.costUsd,
+        })
+      }
+    },
+  )
+
+  server.registerTool(
+    'limits_status',
+    {
+      description:
+        'Rate limit budget and circuit breaker state per host (spec name limits.status). ' +
+        'Read-only: it never mutates state. Breaker reset stays CLI-only.',
+      inputSchema: {},
+    },
+    async () => {
+      const ctx = await deps.ctx()
+      {
+        const guard: GuardDeps = guardDepsFromStore(ctx.store)
+        const states = await ctx.store.listHostStates()
+        const keys = new Set<string>(states.map((s) => s.key))
+        keys.add(LLM_KEY)
+        for (const garden of DEFAULT_LIMITS.walledGardens) keys.add(garden)
+        const rows = await guardStatuses(guard, [...keys].sort())
+        return json({
+          hosts: rows.map((row) => ({
+            key: row.key,
+            breakerState: row.breakerState,
+            reopensAt: row.reopensAt,
+            dailyCap: row.dailyCap === Number.POSITIVE_INFINITY ? 'unlimited' : row.dailyCap,
+            remainingToday:
+              row.remainingToday === Number.POSITIVE_INFINITY
+                ? 'unlimited'
+                : row.remainingToday,
+            lastRequestAt: row.lastRequestAt,
+            consecutiveFailures: row.consecutiveFailures,
+            lastError: row.lastError,
+          })),
         })
       }
     },

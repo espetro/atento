@@ -13,10 +13,11 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { EnrichFn, ExtractFn } from '@linkinbox/core'
-import { capture, tempDb, type TempDb } from './helpers.js'
+import { capture, tempDb, unlimitedLimits, type TempDb } from './helpers.js'
 import { createContext, type CliContext } from '../src/context.js'
 import { runAll } from '../src/commands/pipeline.js'
 import { runMetrics } from '../src/commands/metrics.js'
+import { loadConfig } from '../src/config.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fixtures = join(here, '..', '..', '..', 'fixtures', 'importers')
@@ -50,11 +51,13 @@ const mockEnrich: EnrichFn = async (link) => ({
 })
 
 async function contextFor(db: TempDb, logPath: string): Promise<CliContext> {
+  const base = loadConfig({ LINKINBOX_DB: db.path })
   return createContext({
     env: { LINKINBOX_DB: db.path },
     store: db.store,
     quiet: true,
     logPath,
+    config: { ...base, limits: unlimitedLimits() },
   })
 }
 

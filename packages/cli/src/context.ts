@@ -29,12 +29,14 @@ export interface ContextOptions {
   quiet?: boolean
   /** Override the log file path (tests). */
   logPath?: string
+  /** Override the config (tests). */
+  config?: AppConfig
 }
 
 /** Build the context: config, open store, configure logging. */
 export async function createContext(options: ContextOptions = {}): Promise<CliContext> {
   const env = options.env ?? process.env
-  const config = loadConfig(env)
+  const config = options.config ?? loadConfig(env)
   mkdirSync(dirname(config.dbPath), { recursive: true })
   const ownsStore = options.store === undefined
   const store = options.store ?? (await openStore({ path: config.dbPath }))

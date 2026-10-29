@@ -6,12 +6,20 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 import { parse as parseToml } from 'smol-toml'
-import { ttlFromToml, type TomlTable, type TtlConfig } from '@linkinbox/core'
+import {
+  limitsFromToml,
+  ttlFromToml,
+  type LimitsConfig,
+  type TomlTable,
+  type TtlConfig,
+} from '@linkinbox/core'
 
 export interface AppConfig {
   /** Path of the sqlite database file. */
   dbPath: string
   ttl: TtlConfig
+  /** Rate limit and breaker configuration from `[limits]`. */
+  limits: LimitsConfig
   /** Directory holding agent-browser login profiles. */
   profilesDir: string
   /** Directory holding config.toml. */
@@ -73,6 +81,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return {
     dbPath: resolveDbPath(toml, env),
     ttl: ttlFromToml(toml),
+    limits: limitsFromToml(toml),
     profilesDir: defaultProfilesDir(env),
     dir,
   }

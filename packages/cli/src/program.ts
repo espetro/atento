@@ -10,6 +10,7 @@ import { registerLinkCommands } from './commands/links.js'
 import { registerMaintenanceCommands } from './commands/maintenance.js'
 import { registerLoginCommand } from './commands/login.js'
 import { registerReportingCommands } from './commands/metrics.js'
+import { registerResilienceCommands } from './commands/resilience.js'
 import { createExtractFn } from './extract-fn.js'
 import { createEnrichFn } from './enrich-fn.js'
 import type { EnrichFn, ExtractFn, TtlConfig } from '@linkinbox/core'
@@ -60,6 +61,7 @@ export function createProgram(options: ProgramOptions = {}): Command {
   registerMaintenanceCommands(program, { ctx, ttl })
   registerLoginCommand(program, { ctx })
   registerReportingCommands(program, { ctx })
+  registerResilienceCommands(program, { ctx })
 
   return program
 }

@@ -43,6 +43,7 @@ export const TOOL_NAME_MAP: Record<string, string> = {
   extract_run: 'extract.run',
   enrich_run: 'enrich.run',
   metrics_get: 'metrics.get',
+  limits_status: 'limits.status',
 }
 
 export type SweepProposal = SweepPlan
