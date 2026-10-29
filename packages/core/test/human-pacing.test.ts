@@ -92,33 +92,46 @@ describe('break cadence', () => {
 
   it('defers with reason break when the cycle completes, then resets', () => {
     const random = () => 0.5
-    let state = emptyHostState('gated.example')
-    // First gate draws breakEvery (0.5 -> mid-range).
-    const first = pacingGate(state, base(), 0, random)
+    // A fresh host draws its cycle length: 0.5 lands mid-range (5..12).
+    const first = pacingGate(emptyHostState('gated.example'), base(), 0, random)
     expect(first.admitted).toBe(true)
-    state = { ...first.admitted ? state : state, ...('state' in first ? {} : {}) } as typeof state
-    void state
+    const cycle = first.state.breakEvery ?? 0
+    expect(cycle).toBeGreaterThanOrEqual(5)
+    expect(cycle).toBeLessThanOrEqual(12)
+
+    // Serve pages until the cycle completes: the gate defers with a break.
+    let state = first.state
+    let deferred: { reason?: string; waitMs: number } | null = null
+    for (let i = 0; i < cycle + 2; i += 1) {
+      const verdict = pacingGate(state, base(), (i + 1) * 10 * 60 * 1000, random)
+      if (!verdict.admitted) {
+        deferred = verdict
+        state = verdict.state
+        break
+      }
+      state = verdict.state
+    }
+    expect(deferred).not.toBeNull()
+    expect(deferred?.reason).toBe('break')
+    // The break lasts between 2 and 6 minutes.
+    expect(deferred?.waitMs).toBeGreaterThanOrEqual(120_000)
+    expect(deferred?.waitMs).toBeLessThanOrEqual(360_000)
+    // The counter resets and a new cycle is drawn.
+    expect(state.pagesSinceBreak).toBe(0)
+    expect(state.breakEvery).toBeGreaterThanOrEqual(5)
+    expect(state.breakEvery).toBeLessThanOrEqual(12)
   })
 })
 
 describe('pacing gate', () => {
-  it('admits the first request and spaces the second', () => {
-    let draw = 0
-    const random = () => {
-      const v = draw
-      draw = (draw + 0.25) % 1
-      return v
-    }
+  it('admits the first request and defers the immediate second', () => {
     const state = emptyHostState('gated.example')
-    const first = pacingGate(state, base({ dwellMedianS: 20 }), 0, random)
+    const first = pacingGate(state, base({ dwellMedianS: 20 }), 0, () => 0.5)
     expect(first.admitted).toBe(true)
-    const second = pacingGate(
-      first.admitted ? ({ ...state, lastRequestAt: 0 } as never) : state,
-      base(),
-      0,
-      random,
-    )
-    void second
+    // The second request at the same instant is spacing-deferred.
+    const second = pacingGate(first.state, base(), 0, () => 0.5)
+    expect(second.admitted).toBe(false)
+    if (!second.admitted) expect(second.reason).toBe('spacing')
   })
 
   it('defers by the spacing wait when called too soon', () => {
@@ -150,7 +163,7 @@ describe('pacing gate', () => {
     for (let i = 0; i < 10 && admits < 2; i += 1) {
       const v = pacingGate(state, config, now, random)
       if (v.admitted) {
-        state = { ...state, ...pickState(state, v) }
+        state = v.state
         admits += 1
         now += 60_000
       } else {
@@ -160,17 +173,12 @@ describe('pacing gate', () => {
     expect(admits).toBe(2)
     // The window is full: further gates defer with daily_cap until it rolls.
     const next = pacingGate(state, config, now, random)
+    expect(next.admitted).toBe(false)
     if (!next.admitted) expect(next.reason).toBe('daily_cap')
     const nextDay = pacingGate(state, config, (state.windowStart ?? now) + 24 * 60 * 60 * 1000, random)
     expect(nextDay.admitted).toBe(true)
   })
 })
-
-/** Apply the admitted state fields the gate computed onto a base state. */
-function pickState(state: ReturnType<typeof emptyHostState>, _v: { admitted: boolean }): typeof state {
-  void state
-  return {} as typeof state
-}
 
 describe('working hours', () => {
   it('localHourOf reads the local clock', () => {
