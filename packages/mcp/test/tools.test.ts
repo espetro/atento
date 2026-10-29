@@ -214,7 +214,7 @@ describe('mcp tools', () => {
       }),
     })
     try {
-      await insertLink(h.store, 'https://example.com/a')
+      await insertLink(h.store, 'https://example.com/a', { extractedContent: 'body' })
       const res = callJson(await h.client.callTool({ name: 'enrich_run', arguments: {} }))
       expect(res.data.okCount).toBe(1)
       expect(res.data.tokensIn).toBe(10)

@@ -221,7 +221,7 @@ describe('test set D: sweep and prune over a seeded sqlite database', () => {
 
     const db = await tempDb()
     try {
-      const link = await insertLink(db.store, 'https://example.com/job')
+      const link = await insertLink(db.store, 'https://example.com/job', { extractedContent: 'job posting body' })
       const ctx = await contextFor(db)
       await enrich(ctx.store, {
         enrich: async () => ({

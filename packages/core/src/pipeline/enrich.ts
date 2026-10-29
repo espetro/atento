@@ -74,7 +74,9 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
   const created = await store.listByStates(['created'])
   const inbox = await store.listByStates(['inbox'])
   const batch = [...extracted, ...created, ...inbox]
-    .filter((l) => l.enrichment === null)
+    // Enrich reads extracted content; a link that was never extracted waits
+    // for the extract stage instead of being guessed at from its URL.
+    .filter((l) => l.enrichment === null && l.extractedContent !== null && !l.needsBrowser)
     .slice(0, options.limit ?? undefined)
   const pending = batch.slice(0, maxBatch)
 

@@ -210,6 +210,7 @@ describe('pipeline stage: enrich', () => {
   it('records an error outcome without throwing', async () => {
     const store = new FakeStore()
     await ingest(store, [raw('https://example.com/a')])
+    await extract(store, { extract: async () => ({ markdown: '# body' }) })
 
     const enrichFn: EnrichFn = async () => ({ ok: false, error: 'model unavailable' })
     const result = await enrich(store, { enrich: enrichFn })
@@ -220,6 +221,21 @@ describe('pipeline stage: enrich', () => {
     expect(
       store.metrics.find((m) => m.stage === 'enrich' && m.key === 'errors' && !m.tags)?.value,
     ).toBe(1)
+  })
+
+  it('leaves links that were never extracted for the extract stage', async () => {
+    const store = new FakeStore()
+    await ingest(store, [raw('https://example.com/a')])
+    let calls = 0
+    const enrichFn: EnrichFn = async () => {
+      calls += 1
+      return { ok: false, error: 'should not run' }
+    }
+    const result = await enrich(store, { enrich: enrichFn })
+
+    expect(calls).toBe(0)
+    expect(result.okCount + result.errorCount).toBe(0)
+    expect(store.links[0]?.state).toBe('created')
   })
 
   it('skips links that already have enrichment', async () => {
