@@ -71,7 +71,11 @@ export async function importSafariReadingList(
 
   let tree: PlistValue
   try {
-    tree = parse(raw) // plist@5 auto-detects binary vs XML
+    // plist@5 treats Uint8Array as binary plist and string as XML/OpenStep.
+    // Detect the format ourselves: binary plists start with the "bplist00"
+    // magic, everything else is parsed as XML.
+    const isBinary = raw.subarray(0, 8).toString('latin1') === 'bplist00'
+    tree = isBinary ? parse(new Uint8Array(raw)) : parse(raw.toString('utf8'))
   } catch (err) {
     return { links: [], warnings: [`Malformed plist at ${filePath}: ${(err as Error).message}`] }
   }
@@ -83,8 +87,9 @@ export async function importSafariReadingList(
   let skipped = 0
   for (const leaf of leaves) {
     const url = typeof leaf.URLString === 'string' ? leaf.URLString : undefined
-    if (!url || !leaf.ReadingList) {
-      skipped += 1
+    if (!url) continue
+    if (!leaf.ReadingList) {
+      // Not a Reading List entry (plain bookmark); not a warning.
       continue
     }
     const link: RawLink = { url, source: SAFARI_SOURCE }
@@ -98,7 +103,7 @@ export async function importSafariReadingList(
   }
 
   if (skipped > 0) {
-    warnings.push(`Skipped ${skipped} Safari bookmark(s) that are not Reading List entries.`)
+    warnings.push(`Skipped ${skipped} Reading List entry(ies) without a URL.`)
   }
   if (links.length === 0) {
     warnings.push('Safari Reading List is empty (or the plist had no Reading List entries).')

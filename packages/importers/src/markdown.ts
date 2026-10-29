@@ -17,7 +17,7 @@ import type { ImportResult } from './types.js'
  */
 export const MARKDOWN_SOURCE = 'markdown'
 
-const LINK_RE = /^\s*[-*+]\s+\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)\s*$/
+const LINK_RE = /^\s*[-*+]\s+\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)(?:\s+.*)?$/
 const HEADING_RE = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/
 
 export function parseMarkdown(text: string): { links: RawLink[]; warnings: string[] } {
@@ -25,9 +25,15 @@ export function parseMarkdown(text: string): { links: RawLink[]; warnings: strin
   const links: RawLink[] = []
   let heading: string | null = null
   let skipped = 0
+  let inCodeFence = false
 
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim()
+    if (line.startsWith('```') || line.startsWith('~~~')) {
+      inCodeFence = !inCodeFence
+      continue
+    }
+    if (inCodeFence) continue
     if (line === '') continue
 
     const headingMatch = HEADING_RE.exec(line)

@@ -2,7 +2,7 @@
 
 ## Engineering
 
-- [Deno 2 is here](https://deno.com/blog/v2) — runtime release notes.
+- [Deno 2 is here](https://deno.com/blog/v2)
 - [SQLite internals: the B-tree](https://www.sqlite.org/btreetrans.html)
 - [How to write a database in 500 lines](https://danluu.com/lf-implementations/)
 
@@ -38,3 +38,9 @@
 - [A tracked link](https://example.com/tracked?utm_source=newsletter&utm_campaign=weekly&id=42)
 - [A fbclid link](https://example.com/click?utm_medium=email&fbclid=IwAR3xyz)
 - [A trailing slash link](https://example.com/trailing/)
+
+## Notes
+
+Some prose between sections to make sure only list items are picked up.
+
+- [One more link after prose](https://example.com/after-prose)
