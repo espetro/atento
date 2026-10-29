@@ -48,6 +48,8 @@ describe('downloadAudio', () => {
     expect(exec.calls[0]?.file).toBe(DEFAULT_YTDLP_BIN)
     expect(exec.calls[0]?.args).toContain('https://example.com/v')
     expect(exec.calls[0]?.args).not.toContain('--cookies-from-browser')
+    expect(exec.calls[0]?.args).toContain('--audio-format')
+    expect(exec.calls[0]?.args).toContain('wav')
     expect(exec.calls[1]?.args).toContain('-ar')
     expect(exec.calls[1]?.args).toContain('16000')
     expect(exec.calls[1]?.args).toContain('-ac')

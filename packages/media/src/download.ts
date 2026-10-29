@@ -85,7 +85,6 @@ export async function downloadAudio(url: string, options: DownloadOptions = {}):
     '-o',
     rawPath,
     ...(options.cookiesFromBrowser ? ['--cookies-from-browser', 'safari'] : []),
-    '--dump-json',
     url,
   ]
 
@@ -96,14 +95,12 @@ export async function downloadAudio(url: string, options: DownloadOptions = {}):
     )
   }
 
-  const infoLines = dl.stdout.trim().split('\n').filter((l) => l.startsWith('{'))
   let info: Record<string, unknown> | null = null
-  if (infoLines.length > 0) {
-    try {
-      info = JSON.parse(infoLines[infoLines.length - 1] ?? '{}') as Record<string, unknown>
-    } catch {
-      info = null
-    }
+  try {
+    const raw = await readFile(infoPath, 'utf8')
+    info = JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    info = null
   }
 
   const wavPath = join(workDir, 'audio16k.wav')
