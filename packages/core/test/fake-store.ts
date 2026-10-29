@@ -10,8 +10,19 @@ import type {
   Run,
   Status,
   Store,
+  LinkEvent,
+  LinkStateName,
+  TransitionOutcome,
+  LinkHistoryEntry,
 } from '../src/index.js'
-import { normalizeUrl } from '../src/index.js'
+import {
+  normalizeUrl,
+  transition,
+  parseLinkState,
+  legacyStatus,
+  isTerminal,
+  LINK_STATES,
+} from '../src/index.js'
 
 /**
  * In-memory Store used by the core tests. The core package cannot depend on
@@ -28,6 +39,8 @@ export class FakeStore implements Store {
   private nextLinkId = 1
   private nextRunId = 1
   private nextProfileId = 1
+  history: LinkHistoryEntry[] = []
+  private nextHistoryId = 1
 
   async upsertLink(input: LinkInput): Promise<Link> {
     const now = new Date()
@@ -70,6 +83,9 @@ export class FakeStore implements Store {
       createdAt: input.createdAt ?? now,
       updatedAt: input.updatedAt ?? now,
     }
+    // FSM: the legacy status column seeds the initial state.
+    link.state = input.state ?? stateForLegacyStatus(link.status)
+    link.stateData = input.stateData ?? dataForLegacyStatus(link.status, link, now)
     this.links.push(link)
     return link
   }
@@ -102,26 +118,129 @@ export class FakeStore implements Store {
   }
 
   async updateStatus(ids: number[], status: Status, updatedAt?: Date): Promise<number> {
-    let changes = 0
-    for (const link of this.links) {
-      if (ids.includes(link.id)) {
-        link.status = status
-        link.updatedAt = updatedAt ?? new Date()
-        changes += 1
+    const at = updatedAt ?? new Date()
+    let updated = 0
+    for (const id of ids) {
+      const link = this.links.find((l) => l.id === id)
+      if (!link) continue
+      const outcome = await this.applyEvent(id, eventForStatus(status, at), link.state as LinkStateName)
+      if (outcome.ok) updated += 1
+    }
+    return updated
+  }
+
+  async applyEvent(
+    linkId: number,
+    event: LinkEvent,
+    expected?: LinkStateName,
+  ): Promise<TransitionOutcome> {
+    const at = new Date()
+    const link = this.links.find((l) => l.id === linkId)
+    if (!link) {
+      return {
+        ok: false,
+        error: { code: 'STALE_STATE', from: 'created', expected, message: `link ${linkId} missing` },
       }
     }
-    return changes
+    const currentName = link.state as LinkStateName
+    if (expected !== undefined && expected !== currentName) {
+      return {
+        ok: false,
+        error: {
+          code: 'STALE_STATE',
+          from: currentName,
+          expected,
+          message: `link ${linkId} is in ${currentName}, expected ${expected}`,
+        },
+      }
+    }
+    const current = parseLinkState(currentName, link.stateData)
+    const result = transition(current, event, at)
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: {
+          code: 'ILLEGAL_TRANSITION',
+          from: result.error.from,
+          event: result.error.event,
+          message: result.error.message,
+        },
+      }
+    }
+    const next = result.state
+    const payload = { ...next } as Record<string, unknown>
+    delete payload['state']
+    const purge = next.state === 'deleted'
+    const updated: Link = {
+      ...link,
+      state: next.state,
+      stateData: payload,
+      status: legacyStatus(next),
+      updatedAt: at,
+      ...(purge
+        ? {
+            extractedContent: null,
+            extractedAt: null,
+            enrichment: null,
+            needsBrowser: false,
+            category: null,
+            priority: null,
+            action: null,
+            confidence: null,
+            readMinutes: null,
+          }
+        : {}),
+    }
+    this.links[this.links.indexOf(link)] = updated
+    this.history.push({
+      id: this.nextHistoryId++,
+      linkId,
+      fromState: currentName,
+      toState: next.state,
+      event: event.type,
+      data: event as unknown as Record<string, unknown>,
+      at,
+    })
+    return { ok: true, state: next, from: currentName }
+  }
+
+  async getHistory(linkId: number): Promise<LinkHistoryEntry[]> {
+    return this.history.filter((h) => h.linkId === linkId)
+  }
+
+  async countByState(): Promise<Record<LinkStateName, number>> {
+    const out = {} as Record<LinkStateName, number>
+    for (const name of LINK_STATES) out[name] = 0
+    for (const l of this.links) out[l.state as LinkStateName] = (out[l.state as LinkStateName] ?? 0) + 1
+    return out
+  }
+
+  async listByStates(states: LinkStateName[], limit?: number): Promise<Link[]> {
+    let out = this.links.filter((l) => states.includes(l.state as LinkStateName))
+    out = out.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id - b.id)
+    if (limit !== undefined) out = out.slice(0, limit)
+    return out
+  }
+
+  async getState(id: number): Promise<import('../src/index.js').LinkState | null> {
+    const link = this.links.find((l) => l.id === id)
+    if (!link) return null
+    return parseLinkState(link.state, link.stateData)
   }
 
   async deleteLinks(ids: number[]): Promise<number> {
-    const before = this.links.length
-    this.links = this.links.filter((l) => !ids.includes(l.id))
-    return before - this.links.length
+    const at = new Date()
+    let deleted = 0
+    for (const id of ids) {
+      const outcome = await this.applyEvent(id, { type: 'DELETE', at: at.toISOString() })
+      if (outcome.ok) deleted += 1
+    }
+    return deleted
   }
 
   async setEnrichment(id: number, enrichment: Enrichment, updatedAt?: Date): Promise<number> {
     const link = this.links.find((l) => l.id === id)
-    if (!link) return 0
+    if (!link || isTerminal(parseLinkState(link.state, link.stateData))) return 0
     link.enrichment = enrichment
     link.category = enrichment.category
     link.priority = enrichment.priority
@@ -271,6 +390,28 @@ export class FakeStore implements Store {
 }
 
 /** Convenience: normalize then upsert a raw link into the fake store. */
+function stateForLegacyStatus(status: Status): string {
+  switch (status) {
+    case 'archived': return 'archived'
+    case 'discarded': return 'discarded'
+    case 'scheduled': return 'scheduled'
+    default: return 'inbox'
+  }
+}
+
+function dataForLegacyStatus(status: Status, link: Link, now: Date): Record<string, unknown> | null {
+  switch (status) {
+    case 'archived':
+      return { archivedAt: now.toISOString(), reason: 'manual' }
+    case 'discarded':
+      return { discardedAt: now.toISOString() }
+    case 'scheduled':
+      return { scheduledFor: null }
+    default:
+      return { enriched: link.enrichment !== null || link.category !== null }
+  }
+}
+
 export async function seedLink(store: FakeStore, url: string, overrides: Partial<Link> = {}): Promise<Link> {
   const { url: normalized, hash } = normalizeUrl(url)
   return store.upsertLink({
@@ -281,4 +422,17 @@ export async function seedLink(store: FakeStore, url: string, overrides: Partial
     needsBrowser: false,
     ...overrides,
   } as LinkInput)
+}
+
+function eventForStatus(status: Status, at: Date): import('../src/index.js').LinkEvent {
+  switch (status) {
+    case 'archived':
+      return { type: 'EXPIRE', at: at.toISOString() }
+    case 'discarded':
+      return { type: 'TRIAGE', action: 'discard', at: at.toISOString() }
+    case 'scheduled':
+      return { type: 'TRIAGE', action: 'schedule', at: at.toISOString() }
+    default:
+      return { type: 'RESTORE', at: at.toISOString() }
+  }
 }

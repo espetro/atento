@@ -46,6 +46,10 @@ export interface Link {
   expiresAt: Date | null
   expiryReason: string | null
   status: Status
+  /** FSM discriminant for the link's current state. */
+  state: string
+  /** FSM variant payload (parsed shape varies per state). */
+  stateData: Record<string, unknown> | null
   /** Flattened enrichment columns (mirrors the enrichment json blob). */
   category: string | null
   priority: Enrichment['priority'] | null
@@ -108,10 +112,14 @@ export type LinkInput = Omit<
   | 'enrichment'
   | 'expiresAt'
   | 'expiryReason'
+  | 'state'
+  | 'stateData'
 > & {
   id?: number
   createdAt?: Date
   updatedAt?: Date
+  state?: string
+  stateData?: Record<string, unknown> | null
   /** Optional: set by the extract stage. */
   extractedContent?: string | null
   extractedAt?: Date | null

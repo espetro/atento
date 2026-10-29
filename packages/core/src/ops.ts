@@ -165,16 +165,39 @@ export async function triage(
   store: Store,
   ids: number[],
   action: TriageAction,
+  now: Date = new Date(),
 ): Promise<TriageResult> {
   const status = ACTION_TO_STATUS[action]
   const unique = [...new Set(ids)]
   if (unique.length === 0) return { requested: [], updated: 0, status, missing: [] }
-  const updated = await store.updateStatus(unique, status)
+  const updated = await triageViaEvents(store, unique, action, now)
   const missing: number[] = []
   for (const id of unique) {
     if (!(await store.getLink(id))) missing.push(id)
   }
   return { requested: unique, updated, status, missing }
+}
+
+/**
+ * Apply a triage action through the FSM. Every link moves with one TRIAGE
+ * event, so the history records exactly what the user did.
+ */
+async function triageViaEvents(
+  store: Store,
+  ids: number[],
+  action: TriageAction,
+  now: Date,
+): Promise<number> {
+  let updated = 0
+  for (const id of ids) {
+    const outcome = await store.applyEvent(id, {
+      type: 'TRIAGE',
+      action,
+      at: now.toISOString(),
+    })
+    if (outcome.ok) updated += 1
+  }
+  return updated
 }
 
 export type { SweepPlan, PrunePlan }

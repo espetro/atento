@@ -250,7 +250,13 @@ describe('ops.prune', () => {
     const plan = await prune(store, ttl, { now: NOW })
     const deleted = await applyPrune(store, plan)
     expect(deleted).toBe(1)
-    expect(store.links).toHaveLength(0)
+    // FSM semantics: prune moves the link to the terminal deleted state and
+    // keeps the tombstone row, so the row still exists but is marked deleted.
+    expect(store.links).toHaveLength(1)
+    expect(store.links[0]?.state).toBe('deleted')
+    expect(store.links[0]?.status).toBe('deleted')
+    expect(store.links[0]?.enrichment).toBeNull()
+    expect(store.links[0]?.extractedContent).toBeNull()
   })
 })
 

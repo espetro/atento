@@ -34,6 +34,10 @@ export const links = sqliteTable(
     action: text('action'),
     confidence: real('confidence'),
     needsBrowser: integer('needs_browser', { mode: 'boolean' }).notNull().default(false),
+    /** FSM discriminant. */
+    state: text('state').notNull().default('created'),
+    /** FSM variant payload (json). */
+    stateData: text('state_data', { mode: 'json' }).$type<Record<string, unknown> | null>(),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
     updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
   },
@@ -42,6 +46,25 @@ export const links = sqliteTable(
     index('links_status_idx').on(t.status),
     index('links_expires_at_idx').on(t.expiresAt),
     index('links_category_idx').on(t.category),
+    index('links_state_idx').on(t.state),
+  ],
+)
+
+/** Append-only transition log: one row per applied event. */
+export const linkEvents = sqliteTable(
+  'link_events',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    linkId: integer('link_id').notNull(),
+    fromState: text('from_state').notNull(),
+    toState: text('to_state').notNull(),
+    event: text('event').notNull(),
+    data: text('data', { mode: 'json' }).$type<Record<string, unknown> | null>(),
+    at: integer('at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => [
+    index('link_events_link_idx').on(t.linkId),
+    index('link_events_at_idx').on(t.at),
   ],
 )
 
@@ -102,12 +125,13 @@ export const meta = sqliteTable(
   },
 )
 
-export const schema = { links, runs, metrics, profiles, meta }
+export const schema = { links, linkEvents, runs, metrics, profiles, meta }
 
 export type LinkRow = typeof links.$inferSelect
 export type RunRow = typeof runs.$inferSelect
 export type MetricRow = typeof metrics.$inferSelect
 export type ProfileRow = typeof profiles.$inferSelect
 export type MetaRow = typeof meta.$inferSelect
+export type LinkEventRow = typeof linkEvents.$inferSelect
 
-export const SCHEMA_VERSION = '1'
+export const SCHEMA_VERSION = '2'
