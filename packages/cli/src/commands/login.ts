@@ -24,9 +24,11 @@ import type { Command } from 'commander'
 import type { CliContext } from '../context.js'
 import { renderTable } from '../render.js'
 import {
+  buildLoginReport,
   loadPendingLogins,
   type DoneLogin,
   type LoadPendingLogins,
+  type LoginReport,
   type PendingLogin,
 } from '../pending-logins.js'
 
@@ -44,11 +46,7 @@ export interface LoginResult {
   code: number
 }
 
-/** The machine-readable login listing. */
-export interface LoginReport {
-  pending: { host: string; links: number; reason: string }[]
-  done: { host: string; profileAgeDays: number }[]
-}
+export type { LoginReport } from '../pending-logins.js'
 
 /** Injected browser launcher so tests never spawn a real browser. */
 export type LoginLauncher = (host: string, profilePath: string) => Promise<number>
@@ -170,7 +168,7 @@ export async function runLoginPending(
   deps: LoginFlowDeps = {},
 ): Promise<LoginReport> {
   const load = deps.loadLogins ?? loadPendingLogins
-  return buildReport(await load(ctx.store))
+  return buildLoginReport(await load(ctx.store))
 }
 
 /** Human rendering of the report. */
@@ -214,7 +212,7 @@ export async function runLoginFlow(
   const interactive =
     deps.nonInteractive !== true && (deps.isInteractive?.() ?? isInteractiveProcess())
 
-  const report = await buildReport(await load(ctx.store))
+  const report = buildLoginReport(await load(ctx.store))
 
   if (!interactive) {
     console.log(JSON.stringify(report, null, 2))
@@ -253,19 +251,11 @@ export async function runLoginFlow(
     requeued += n
   }
 
-  const remaining = await buildReport(await load(ctx.store))
+  const remaining = buildLoginReport(await load(ctx.store))
   console.log('')
   console.log(`logged in to ${logged} host${logged === 1 ? '' : 's'}, requeued ${requeued} link${requeued === 1 ? '' : 's'}`)
   console.log(renderLoginReport(remaining))
   return 0
-}
-
-/** Project the loaded logins onto the report shape. */
-function buildReport(logins: { pending: PendingLogin[]; done: DoneLogin[] }): LoginReport {
-  return {
-    pending: logins.pending.map((p) => ({ host: p.host, links: p.linkCount, reason: p.reason })),
-    done: logins.done.map((d) => ({ host: d.host, profileAgeDays: d.profileAgeDays })),
-  }
 }
 
 /** Interactive readline picker: comma separated host selection. */

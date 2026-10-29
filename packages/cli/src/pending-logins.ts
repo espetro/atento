@@ -159,3 +159,25 @@ function hostOfLink(url: string, stateData: Record<string, unknown> | null): str
  * `listHostsNeedingLogin(store)` from packages/core when it lands.
  */
 export const loadPendingLogins: LoadPendingLogins = async (store) => queryPendingLogins(store)
+
+/**
+ * The report shape shared by the CLI and the MCP tool: pending hosts with
+ * their waiting link counts, and the hosts that already have a profile.
+ */
+export interface LoginReport {
+  pending: { host: string; links: number; reason: string }[]
+  done: { host: string; profileAgeDays: number }[]
+}
+
+/** Build the report from the loaded logins. */
+export function buildLoginReport(logins: PendingLogins): LoginReport {
+  return {
+    pending: logins.pending.map((p) => ({ host: p.host, links: p.linkCount, reason: p.reason })),
+    done: logins.done.map((d) => ({ host: d.host, profileAgeDays: d.profileAgeDays })),
+  }
+}
+
+/** Load the logins and project them onto the report shape. */
+export async function loadLoginReport(store: Store): Promise<LoginReport> {
+  return buildLoginReport(await loadPendingLogins(store))
+}
