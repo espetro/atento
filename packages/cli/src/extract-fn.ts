@@ -29,6 +29,7 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
 
   return async (url: string) => {
     const result = await router.extract(url)
+    if (result.gone !== undefined) throw new Error(`page is gone (HTTP ${result.gone})`)
     const meta = result.meta ?? {}
     return {
       markdown: result.markdown,
