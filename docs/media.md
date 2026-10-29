@@ -1,9 +1,11 @@
 # Media stage
 
-The media stage turns video and audio links (Instagram reels and similar) into
-text. It is a standalone library (`@linkinbox/media`) plus a CLI command that
-the pipeline will call later. It does not change the FSM or the extractor
-router.
+The media stage turns video and audio links (reels and similar yt-dlp-able
+media) into text. It is a standalone library (`@linkinbox/media`) plus a CLI
+command, and the pipeline now calls it: after a successful extraction the
+extract stage detects video links and runs the media stage, appending
+`renderMedia(report)` to the extracted content before the link moves to
+enrich. It does not change the FSM or the extractor router.
 
 ## Tiers
 
@@ -124,5 +126,56 @@ realtime), peak RSS about 2.7 GB while the model is loaded.
   guard-routed `mediaFn` adapter.
 
 `renderMedia(report)` is a pure function that renders the ok tiers as `##
-Caption` and `## Transcript` markdown sections. The pipeline does not call it
-yet.
+Caption` and `## Transcript` markdown sections. The pipeline calls it: the
+extract stage appends the rendered sections to the link's extracted content.
+
+## Pipeline wiring
+
+The extract stage runs the media stage for a link when its extracted metadata
+or its URL marks it as video. Detection is metadata-driven and names no host:
+
+- the extractor's own flag (`isVideo` in the extraction meta),
+- `og:type` matching video or movie,
+- `twitter:card` being a player or video card,
+- a schema.org `VideoObject` marker in the page head,
+- a URL path or query pattern that points at a media page or file
+  (`/reel/`, `/watch`, `/videos/`, `/clip/`, `?v=`, a media file extension).
+
+The stage is injected into the extract stage as a `MediaFn`, so core stays
+free of download and transcription code. The CLI builds it from the router
+metadata, the `[media]` config, the guard and the store.
+
+A media failure never fails the link. The per-tier report is stored on the
+link (`links.media_report`, migration `0007_media`), the extracted content is
+kept, and the frames tier always surfaces as `unsupported`.
+
+A captured link (its content came from the user's own session) skips the
+download: only the caption tier runs, which fetches nothing.
+
+## Per-day budget
+
+The daily cap is store-backed: the counters live in the `media_budget` table
+(one row per UTC day), so the cap survives restarts and is shared by every
+process on the same database. The media package still ships an in-memory
+budget for a single CLI invocation.
+
+## What works and what does not
+
+Works:
+
+- video detection from the extraction metadata and the URL,
+- the media stage inside the extract stage, with the report on the link and
+  the rendered markdown appended to the extracted content,
+- the per-tier report in `linkinbox show <id>` and in `linkinbox media`,
+- the store-backed per-day cap,
+- the guard-routed download (strict pacing for walled hosts).
+
+Does not work yet:
+
+- the frames tier (OCR and visual description of keyframes): always
+  `unsupported`,
+- the duration limit is only applied when the duration is known before the
+  download, so a long video is downloaded and then skipped,
+- the media stage does not run for links whose extraction needed a browser
+  (the link is parked in `needs_browser` first),
+- no MCP tool exposes the media report yet.
