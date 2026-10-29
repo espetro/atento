@@ -14,6 +14,11 @@ export interface EnrichOptions extends StageOptions {
    * expires ttl_days_for_category(category) days from now.
    */
   ttl?: TtlConfig
+  /**
+   * How long a lease may be held before another runner reclaims it. Default:
+   * 30 minutes.
+   */
+  leaseMs?: number
 }
 
 export interface EnrichResult extends StageResult {
@@ -35,6 +40,10 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
   // Candidates: links that still need enrichment. `extracted` has content and
   // waits for the model, `created` was never extracted, `inbox` was enriched
   // before but lost its enrichment (or was seeded without one).
+  // Reclaim leases from a previous run that died.
+  const leaseMs = options.leaseMs ?? 30 * 60 * 1000
+  await store.reclaimExpiredLeases(new Date(startedAt.getTime() - leaseMs))
+
   const extracted = await store.listByStates(['extracted'])
   const created = await store.listByStates(['created'])
   const inbox = await store.listByStates(['inbox'])

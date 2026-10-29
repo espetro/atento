@@ -8,6 +8,12 @@ export interface ExtractOptions extends StageOptions {
   extract: ExtractFn
   /** Cap the number of links processed in this run. */
   limit?: number
+  /**
+   * How long a lease may be held before another runner reclaims it. Leases
+   * older than this are returned to the `created` queue before the batch is
+   * selected. Default: 30 minutes.
+   */
+  leaseMs?: number
 }
 
 export interface ExtractResult extends StageResult {
@@ -28,6 +34,11 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
   const logger = options.logger ?? noopLogger
   const now = options.now ?? (() => new Date())
   const startedAt = now()
+
+  // Reclaim leases from a previous run that died, so a killed process never
+  // strands a link.
+  const leaseMs = options.leaseMs ?? 30 * 60 * 1000
+  await store.reclaimExpiredLeases(new Date(startedAt.getTime() - leaseMs))
 
   const batch = await store.listByStates(['created'], options.limit)
   const run = await store.startRun(STAGES.extract, batch.length, startedAt)
