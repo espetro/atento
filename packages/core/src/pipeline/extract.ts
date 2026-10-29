@@ -52,6 +52,8 @@ export async function extract(
   let errorCount = 0
   let needsBrowserCount = 0
   const errorsByExtractor = new Map<string, number>()
+  const needsBrowserByExtractor = new Map<string, number>()
+  const extractionsByExtractor = new Map<string, number>()
 
   for (const link of pending) {
     let extractor = 'unknown'
@@ -62,10 +64,15 @@ export async function extract(
       const needsBrowser = result.needsBrowser === true || markdown.trim() === ''
       if (needsBrowser) {
         needsBrowserCount += 1
+        // A page we cannot read is not a hard failure (the link is flagged,
+        // not lost) but it is counted against the extractor that gave up so
+        // the metrics show which one is weak.
+        bump(needsBrowserByExtractor, extractor)
         await store.setExtractedContent(link.id, markdown, true, now())
-        logger.warn('extraction needs a browser for {url} (link {linkId})', {
+        logger.warn('extraction needs a browser for {url} (link {linkId}, extractor {extractor})', {
           url: link.url,
           linkId: link.id,
+          extractor,
         })
         outcomes.push({
           linkId: link.id,
@@ -79,11 +86,13 @@ export async function extract(
       }
 
       await store.setExtractedContent(link.id, markdown, false, now())
+      bump(extractionsByExtractor, extractor)
       okCount += 1
-      logger.info('extracted {url} (link {linkId}, {chars} chars)', {
+      logger.info('extracted {url} (link {linkId}, {chars} chars, extractor {extractor})', {
         url: link.url,
         linkId: link.id,
         chars: markdown.length,
+        extractor,
       })
       outcomes.push({
         linkId: link.id,
@@ -122,6 +131,24 @@ export async function extract(
       timestamp: now(),
       stage: STAGES.extract,
       key: 'errors',
+      value: count,
+      tags: { extractor },
+    })
+  }
+  for (const [extractor, count] of needsBrowserByExtractor) {
+    await store.addMetric({
+      timestamp: now(),
+      stage: STAGES.extract,
+      key: 'needs_browser',
+      value: count,
+      tags: { extractor },
+    })
+  }
+  for (const [extractor, count] of extractionsByExtractor) {
+    await store.addMetric({
+      timestamp: now(),
+      stage: STAGES.extract,
+      key: 'extractions',
       value: count,
       tags: { extractor },
     })

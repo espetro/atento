@@ -250,6 +250,8 @@ export interface StageSummary {
   costUsd: number
   /** Error counts keyed by `<kind>:<name>`, e.g. `extractor:defuddle`. */
   errorsByTag: Record<string, number>
+  /** Counts keyed by `<kind>:<name>` for the other tagged metrics. */
+  countsByTag: Record<string, number>
 }
 
 export interface MetricsSummary {
@@ -290,6 +292,7 @@ export async function metricsSummary(
         tokensOut: 0,
         costUsd: 0,
         errorsByTag: {},
+        countsByTag: {},
       }
       byStage.set(stage, row)
     }
@@ -327,8 +330,17 @@ export async function metricsSummary(
       case 'tokens_in': s.tokensIn += row.value; break
       case 'tokens_out': s.tokensOut += row.value; break
       case 'cost_usd': s.costUsd += row.value; break
-      default:
+      default: {
+        // Any other tagged metric (needs_browser, extractions, ...) lands in
+        // countsByTag; untagged ones are ignored here.
+        if (row.tags && Object.keys(row.tags).length > 0) {
+          for (const [kind, name] of Object.entries(row.tags)) {
+            const key = `${row.key} ${kind}:${name}`
+            s.countsByTag[key] = (s.countsByTag[key] ?? 0) + row.value
+          }
+        }
         break
+      }
     }
   }
 

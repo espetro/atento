@@ -44,6 +44,13 @@ export async function runMetrics(
       .join(' ')
     console.log(`\n${stage.stage} errors by source: ${detail}`)
   }
+  const counts = summary.stages.filter((s) => Object.keys(s.countsByTag).length > 0)
+  for (const stage of counts) {
+    const detail = Object.entries(stage.countsByTag)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(' ')
+    console.log(`\n${stage.stage} breakdown: ${detail}`)
+  }
   console.log(`\nrange: ${summary.since} .. ${summary.until}`)
   return summary
 }

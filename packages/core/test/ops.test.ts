@@ -400,6 +400,7 @@ describe('ops snapshots', () => {
           {
             "avgDurationMs": 7,
             "costUsd": 0,
+            "countsByTag": {},
             "errors": 0,
             "errorsByTag": {},
             "input": 2,
