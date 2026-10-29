@@ -1,0 +1,14 @@
+{
+  "counts": {
+    "fixtures": 12,
+    "extractionFixtures": 4,
+    "runs": 3
+  },
+  "schemaValidity": 100,
+  "categoryMatch": 100,
+  "expiresInRange": 91.66666666666666,
+  "confidencePresent": 100,
+  "actionConsistency": 100,
+  "extractionCharInRange": 100,
+  "extractionNavLeak": 100
+}

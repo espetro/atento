@@ -1,0 +1,15 @@
+{
+  "slug": "article-essay",
+  "url": "https://paulgraham.com/essay.html",
+  "title": "A timeless essay on making things",
+  "content": "An essay about how to do great work by following genuine curiosity. The advice is not time-bound; it applies as much today as a decade ago.",
+  "expected": {
+    "category": "article",
+    "priority": "low",
+    "action": "read_now",
+    "expires_at_days": {
+      "min": null,
+      "max": null
+    }
+  }
+}

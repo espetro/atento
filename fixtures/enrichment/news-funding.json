@@ -1,0 +1,15 @@
+{
+  "slug": "news-funding",
+  "url": "https://news.example.com/startup-raises",
+  "title": "Startup X raises $50M Series B",
+  "content": "Startup X announced a $50M Series B round led by Y Ventures. The news broke yesterday and will be superseded by newer coverage within weeks.",
+  "expected": {
+    "category": "news",
+    "priority": "normal",
+    "action": "archive",
+    "expires_at_days": {
+      "min": 10,
+      "max": 45
+    }
+  }
+}

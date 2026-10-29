@@ -1,0 +1,15 @@
+{
+  "slug": "docs-library",
+  "url": "https://vite.dev/guide/ssr",
+  "title": "Vite SSR Guide",
+  "content": "The Vite server-side rendering guide explains how to build SSR apps, express middleware, and hydration. Documentation is evergreen and updated continuously.",
+  "expected": {
+    "category": "guide",
+    "priority": "low",
+    "action": "archive",
+    "expires_at_days": {
+      "min": null,
+      "max": null
+    }
+  }
+}

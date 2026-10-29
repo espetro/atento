@@ -1,0 +1,43 @@
+{
+  "name": "@linkinbox/evals",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Golden-set eval runner for linkinbox (enrichment + extraction checks)",
+  "main": "./dist/run.js",
+  "types": "./dist/run.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/run.d.ts",
+      "default": "./dist/run.js"
+    },
+    "./mock": {
+      "types": "./dist/mock.d.ts",
+      "default": "./dist/mock.js"
+    },
+    "./extract": {
+      "types": "./dist/extract.d.ts",
+      "default": "./dist/extract.js"
+    }
+  },
+  "bin": {
+    "linkinbox-eval": "./dist/bin.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "eval": "node dist/bin.js"
+  },
+  "dependencies": {
+    "@linkinbox/core": "workspace:*",
+    "@linkinbox/enrich": "workspace:*",
+    "@linkinbox/extractors": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  }
+}

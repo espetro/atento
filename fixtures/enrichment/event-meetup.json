@@ -1,0 +1,15 @@
+{
+  "slug": "event-meetup",
+  "url": "https://meetup.example.com/berlin-ts/events/2999",
+  "title": "Berlin TypeScript Meetup",
+  "content": "Berlin TypeScript Meetup on November 12, 2026, 7pm. Two talks: typed SQL query builders and tRPC at scale. RSVP required.",
+  "expected": {
+    "category": "event",
+    "priority": "normal",
+    "action": "schedule",
+    "expires_at_days": {
+      "min": 13,
+      "max": 16
+    }
+  }
+}

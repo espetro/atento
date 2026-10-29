@@ -1,0 +1,15 @@
+{
+  "slug": "job-posting",
+  "url": "https://jobs.example.com/senior-backend-engineer",
+  "title": "Senior Backend Engineer at Example Corp",
+  "content": "We are hiring a Senior Backend Engineer to join our platform team. Posted 3 days ago. Requirements: 5+ years Go or TypeScript, distributed systems experience. Salary $160-210k. Benefits include health, 401k match.",
+  "expected": {
+    "category": "job",
+    "priority": "high",
+    "action": "read_now",
+    "expires_at_days": {
+      "min": 25,
+      "max": 60
+    }
+  }
+}

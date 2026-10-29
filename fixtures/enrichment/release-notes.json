@@ -1,0 +1,15 @@
+{
+  "slug": "release-notes",
+  "url": "https://github.com/biomejs/biome/releases/v3",
+  "title": "Biome v3 release notes",
+  "content": "Biome v3.0 released with a new plugin system and 30% faster linting. Release notes are most useful around release time.",
+  "expected": {
+    "category": "news",
+    "priority": "normal",
+    "action": "read_now",
+    "expires_at_days": {
+      "min": 7,
+      "max": 60
+    }
+  }
+}

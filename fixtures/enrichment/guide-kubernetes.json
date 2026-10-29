@@ -1,0 +1,15 @@
+{
+  "slug": "guide-kubernetes",
+  "url": "https://kubernetes.io/docs/concepts/architecture/",
+  "title": "Kubernetes Architecture Concepts",
+  "content": "This page explains the architecture of Kubernetes: control plane components such as kube-apiserver, etcd, kube-scheduler, and node components like kubelet and kube-proxy. Evergreen reference documentation.",
+  "expected": {
+    "category": "guide",
+    "priority": "low",
+    "action": "archive",
+    "expires_at_days": {
+      "min": null,
+      "max": null
+    }
+  }
+}

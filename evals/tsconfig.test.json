@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "../..",
+    "paths": {
+      "@linkinbox/core": ["../packages/core/src/index.ts"],
+      "@linkinbox/extractors": ["../packages/extractors/src/index.ts"]
+    }
+  },
+  "include": ["*.ts", "test", "../packages/core/src", "../packages/extractors/src"]
+}

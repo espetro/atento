@@ -1,0 +1,15 @@
+{
+  "slug": "recipe-pasta",
+  "url": "https://www.recipes.example/cacio-e-pepe",
+  "title": "Cacio e Pepe",
+  "content": "A classic Roman pasta recipe: tonnarelli, pecorino romano, black pepper. Total time 20 minutes. Recipes do not expire.",
+  "expected": {
+    "category": "recipe",
+    "priority": "low",
+    "action": "read_now",
+    "expires_at_days": {
+      "min": null,
+      "max": null
+    }
+  }
+}

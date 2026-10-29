@@ -1,0 +1,15 @@
+{
+  "slug": "event-conference",
+  "url": "https://www.rustconf.org/2026",
+  "title": "RustConf 2026",
+  "content": "RustConf 2026 takes place December 8-10, 2026 in Seattle. Tickets on sale now. Talks on async runtimes, embedded Rust, and the borrow checker.",
+  "expected": {
+    "category": "event",
+    "priority": "normal",
+    "action": "schedule",
+    "expires_at_days": {
+      "min": 10,
+      "max": 32
+    }
+  }
+}

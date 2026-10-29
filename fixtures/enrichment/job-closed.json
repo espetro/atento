@@ -1,0 +1,15 @@
+{
+  "slug": "job-closed",
+  "url": "https://jobs.example.com/closed-req",
+  "title": "Product Manager role (closed)",
+  "content": "This requisition is closed. We are no longer accepting applications for this Product Manager position. Posted 90 days ago.",
+  "expected": {
+    "category": "job",
+    "priority": "low",
+    "action": "discard",
+    "expires_at_days": {
+      "min": 0,
+      "max": 10
+    }
+  }
+}

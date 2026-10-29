@@ -1,0 +1,15 @@
+{
+  "slug": "video-tech-talk",
+  "url": "https://www.youtube.com/watch?v=abc123",
+  "title": "Strange Loop talk on compilers",
+  "content": "Video transcript: a 45 minute conference talk about how incremental compilers work, with examples from Rust and Swift. Evergreen technical content.",
+  "expected": {
+    "category": "video",
+    "priority": "normal",
+    "action": "schedule",
+    "expires_at_days": {
+      "min": null,
+      "max": null
+    }
+  }
+}
