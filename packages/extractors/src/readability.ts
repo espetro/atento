@@ -1,15 +1,14 @@
 import { Extractor, ExtractResult, FetchLike } from "./types.js";
-import type { ParseHtml } from "./defuddle.js";
 
 export interface ReadabilityExtractorOptions {
   fetch: FetchLike;
-  parseHtml?: ParseHtml;
 }
 
 /**
  * Fallback extractor: @mozilla/readability for article selection, turndown
- * for HTML -> markdown. Same contract as defuddle; never throws. Errors or
- * empty output surface as needsBrowser=true so the router can escalate.
+ * for HTML -> markdown. Runs over a linkedom document (no jsdom needed).
+ * Same contract as defuddle; never throws. Errors or empty output surface
+ * as needsBrowser=true so the router can escalate.
  */
 export function createReadabilityExtractor(options: ReadabilityExtractorOptions): Extractor {
   return {
@@ -25,20 +24,26 @@ export function createReadabilityExtractor(options: ReadabilityExtractorOptions)
       }
 
       try {
-        const [{ JSDOM }, readabilityMod, { default: TurndownService }] = await Promise.all([
-          import("jsdom"),
+        const [{ parseHTML }, readabilityMod, { default: TurndownService }] = await Promise.all([
+          import("linkedom"),
           import("@mozilla/readability"),
           import("turndown"),
         ]);
-        const dom = new JSDOM(body, { url });
-        const article = new readabilityMod.Readability(dom.window.document).parse();
+        const { document } = parseHTML(body);
+        const article = new readabilityMod.Readability(document as never).parse();
         if (!article || !article.textContent?.trim()) {
           return { markdown: "", needsBrowser: true };
         }
-        const turndown = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" });
-        const markdown = turndown
-          .turndown(article.content ?? "")
-          .trim();
+        // Turndown needs a document global; scope it to this call.
+        const globalDoc = (globalThis as { document?: Document }).document;
+        (globalThis as { document?: Document }).document = document;
+        let markdown = "";
+        try {
+          const turndown = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" });
+          markdown = turndown.turndown(article.content ?? "").trim();
+        } finally {
+          (globalThis as { document?: Document }).document = globalDoc;
+        }
         if (!markdown) return { markdown: "", needsBrowser: true };
         return {
           markdown,

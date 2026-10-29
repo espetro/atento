@@ -66,7 +66,7 @@ export function buildRouterDeps(options: RouterOptions = {}): RouterDeps {
       defuddle: options.extractors?.defuddle ??
         createDefuddleExtractor({ fetch: fetch!, parseHtml: parseHtml! }),
       readability: options.extractors?.readability ??
-        createReadabilityExtractor({ fetch: fetch!, parseHtml: parseHtml! }),
+        createReadabilityExtractor({ fetch: fetch! }),
       browser: options.extractors?.browser ?? createBrowserExtractor(options.browser),
       ytdlp: options.extractors?.ytdlp ?? createYtdlpExtractor(options.ytdlp),
       pdf: options.extractors?.pdf ?? createPdfExtractor({ fetch: fetch!, ...options.pdf }),
