@@ -1,6 +1,8 @@
 <script lang="ts">
   import { createQuery, useQueryClient } from '@tanstack/svelte-query'
-  import { createVirtualizer } from '@tanstack/svelte-virtual'
+  import { createVirtualizer, type SvelteVirtualizer } from '@tanstack/svelte-virtual'
+
+  type VirtualizerInstance = SvelteVirtualizer<HTMLElement, Element>
   import { api } from '../lib/api'
   import type { UrlState } from '../lib/urlState'
   import type { LinkAction, LinkSummary } from '../lib/types'
@@ -37,15 +39,45 @@
   let scrollEl = $state<HTMLElement | null>(null)
 
   const virtualizerStore = createVirtualizer({
-    get count() {
-      return items.length
-    },
+    count: 0,
     getScrollElement: () => scrollEl,
     estimateSize: () => 190,
     overscan: 6,
   })
-  const virtualizer = $derived($virtualizerStore)
-  const virtualRows = $derived(virtualizer.getVirtualItems())
+
+  // The underlying Virtualizer instance is mutated in place, so store
+  // emissions carry the same object identity. A version counter forces the
+  // derived range to recompute whenever the instance reports a change.
+  let virtualVersion = $state(0)
+  let virtualizer = $state<VirtualizerInstance | null>(null)
+
+  $effect(() => {
+    if (!scrollEl) return
+    const unsub = virtualizerStore.subscribe((instance) => {
+      virtualizer = instance
+    })
+    return () => {
+      unsub()
+      virtualizer = null
+    }
+  })
+
+  $effect(() => {
+    if (!virtualizer) return
+    virtualizer.setOptions({
+      count: items.length,
+      getScrollElement: () => scrollEl,
+      onChange: () => {
+        virtualVersion++
+      },
+    })
+  })
+
+  const virtualRows = $derived.by(() => {
+    void virtualVersion
+    if (!virtualizer) return [] as { index: number; key: number; start: number; size: number }[]
+    return virtualizer.getVirtualItems()
+  })
 
   async function onAction(id: number, action: LinkAction) {
     await api.triage([id], action)
@@ -130,7 +162,8 @@
       data-testid="link-list"
       style={items.length > 20 ? 'height: calc(100dvh - 16rem);' : ''}
     >
-      <div class="relative w-full" style={`height: ${virtualizer.getTotalSize()}px;`}>
+      {#if items.length > 20}
+      <div class="relative w-full" data-testid="vsize" style={`height: ${virtualRows.length > 0 ? (virtualizer?.getTotalSize() ?? 0) : 0}px;`}>
         {#each virtualRows as row (row.key)}
           <div
             class="absolute top-0 left-0 w-full pb-2"
@@ -145,6 +178,18 @@
           </div>
         {/each}
       </div>
+      {/if}
+      {#if !(items.length > 20)}
+        <div class="space-y-2" data-testid="plain-list">
+          {#each items as item (item.id)}
+            <LinkCard
+              link={item}
+              onAction={onAction}
+              onOpen={(id) => setUrl({ selected: id })}
+            />
+          {/each}
+        </div>
+      {/if}
     </div>
 
     {#if total > limit}
