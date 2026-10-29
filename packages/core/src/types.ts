@@ -1,5 +1,7 @@
 // Domain types for the linkinbox pipeline. Pure, no IO.
 
+import type { MediaReport } from './media.js'
+
 /** What an importer produces, before normalization. */
 export interface RawLink {
   url: string
@@ -63,6 +65,11 @@ export interface Link {
    * outranks anything the pipeline fetched itself.
    */
   captured: boolean
+  /**
+   * The media stage report for this link, when the stage ran: one entry per
+   * tier with its status. Null when the link never went through the stage.
+   */
+  mediaReport: MediaReport | null
   /** When the content was captured (client-side captures only). */
   capturedAt: Date | null
   createdAt: Date
@@ -124,6 +131,7 @@ export type LinkInput = Omit<
   | 'stateData'
   | 'captured'
   | 'capturedAt'
+  | 'mediaReport'
 > & {
   id?: number
   createdAt?: Date
@@ -148,4 +156,6 @@ export type LinkInput = Omit<
   captured?: boolean
   /** When the capture happened (client-side captures only). */
   capturedAt?: Date | null
+  /** Optional: the media stage report for this link. */
+  mediaReport?: MediaReport | null
 }

@@ -38,6 +38,7 @@ export type LinkField =
   | 'updatedAt'
   | 'state'
   | 'stateData'
+  | 'mediaReport'
 
 /** Default projection: identity + triage state, no bulky content. */
 export const DEFAULT_LINK_FIELDS: LinkField[] = [
@@ -91,6 +92,7 @@ export function projectLink(link: Link, fields?: LinkField[]): LinkProjection {
       case 'updatedAt': out.updatedAt = iso(link.updatedAt); break
       case 'state': out.state = link.state; break
       case 'stateData': out.stateData = link.stateData; break
+      case 'mediaReport': out.mediaReport = link.mediaReport; break
     }
   }
   return out

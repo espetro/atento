@@ -12,6 +12,7 @@ import type {
 } from './types.js'
 import type { LinkEvent, LinkState, LinkStateName } from './fsm/index.js'
 import type { HostState } from './resilience/types.js'
+import type { MediaReport } from './media.js'
 
 /**
  * Repository layer. Hides the storage engine (drizzle/sqlite today, maybe pg
@@ -44,6 +45,20 @@ export interface Store {
   updateTitle(id: number, title: string, updatedAt?: Date): Promise<number>
   /** Mark a link as captured: the `captured` flag plus the capture timestamp. */
   markCaptured(id: number, capturedAt: Date, updatedAt?: Date): Promise<number>
+  /** Store the media stage report for a link. */
+  setMediaReport(id: number, report: MediaReport, updatedAt?: Date): Promise<number>
+
+  /**
+   * Per-day budget counters for the media stage, shared across processes and
+   * restarts. Day key format: `YYYY-MM-DD` (UTC).
+   */
+  getMediaBudget(
+    day: string,
+  ): Promise<{ total: number; byTier: Record<string, number> }>
+  saveMediaBudget(
+    day: string,
+    budget: { total: number; byTier: Record<string, number> },
+  ): Promise<void>
 
   /**
    * FSM: apply one event atomically with a compare-and-set on the current
@@ -137,7 +152,17 @@ export const SOURCES = {
   safariReadingList: 'safari-reading-list',
 } as const satisfies Record<string, string>
 
-export type { RawLink, Link, Enrichment, Status, Run, Metric, Profile, ProfileInput }
+export type {
+  RawLink,
+  Link,
+  Enrichment,
+  Status,
+  Run,
+  Metric,
+  Profile,
+  ProfileInput,
+  MediaReport,
+}
 
 /** Outcome of Store.applyEvent: the new state, or a typed error. */
 export type TransitionOutcome =
