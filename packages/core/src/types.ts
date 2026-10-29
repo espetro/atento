@@ -46,6 +46,12 @@ export interface Link {
   expiresAt: Date | null
   expiryReason: string | null
   status: Status
+  /** Flattened enrichment columns (mirrors the enrichment json blob). */
+  category: string | null
+  priority: Enrichment['priority'] | null
+  action: Enrichment['action'] | null
+  confidence: number | null
+  readMinutes: number | null
   needsBrowser: boolean
   createdAt: Date
   updatedAt: Date
@@ -78,5 +84,15 @@ export interface Metric {
 /** Data needed to insert or update a link, keyed on urlHash. */
 export type LinkInput = Omit<
   Link,
-  'id' | 'createdAt' | 'updatedAt'
-> & { id?: number; createdAt?: Date; updatedAt?: Date }
+  'id' | 'createdAt' | 'updatedAt' | 'category' | 'priority' | 'action' | 'confidence' | 'readMinutes'
+> & {
+  id?: number
+  createdAt?: Date
+  updatedAt?: Date
+  /** Optional flattened enrichment columns; usually derived from `enrichment`. */
+  category?: string | null
+  priority?: Enrichment['priority'] | null
+  action?: Enrichment['action'] | null
+  confidence?: number | null
+  readMinutes?: number | null
+}

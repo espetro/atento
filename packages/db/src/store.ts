@@ -65,6 +65,33 @@ export class SqliteStore implements Store {
     this.db = drizzle(this.sqlite) as unknown as Db
   }
 
+  /** Run a PRAGMA. `simple: true` returns the first row column as a scalar. */
+  pragma(source: string, options?: { simple?: boolean }): unknown {
+    return this.sqlite.pragma(source, options)
+  }
+
+  /** All run rows, newest first. Convenience for the metrics CLI. */
+  allRuns(): Run[] {
+    return this.db
+      .select()
+      .from(runs)
+      .orderBy(sql`${runs.startedAt} DESC, ${runs.id} DESC`)
+      .all()
+      .map((r) => ({
+        id: r.id,
+        stage: r.stage,
+        startedAt: r.startedAt,
+        finishedAt: r.finishedAt ?? null,
+        inputCount: r.inputCount,
+        okCount: r.okCount,
+        errorCount: r.errorCount,
+        durationMs: r.durationMs ?? null,
+        tokensIn: r.tokensIn ?? null,
+        tokensOut: r.tokensOut ?? null,
+        costUsd: r.costUsd ?? null,
+      }))
+  }
+
   async migrate(): Promise<void> {
     this.sqlite.exec(SCHEMA_SQL)
     this.setMetaSync('schema_version', SCHEMA_VERSION)
@@ -348,6 +375,11 @@ function fromRow(row: LinkRow): Link {
     expiresAt: row.expiresAt ?? null,
     expiryReason: row.expiryReason ?? null,
     status: row.status as Status,
+    category: row.category ?? null,
+    priority: (row.priority as Enrichment['priority'] | null) ?? null,
+    action: (row.action as Enrichment['action'] | null) ?? null,
+    confidence: row.confidence ?? null,
+    readMinutes: row.readMinutes ?? null,
     needsBrowser: row.needsBrowser,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
