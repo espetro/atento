@@ -23,6 +23,8 @@ export const CLI_ONLY_EXCEPTIONS: Record<string, string> = {
     'breaker reset mutates the shared circuit breaker state; the MCP side exposes the read-only limits_status tool instead',
   media:
     'tiered media stage (yt-dlp download plus local ASR); a long-running local subprocess that stays CLI-only for now',
+  retry:
+    're-queues a captured link for headless extraction on this machine; a local pipeline operation, the extract_run tool covers the batch form',
 }
 
 /** Which MCP tool(s) cover which CLI command. */
