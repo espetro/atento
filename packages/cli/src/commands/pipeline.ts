@@ -34,10 +34,12 @@ function extractOptions(
   extractFn: ExtractFn,
   mediaFn: MediaFn | undefined,
   limit?: number,
+  host?: string,
 ) {
   return {
     extract: extractFn,
     limit,
+    host,
     guard: guardFor(ctx),
     maxBatch: (ctx.config.limits ?? DEFAULT_LIMITS).maxBatch,
     // The media stage runs inside extract for video links; the store-backed
@@ -76,14 +78,15 @@ export async function runImport(ctx: CliContext, files: string[], limit?: number
   if (outcome.duplicates > 0) console.log(`(${outcome.duplicates} already known, no-op)`)
 }
 
-/** extract [--limit N]: extraction on inbox links lacking content. */
+/** extract [--limit N] [--host H]: extraction on inbox links lacking content. */
 export async function runExtract(
   ctx: CliContext,
   extractFn: ExtractFn,
   limit?: number,
   mediaFn?: MediaFn,
+  host?: string,
 ): Promise<void> {
-  const outcome = await extract(ctx.store, extractOptions(ctx, extractFn, mediaFn, limit))
+  const outcome = await extract(ctx.store, extractOptions(ctx, extractFn, mediaFn, limit, host))
   printStage(outcome)
   if (outcome.deferredCount > 0) {
     console.log(`(${outcome.deferredCount} deferred; retry in ${Math.round(outcome.retryAfter / 1000)}s)`)
@@ -191,10 +194,11 @@ export function registerPipelineCommands(
     .command('extract')
     .description('extract content for inbox links that lack it')
     .option('--limit <n>', 'cap the number of links processed', Number)
-    .action(async (opts: { limit?: number }) => {
+    .option('--host <host>', 'only process links of this host (one site at a time)')
+    .action(async (opts: { limit?: number; host?: string }) => {
       const ctx = await deps.ctx()
       try {
-        await runExtract(ctx, await deps.extractFn(ctx), opts.limit, await deps.mediaFn?.(ctx))
+        await runExtract(ctx, await deps.extractFn(ctx), opts.limit, await deps.mediaFn?.(ctx), opts.host?.toLowerCase())
       } finally {
         await ctx.close()
       }

@@ -36,6 +36,8 @@ export interface ExtractOptions extends StageOptions {
   extract: ExtractFn
   /** Cap the number of links processed in this run. */
   limit?: number
+  /** Only process links of this host (canary runs, one site at a time). */
+  host?: string
   /**
    * How long a lease may be held before another runner reclaims it. Leases
    * older than this are returned to the `created` queue before the batch is
@@ -105,7 +107,10 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
   // Due deferred links come back to the created queue before selection.
   await releaseDueDeferred(store, 'extract', startedAt)
 
-  const batch = (await store.listByStates(['created'], options.limit)).slice(0, maxBatch)
+  const queued = options.host
+    ? (await store.listByStates(['created'])).filter((link) => hostOf(link.url) === options.host)
+    : await store.listByStates(['created'], options.limit)
+  const batch = queued.slice(0, options.limit ?? maxBatch).slice(0, maxBatch)
   const run = await store.startRun(STAGES.extract, batch.length, startedAt)
   logger.info('extract run {runId} started with {inputCount} links', {
     runId: run.id,
