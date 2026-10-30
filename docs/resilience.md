@@ -140,6 +140,50 @@ host with a saved profile or a login-gated host, a 404 is a private page
 answering an anonymous request: the link moves to `needs_browser` with the
 reason `private_404` (or `private_410`) instead of `errored`.
 
+## Host policy: skip, review only, login allow
+
+Three host lists decide what the pipeline does with a host. All of them use
+the same pattern syntax: an exact host (`revolut.com`) or a `*.suffix`
+wildcard (`*.revolut.com`), matched against the hostname WITHOUT the port,
+so `localhost` matches `http://localhost:3000/x`.
+
+| List | Config | Effect |
+|---|---|---|
+| skip list | `[limits] skip_hosts` | The host is never fetched. The link is parked as `discarded` with the reason `skip_host`. |
+| review list | `[limits] review_hosts` | The host is never fetched either, but the link stays visible: it is parked in `needs_browser` with the reason `review_only`, so the owner reviews it by hand. |
+| login allow list | `[login] allow` | The hosts the pipeline may ever log in to. When it is set and non-empty, a login-walled host that is neither allowed nor backed by a saved profile is review-only: it is not listed as a pending login, no browser or profile is ever attempted for it, and its links stay visible in `needs_browser` with the reason `review_only`. |
+
+When `[login] allow` is empty or absent, every login-walled host behaves as
+before: it is listed as a pending login and the browser is opened for it. A
+host with a saved profile always counts as allowed, whatever the allow list
+says: the session exists already.
+
+Loopback hosts are skipped by default, without any config entry: `localhost`,
+`127.0.0.1`, `::1` and any `*.localhost` name. A pipeline run can never fetch
+the user's own services, so the links are parked as `discarded` like any
+other skip-listed host. This is a built-in rule in `hostPolicy`, not a
+default entry in the skip list: the configured `skip_hosts` list still ships
+empty.
+
+### Reconciling parked links
+
+The config changes over time, so the extract stage reconciles the already
+parked links at the start of every run: a link parked for a host that is now
+skip-listed moves to `discarded` (through the FSM: `RETRY` back to the queue,
+then `TRIAGE` discard), and a link parked for a host that is now review-only
+gets the reason `review_only`. The sweep is idempotent: running it twice
+changes nothing. When it changed something it writes one `reconciled` metric
+row with the `discarded` and `review_only` counts.
+
+### The pending login list
+
+`linkinbox login` (and the MCP tool `login_pending`) lists the hosts that
+still need a session. The list excludes the hosts the policy excludes on
+purpose: skip-listed hosts, review-only hosts and login-gated hosts the
+allow list does not cover. To make sure nothing is hidden, the report
+carries a `reviewOnly` count of the parked links the pipeline will never
+fetch, and the human rendering prints it under the table.
+
 ### bounded queue
 
 `createBoundedQueue({ maxSize, concurrency })`: enqueue returns accepted or
@@ -191,8 +235,14 @@ All values are overridable in `~/.linkinbox/config.toml`:
 global_concurrency = 8
 max_batch = 20
 llm_concurrency = 3
-# Never fetch these hosts. Exact host or *.suffix wildcard.
+# Never fetch these hosts. Exact host or *.suffix wildcard. The host is
+# matched without the port, so "localhost" covers localhost:3000 too.
+# Loopback hosts are skipped by default anyway.
 skip_hosts = ["gemini.google.com", "*.duckduckgo.com"]
+# Never fetch these hosts either, but keep the links visible: they are
+# parked in needs_browser with the reason review_only and the owner reads
+# them by hand.
+review_hosts = ["revolut.com", "*.revolut.com"]
 # Optional manual override: forces the strict limits and browser routing.
 # Ships with NO default entries; walled gardens are discovered by canary
 # probing.
@@ -202,6 +252,20 @@ walled_gardens = []
 interval_ms = 45000
 daily_cap = 40
 concurrency = 1
+
+# The hosts the pipeline may log in to. When this table is set and not
+# empty, every other login-walled host is review-only: no browser is
+# attempted for it and its links stay visible for the owner to read.
+# Leave it out (or empty) to keep the old behaviour: every login-walled
+# host is listed as a pending login.
+[login]
+allow = [
+  "app.devin.ai",
+  "chat.z.ai",
+  "*.usebrioso.com",
+  "figma.com",
+  "docs.google.com",
+]
 
 # Human pacing for strict hosts. Additive: a missing table keeps the
 # defaults. Set daily_cap very high (or hours_start = 0 / hours_end = 24)
@@ -217,6 +281,16 @@ daily_cap = 40
 hours_start = 8
 hours_end = 23
 ```
+
+| `[limits]` key | Default | Meaning |
+|---|---|---|
+| `skip_hosts` | `[]` | Never fetched. The links are discarded. |
+| `review_hosts` | `[]` | Never fetched. The links stay visible for the owner (`review_only`). |
+| `walled_gardens` | `[]` | Forced strict limits and browser routing. Discovered by canary probing, never hardcoded. |
+
+| `[login]` key | Default | Meaning |
+|---|---|---|
+| `allow` | `[]` | The hosts the pipeline may log in to. Empty means no restriction. |
 
 | `[pacing]` key | Default | Meaning |
 |---|---|---|
@@ -236,15 +310,34 @@ hours_end = 23
 - extract/enrich invoked through server or MCP are capped at `max_batch`
   (default 20 per call) and return structured deferred info
   (`deferredCount`, `retryAfter`) instead of throwing.
+- The extract result also carries `reviewOnlyCount` (links parked for the
+  owner to review) and `reconciledCount` (links the sweep moved).
 - `linkinbox status` lists per-host budget remaining, breaker state and
   reopen time; `--json` for machine consumption.
 - `linkinbox breaker reset <host>` force-closes the breaker (CLI only).
 - MCP read-only tool `limits_status` (spec name `limits.status`). Breaker
   reset stays CLI-only and is a documented parity exception.
 - Metrics rows per host and stage: `retries`, `throttled`, `deferred`,
-  `breaker_open`.
+  `breaker_open`, `reconciled`.
 
 ## Tests
+
+packages/core/test/host-policy.test.ts and
+packages/core/test/review-only.test.ts cover: the hostname without the port,
+the loopback hosts skipped by default (localhost, 127.0.0.1, ::1 and
+*.localhost, with and without a port), the pattern matching, the review_hosts
+short-circuit parking links in needs_browser without a fetch, the `[login]`
+allow list (an allowed host keeps the login flow, a non-allowed login-gated
+host becomes review-only, a saved profile overrides the allow list, an empty
+allow list changes nothing), and the reconcile sweep (a now skip-listed host
+discarded, a now review-only host re-reasoned, idempotence, the metric row).
+All use a fake clock and a fake extract function; nothing sleeps and nothing
+touches the network.
+
+packages/cli/test/login-flow.test.ts covers the pending-login list against
+the host policy: skip-listed, review-only and non-allowed hosts are left out
+of the pending list, the reviewOnly count reports the excluded links, and an
+empty policy keeps every host pending as before.
 
 packages/core/test/resilience.test.ts and
 packages/core/test/pipeline-resilience.test.ts cover: backoff schedule and
