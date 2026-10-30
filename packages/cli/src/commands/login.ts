@@ -418,4 +418,24 @@ export function registerLoginCommand(
         await ctx.close()
       }
     })
+
+  login
+    .command('requeue')
+    .description("requeue a host's parked needs_browser links (the host must have a saved profile)")
+    .argument('<host>')
+    .action(async (host: string) => {
+      const ctx = await deps.ctx()
+      try {
+        const normalized = host.toLowerCase()
+        if ((await ctx.store.getProfile(normalized)) === null) {
+          console.error(`no saved profile for ${normalized}; run: linkinbox login ${normalized}`)
+          process.exitCode = 1
+          return
+        }
+        const n = await requeueHostLinks(ctx, normalized)
+        console.log(`requeued ${n} link(s) for ${normalized}`)
+      } finally {
+        await ctx.close()
+      }
+    })
 }

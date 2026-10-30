@@ -28,7 +28,8 @@ export const extractedSchema = z.object({
 
 export const needsBrowserSchema = z.object({
   state: z.literal('needs_browser'),
-  host: z.string(),
+  /** Older rows were parked without a host; they parse as an empty host. */
+  host: z.string().default(''),
   /** Why a browser is needed, e.g. `login_wall` or `private_404`. */
   reason: z.string().optional(),
 })
