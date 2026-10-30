@@ -9,6 +9,7 @@ import {
   emptyHostState,
   hostPolicy,
   isLoginWall,
+  loginAllowed,
   markFlagged,
   markOpen,
   pacingSignalMs,
@@ -429,7 +430,17 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
           needsBrowserCount += 1
           bump(needsBrowserByExtractor, extractor)
           const wallReason = raw.gone === 404 ? 'private_404' : 'private_410'
-          await recordLoginWall(store, link, host, now(), wallReason)
+          if (
+            policy.reviewOnly ||
+            !loginAllowed(guard?.config.login?.allow, host, hasProfile)
+          ) {
+            // A host the owner reviews by hand is never listed as a login
+            // task: park it review-only straight away.
+            reviewOnlyCount += 1
+            await parkReviewOnly(store, link, host, now())
+          } else {
+            await recordLoginWall(store, link, host, now(), wallReason)
+          }
           await flagHost(store, host, now().getTime(), wallReason, true)
           canaryTrials[host] = 'flagged'
           canaryReasons.set(host, wallReason)
@@ -502,11 +513,22 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
 
       // Login-wall detection on a page that returned content: the host
       // wants a session we do not have.
-      const wall = detectLoginWall(raw, link.url, await policyFor(host))
+      const policyNow = await policyFor(host)
+      const wall = detectLoginWall(raw, link.url, policyNow)
       if (wall) {
         needsBrowserCount += 1
         bump(needsBrowserByExtractor, extractor)
-        await recordLoginWall(store, link, host, now(), wall)
+        if (
+          policyNow.policy.reviewOnly ||
+          !loginAllowed(guard?.config.login?.allow, host, policyNow.hasProfile)
+        ) {
+          // A host the owner reviews by hand is never listed as a login
+          // task: park it review-only straight away.
+          reviewOnlyCount += 1
+          await parkReviewOnly(store, link, host, now())
+        } else {
+          await recordLoginWall(store, link, host, now(), wall)
+        }
         // A login wall is a flag: the rest of this host's links wait.
         await flagHost(store, host, now().getTime(), wall, true)
         canaryTrials[host] = 'flagged'

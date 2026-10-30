@@ -147,6 +147,28 @@ describe('the [login] allow list gates the login-walled hosts', () => {
     expect(parked[0]?.stateData?.['reason']).toBe('review_only')
   })
 
+  it('the first link of a non-allowed login-walled host parks review-only right away', async () => {
+    const store = new FakeStore()
+    const clock = fakeClock()
+    await insertLinks(store, ['https://revolut.com/private'])
+    let calls = 0
+    const result = await extract(store, {
+      extract: async () => {
+        calls += 1
+        return { markdown: 'Sign in to continue', extractor: 'defuddle', status: 401 }
+      },
+      guard: guard(store, clock),
+      now: clock.now,
+    })
+    // The wall was seen, so the host is known to be login-gated, and the
+    // allow list does not cover it: the link is review-only from the start.
+    expect(calls).toBe(1)
+    expect(result.reviewOnlyCount).toBe(1)
+    const parked = await store.listByStates(['needs_browser'])
+    expect(parked[0]?.stateData?.['reason']).toBe('review_only')
+    expect(parked[0]?.expiryReason).toBe('review_only')
+  })
+
   it('a host in the allow list keeps the ordinary login flow (fetch attempted)', async () => {
     const store = new FakeStore()
     const clock = fakeClock()
