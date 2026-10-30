@@ -30,6 +30,7 @@ import {
   type LoadPendingLogins,
   type LoginReport,
   type PendingLogin,
+  type PendingLoginPolicy,
 } from '../pending-logins.js'
 
 const AGENT_BROWSER = process.env['LINKINBOX_AGENT_BROWSER'] ?? 'agent-browser'
@@ -176,6 +177,17 @@ export async function runLoginClear(ctx: CliContext, host: string): Promise<void
 }
 
 /**
+ * The host policy the pending list honours, from the config: the skip list,
+ * the review list and the `[login] allow` list.
+ */
+function pendingPolicy(ctx: CliContext): PendingLoginPolicy {
+  return {
+    limits: ctx.config.limits,
+    loginAllow: ctx.config.login?.allow,
+  }
+}
+
+/**
  * The listing itself: pending hosts ordered by waiting links, then the hosts
  * that already have a profile with its age. Pure data; both the interactive
  * and the JSON branch render from this.
@@ -185,7 +197,7 @@ export async function runLoginPending(
   deps: LoginFlowDeps = {},
 ): Promise<LoginReport> {
   const load = deps.loadLogins ?? loadPendingLogins
-  return buildLoginReport(await load(ctx.store))
+  return buildLoginReport(await load(ctx.store, pendingPolicy(ctx)))
 }
 
 /** Human rendering of the report. */
@@ -212,6 +224,15 @@ export function renderLoginReport(report: LoginReport): string {
       ),
     )
   }
+  if (report.reviewOnly !== undefined && report.reviewOnly > 0) {
+    // The review-only links are never fetched and never logged in to: the
+    // owner reads them by hand. Say so, so nothing is silently hidden.
+    lines.push('')
+    const n = report.reviewOnly
+    lines.push(
+      `review only (never fetched, read by hand): ${n} link${n === 1 ? '' : 's'}`,
+    )
+  }
   return lines.join('\n')
 }
 
@@ -229,7 +250,7 @@ export async function runLoginFlow(
   const interactive =
     deps.nonInteractive !== true && (deps.isInteractive?.() ?? isInteractiveProcess())
 
-  const report = buildLoginReport(await load(ctx.store))
+  const report = buildLoginReport(await load(ctx.store, pendingPolicy(ctx)))
 
   if (!interactive) {
     console.log(JSON.stringify(report, null, 2))
@@ -268,7 +289,7 @@ export async function runLoginFlow(
     requeued += n
   }
 
-  const remaining = buildLoginReport(await load(ctx.store))
+  const remaining = buildLoginReport(await load(ctx.store, pendingPolicy(ctx)))
   console.log('')
   console.log(`logged in to ${logged} host${logged === 1 ? '' : 's'}, requeued ${requeued} link${requeued === 1 ? '' : 's'}`)
   console.log(renderLoginReport(remaining))

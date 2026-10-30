@@ -18,6 +18,8 @@ const context: McpContext = {
   store,
   ttl: config.ttl,
   logger,
+  limits: config.limits,
+  login: config.login,
 }
 
 export const deps: McpDeps = {

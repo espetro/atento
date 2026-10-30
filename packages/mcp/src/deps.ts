@@ -6,6 +6,8 @@
 import type {
   ExtractFn,
   EnrichFn,
+  LimitsConfig,
+  LoginConfig,
   MetricsSummary,
   PipelineLogger,
   Store,
@@ -18,6 +20,10 @@ export interface McpContext {
   store: Store
   ttl: TtlConfig
   logger: PipelineLogger
+  /** The config limits: the skip list and the review list. */
+  limits?: LimitsConfig
+  /** Which hosts may be logged in to (`[login] allow`). */
+  login?: LoginConfig
 }
 
 export interface McpDeps {

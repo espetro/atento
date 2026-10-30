@@ -234,18 +234,26 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     async (args: { limit?: number }) => {
       const ctx = await deps.ctx()
       {
-        const guard: GuardDeps = guardDepsFromStore(ctx.store)
+        const guard: GuardDeps = guardDepsFromStore(ctx.store, {
+          // Only the keys that are set: an undefined value would replace the
+          // default limits with nothing.
+          config: {
+            ...(ctx.limits ? { limits: ctx.limits } : {}),
+            ...(ctx.login ? { login: ctx.login } : {}),
+          },
+        })
         const outcome = await extract(ctx.store, {
           extract: await deps.extractFn(ctx),
           limit: args.limit,
           guard,
-          maxBatch: DEFAULT_LIMITS.maxBatch,
+          maxBatch: ctx.limits?.maxBatch ?? DEFAULT_LIMITS.maxBatch,
           logger: ctx.logger,
         })
         return json({
           okCount: outcome.okCount,
           errorCount: outcome.errorCount,
           needsBrowserCount: outcome.needsBrowserCount,
+          reviewOnlyCount: outcome.reviewOnlyCount,
           deferredCount: outcome.deferredCount,
           retryAfter: outcome.retryAfter,
         })
@@ -359,7 +367,12 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     async () => {
       const ctx = await deps.ctx()
       {
-        return json(await loadLoginReport(ctx.store))
+        return json(
+          await loadLoginReport(ctx.store, {
+            limits: ctx.limits,
+            loginAllow: ctx.login?.allow,
+          }),
+        )
       }
     },
   )
