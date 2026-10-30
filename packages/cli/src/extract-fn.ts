@@ -55,12 +55,12 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
       // reading, so a logged-in session does not look like a script. The
       // sleep is the real one; tests inject fakes at the extractor level.
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-      scroll: async (px) => {
+      scroll: async (px, profileDir) => {
         const { execFile } = await import('node:child_process')
         await new Promise<void>((resolve) => {
           execFile(
             options.browser?.command ?? 'agent-browser',
-            ['scroll', 'down', String(px)],
+            ['--profile', profileDir, 'scroll', 'down', String(px)],
             { timeout: 10_000 },
             () => resolve(),
           )

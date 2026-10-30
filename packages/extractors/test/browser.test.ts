@@ -103,6 +103,7 @@ describe("browser extractor: human pacing", () => {
   it("waits the dwell time and scrolls before reading, in order", async () => {
     const events: string[] = [];
     let scrolls: number[] = [];
+    let scrollProfile = "";
     const exec: ExecLike = async (_file, args) => {
       events.push(args.includes("open") ? "open" : "read");
       return { code: 0, stdout: "# page\n\ncontent", stderr: "" };
@@ -115,12 +116,14 @@ describe("browser extractor: human pacing", () => {
       sleep: async (ms) => {
         events.push(`dwell:${ms}`);
       },
-      scroll: async (px) => {
+      scroll: async (px, profileDir) => {
         scrolls.push(px);
+        scrollProfile = profileDir;
         events.push("scroll");
       },
     });
     const result = await extractor.extract("https://x.com/post/3");
+    expect(scrollProfile).toMatch(/x\.com$/);
     expect(result.markdown).toBe("# page\n\ncontent");
     expect(events).toEqual(["open", "dwell:20000", "scroll", "read"]);
     expect(scrolls).toEqual([350]);

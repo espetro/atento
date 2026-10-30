@@ -24,7 +24,7 @@ export interface BrowserExtractorOptions {
    * Human-like scroll before reading. Injected so tests need no browser.
    * When absent no scroll happens.
    */
-  scroll?: (pixels: number) => Promise<void>;
+  scroll?: (pixels: number, profileDir: string) => Promise<void>;
   /** Sampled dwell time in ms; defaults to the pacing median (20s). */
   dwellMs?: number;
   /** Sampled scroll distance in px; defaults to a small human-like step. */
@@ -140,7 +140,7 @@ export function createBrowserExtractor(options: BrowserExtractorOptions = {}): E
           };
         }
         if (options.sleep) await options.sleep(dwellMs);
-        if (options.scroll) await options.scroll(scrollPx);
+        if (options.scroll) await options.scroll(scrollPx, profileDir);
         const result = await exec(command, [...base, "read"], { timeoutMs });
         if (result.code !== 0) {
           return {
