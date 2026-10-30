@@ -72,6 +72,19 @@ export interface LoginFlowDeps {
   all?: boolean
 }
 
+function runCommand(command: string, args: string[]): Promise<number> {
+  return new Promise<number>((resolve) => {
+    const child = spawn(command, args, { stdio: 'inherit' })
+    child.on('error', () => resolve(-1))
+    child.on('exit', (c) => resolve(c ?? 0))
+  })
+}
+
+function waitForEnter(prompt: string): Promise<void> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  return new Promise<void>((resolve) => rl.question(prompt, () => (rl.close(), resolve())))
+}
+
 /**
  * Spawn `agent-browser --headed --profile <dir> open https://<host>` and wait
  * for the user to close the window. Records the profile in the store.
@@ -85,17 +98,21 @@ export async function runLogin(
   const profilePath = profileDirFor(ctx.config.profilesDir, normalizedHost)
   const url = options.url ?? `https://${normalizedHost}/`
 
+  const command = options.command ?? AGENT_BROWSER
   const launch: LoginLauncher =
     options.launch ??
-    (async () =>
-      await new Promise<number>((resolve) => {
-        const command = options.command ?? AGENT_BROWSER
-        const child = spawn(command, ['--headed', '--profile', profilePath, 'open', url], {
-          stdio: 'inherit',
-        })
-        child.on('error', () => resolve(-1))
-        child.on('exit', (c) => resolve(c ?? 0))
-      }))
+    (async () => {
+      // `open` returns once the page loads while the browser keeps running,
+      // so the login is finished by the user, not by this process exiting.
+      const code = await runCommand(command, ['--headed', '--profile', profilePath, 'open', url])
+      if (code !== 0) return code
+      await waitForEnter(
+        `Log in to ${normalizedHost} in the browser window, then press Enter here to save the session... `,
+      )
+      // Closing flushes the session into the profile directory.
+      await runCommand(command, ['--profile', profilePath, 'close'])
+      return 0
+    })
 
   const code = await launch(normalizedHost, profilePath)
 
