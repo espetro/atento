@@ -1,5 +1,5 @@
 /**
- * Link-facing commands: list, show, triage.
+ * Link-facing commands: list, show, overview, triage.
  * All of them call the core ops layer, never the store directly.
  */
 import type { Command } from 'commander'
@@ -10,11 +10,14 @@ import {
   restore,
   retryHeadless,
   linkHistory,
+  pipelineOverview,
+  toPipelineRow,
   LINK_STATES,
   type LinkField,
   type Status,
   type TriageAction,
   type LinkStateName,
+  type PipelineOverview,
 } from '@linkinbox/core'
 import type { CliContext } from '../context.js'
 import { renderTable, shortDate } from '../render.js'
@@ -34,7 +37,22 @@ export interface ListOptions {
   q?: string
 }
 
-/** list [--status --category --stale --json] */
+/**
+ * The fields the state-filtered list asks the store for: the pipeline row
+ * needs the FSM state and its payload (the reason and the retry time).
+ */
+const STATE_LIST_FIELDS: LinkField[] = [
+  'id',
+  'url',
+  'title',
+  'status',
+  'category',
+  'expiresAt',
+  'state',
+  'stateData',
+]
+
+/** list [--status --state --category --stale --json] */
 export async function runList(ctx: CliContext, opts: ListOptions): Promise<void> {
   const status = opts.status as Status | undefined
   if (status && !STATUSES.includes(status)) {
@@ -57,7 +75,7 @@ export async function runList(ctx: CliContext, opts: ListOptions): Promise<void>
     category: opts.category,
     stale: opts.stale === true,
     q: opts.q,
-    fields,
+    fields: fields ?? (state !== undefined ? STATE_LIST_FIELDS : undefined),
     limit: opts.limit,
   })
 
@@ -71,15 +89,33 @@ export async function runList(ctx: CliContext, opts: ListOptions): Promise<void>
     return
   }
 
-  const headers = ['id', 'status', 'category', 'expires', 'title', 'url']
-  const table = rows.map((r) => [
-    cell(r['id']),
-    cell(r['status']),
-    cell(r['category']),
-    shortDate(cell(r['expiresAt']) || null),
-    cell(r['title']),
-    cell(r['url']),
-  ])
+  // With a state filter the table grows the state, reason and retry columns,
+  // so the fine-grained pipeline position is visible without --json.
+  const headers =
+    state !== undefined
+      ? ['id', 'state', 'reason', 'retry', 'title', 'url']
+      : ['id', 'status', 'category', 'expires', 'title', 'url']
+  const table = rows.map((r) => {
+    if (state !== undefined) {
+      const row = toPipelineRow(r)
+      return [
+        cell(r['id']),
+        row.state,
+        row.reason ?? '',
+        shortDate(row.nextAttemptAt),
+        cell(r['title']),
+        cell(r['url']),
+      ]
+    }
+    return [
+      cell(r['id']),
+      cell(r['status']),
+      cell(r['category']),
+      shortDate(cell(r['expiresAt']) || null),
+      cell(r['title']),
+      cell(r['url']),
+    ]
+  })
   console.log(renderTable(headers, table))
   console.log(`\n${rows.length} link${rows.length === 1 ? '' : 's'}`)
 }
@@ -274,6 +310,42 @@ export async function runRestore(ctx: CliContext, ids: number[]): Promise<void> 
   }
 }
 
+export interface OverviewOptions {
+  json?: boolean
+}
+
+/** Render the overview as a compact pair of tables. */
+export function formatOverview(overview: PipelineOverview): string {
+  const stateRows = Object.entries(overview.byState).map(([state, n]) => [state, String(n)])
+  const stateTable = renderTable(['state', 'count'], stateRows)
+  const hostRows = overview.byHost.map((h) => [
+    h.host,
+    String(h.total),
+    Object.entries(h.byState)
+      .filter(([, n]) => n > 0)
+      .map(([state, n]) => `${state}:${n}`)
+      .join(' '),
+  ])
+  const hostTable = hostRows.length > 0 ? renderTable(['host', 'total', 'states'], hostRows) : 'no hosts'
+  return [
+    `${overview.total} link${overview.total === 1 ? '' : 's'}`,
+    '',
+    stateTable,
+    '',
+    hostTable,
+  ].join('\n')
+}
+
+/** overview [--json]: the state counts and the busiest hosts. */
+export async function runOverview(ctx: CliContext, opts: OverviewOptions): Promise<void> {
+  const overview = await pipelineOverview(ctx.store)
+  if (opts.json === true) {
+    console.log(JSON.stringify(overview, null, 2))
+    return
+  }
+  console.log(formatOverview(overview))
+}
+
 export function registerLinkCommands(
   program: Command,
   deps: { ctx: () => Promise<CliContext> },
@@ -284,7 +356,7 @@ export function registerLinkCommands(
     .option('--status <status>', 'filter by status (inbox, scheduled, archived, discarded)')
     .option(`--state <state>`, `filter by FSM state (${LINK_STATES.join('|')})`)
     .option('--category <category>', 'filter by category')
-    .option('--stale', 'only links whose expiry has passed')
+    .option('--stale', 'only links whose expiresAt has passed')
     .option('--json', 'print json')
     .option('--limit <n>', 'cap the number of rows', Number)
     .option('--fields <fields>', 'comma separated field list (extracted_content is opt-in)')
@@ -293,6 +365,19 @@ export function registerLinkCommands(
       const ctx = await deps.ctx()
       try {
         await runList(ctx, opts)
+      } finally {
+        await ctx.close()
+      }
+    })
+
+  program
+    .command('overview')
+    .description('overview of every link by pipeline state and host')
+    .option('--json', 'print json')
+    .action(async (opts: { json?: boolean }) => {
+      const ctx = await deps.ctx()
+      try {
+        await runOverview(ctx, { json: opts.json === true })
       } finally {
         await ctx.close()
       }

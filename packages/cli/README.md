@@ -11,7 +11,8 @@ linkinbox import <file...>          import links (markdown, json, url list, safa
 linkinbox extract [--limit N]       extract content for inbox links that lack it
 linkinbox enrich [--limit N]        one structured-output call per link lacking enrichment
 linkinbox run [files...]             ingest+extract+enrich in one pass (idempotent)
-linkinbox list [--status X] [--category X] [--stale] [--json] [--fields a,b]
+linkinbox list [--status X] [--state X] [--category X] [--stale] [--json] [--fields a,b]
+linkinbox overview [--json]         every link by pipeline state and host
 linkinbox show <id> [--json]        the full record incl. extracted markdown
 linkinbox triage <id> --action read_now|schedule|archive|discard
 linkinbox triage --batch --filter 'status:inbox category:job' --action archive
