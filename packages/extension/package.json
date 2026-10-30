@@ -1,0 +1,21 @@
+{
+  "name": "@linkinbox/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "linkinbox browser extension: capture links and page content from the user's own logged-in session",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.test.json"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.7",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>linkinbox capture</title>
+    <style>
+      body { font: 14px system-ui, sans-serif; max-width: 28rem; margin: 2rem auto; padding: 0 1rem; }
+      label { display: block; margin: 1rem 0 0.25rem; }
+      input { width: 100%; box-sizing: border-box; padding: 0.4rem; }
+      button { margin-top: 1rem; padding: 0.4rem 1rem; }
+      p { line-height: 1.5; }
+    </style>
+  </head>
+  <body>
+    <h1>linkinbox capture</h1>
+    <label for="endpoint">Server URL</label>
+    <input id="endpoint" type="url" placeholder="http://127.0.0.1:4173/capture" />
+    <label for="token">Capture token</label>
+    <input id="token" type="password" placeholder="LINKINBOX_CAPTURE_TOKEN value" />
+    <label for="source">Source identity</label>
+    <input id="source" type="text" placeholder="extension@browseros" />
+    <button id="save">Save</button>
+    <p id="status" role="status"></p>
+    <p>
+      The server must list this extension's origin in
+      <code>allowed_origins</code> in <code>~/.linkinbox/config.toml</code>,
+      otherwise the browser blocks the request as CORS.
+    </p>
+    <p id="origin"></p>
+    <script src="options.js"></script>
+  </body>
+</html>

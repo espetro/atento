@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "linkinbox capture",
+  "version": "0.1.0",
+  "description": "Capture the page you are looking at into linkinbox, from your own logged-in session.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "action": {
+    "default_title": "Save this page to linkinbox"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "linkinbox@illo.fyi"
+    }
+  }
+}
