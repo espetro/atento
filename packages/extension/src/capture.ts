@@ -84,9 +84,10 @@ export async function runActiveTabCapture(deps: CaptureDeps): Promise<CaptureOut
     return { status: 'captured', payload }
   }
   const queued = deps.enqueue(payload)
+  const reason = result.error ?? 'server unreachable'
   return {
     status: 'queued',
     payload,
-    error: result.error ?? (queued ? 'server unreachable' : 'server unreachable, queue full'),
+    error: queued ? reason : `${reason} (queue full, the capture was dropped)`,
   }
 }

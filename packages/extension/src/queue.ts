@@ -154,7 +154,7 @@ export function createCaptureQueue(options: QueueOptions) {
       return queue.length
     },
 
-    /** The queued payloads, oldest first. For tests and for persistence. */
+    /** The queued payloads. For tests and for future persistence. */
     items(): readonly QueuedCapture[] {
       return queue
     },
@@ -177,8 +177,8 @@ export function createCaptureQueue(options: QueueOptions) {
       let failed = 0
       const now = clock.now()
       const requeue: { item: QueuedCapture; at: number }[] = []
-      // Snapshot: attemptPost may mutate nothing, but drain must not process
-      // an item twice when the loop reorders.
+      // Take the whole queue out first, so an enqueue that lands while the
+      // drain runs is never processed twice in the same pass.
       const batch = queue.splice(0, queue.length)
       const batchDue = dueAt.splice(0, dueAt.length)
       for (let i = 0; i < batch.length; i++) {
