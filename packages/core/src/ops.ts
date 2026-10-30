@@ -10,6 +10,7 @@ import type { LinkStateName, LinkState } from './fsm/index.js'
 import type { LinkHistoryEntry } from './store.js'
 import { isTerminal, parseLinkState } from './fsm/index.js'
 import { planSweep, planPrune, type SweepPlan, type PrunePlan } from './sweep.js'
+import { hostOfUrl } from './url.js'
 import type { TtlConfig } from './ttl.js'
 
 /** Fields a caller can request in a link projection. */
@@ -167,6 +168,8 @@ export interface ListLinksOptions {
   stale?: boolean
   /** Free-text query over url/title. */
   q?: string
+  /** Filter on the host of the url, e.g. `example.com`. */
+  host?: string
   fields?: LinkField[]
   limit?: number
   offset?: number
@@ -186,10 +189,15 @@ export async function listLinks(
     staleAsOf: options.stale ? now : undefined,
     offset: options.offset,
   }
-  // When a text query is present the limit is applied after filtering, so the
-  // store must hand back everything the filter allows.
-  const links = await store.listLinks(options.q ? filter : { ...filter, limit: options.limit })
+  // When a text query or a host filter is present the limit is applied after
+  // filtering, so the store must hand back everything the filter allows.
+  const postFilter = options.q !== undefined || options.host !== undefined
+  const links = await store.listLinks(postFilter ? filter : { ...filter, limit: options.limit })
   let out = links
+  if (options.host !== undefined && options.host !== '') {
+    const host = options.host.toLowerCase()
+    out = out.filter((l) => hostOfUrl(l.url) === host)
+  }
   if (options.q) {
     const q = options.q.toLowerCase()
     out = links.filter(

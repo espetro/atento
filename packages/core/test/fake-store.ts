@@ -118,7 +118,12 @@ export class FakeStore implements Store {
 
   async listLinks(filter?: LinkFilter): Promise<Link[]> {
     let out = [...this.links]
-    if (filter?.status) out = out.filter((l) => l.status === filter.status)
+    if (filter?.status) {
+      // `byState` filters on the FSM discriminant, the legacy column otherwise.
+      out = out.filter((l) =>
+        filter.byState === true ? l.state === filter.status : l.status === filter.status,
+      )
+    }
     if (filter?.category) out = out.filter((l) => l.category === filter.category)
     if (filter?.staleAsOf) {
       out = out.filter(
@@ -134,7 +139,6 @@ export class FakeStore implements Store {
   async countLinks(filter?: LinkFilter): Promise<number> {
     return (await this.listLinks(filter)).length
   }
-
   async updateStatus(ids: number[], status: Status, updatedAt?: Date): Promise<number> {
     const at = updatedAt ?? new Date()
     let updated = 0
