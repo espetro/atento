@@ -174,7 +174,7 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
             trialState,
             loginGated: state?.loginGated ?? false,
           })
-        : { strict: false, browser: false, skipped: false, reason: null },
+        : { strict: false, browser: false, skipped: false, reviewOnly: false, reason: null },
       hasProfile,
       trialState,
     }

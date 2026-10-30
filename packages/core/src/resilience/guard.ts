@@ -227,7 +227,7 @@ export async function guardStatuses(
   const remaining = remainingBudget(state, limit, now)
   const policy = key !== LLM_KEY
     ? hostPolicy(deps.config.limits, key, { hasProfile, trialState: state.trialState, loginGated: state.loginGated })
-    : { strict: false, browser: false, skipped: false, reason: null }
+    : { strict: false, browser: false, skipped: false, reviewOnly: false, reason: null }
   out.push({
     key,
     breakerState: state.breakerState,

@@ -9,9 +9,11 @@ import {
 } from './media-config.js'
 import {
   DEFAULT_LIMITS,
+  DEFAULT_LOGIN_CONFIG,
   ORDINARY_LIMIT,
   WALLED_GARDEN_LIMIT,
   type LimitsConfig,
+  type LoginConfig,
 } from './resilience/index.js'
 import {
   DEFAULT_CAPTURE_CONFIG,
@@ -44,6 +46,7 @@ function num(value: unknown): number | undefined {
  *   max_batch = 20
  *   llm_concurrency = 3
  *   skip_hosts = ["gemini.google.com", "*.duckduckgo.com"]
+ *   review_hosts = ["revolut.com", "*.revolut.com"]
  *   walled_gardens = ["example.com"]
  *
  *   [limits.hosts."x.com"]
@@ -51,7 +54,9 @@ function num(value: unknown): number | undefined {
  *   daily_cap = 40
  *   concurrency = 1
  *
- * `skip_hosts` are never fetched. `walled_gardens` is an optional manual
+ * `skip_hosts` are never fetched. `review_hosts` are never fetched either,
+ * but their links stay visible in `needs_browser` (reason `review_only`) so
+ * the owner reviews them by hand. `walled_gardens` is an optional manual
  * override that FORCES the strict limits and browser routing for the listed
  * hosts; it ships with no default entries because walled gardens are
  * discovered by canary probing.
@@ -63,6 +68,7 @@ export function limitsFromToml(toml: TomlTable): LimitsConfig {
     hosts: {},
     walledGardens: [...DEFAULT_LIMITS.walledGardens],
     skipHosts: [...DEFAULT_LIMITS.skipHosts],
+    reviewHosts: [...DEFAULT_LIMITS.reviewHosts],
   }
   if (!limits || typeof limits !== 'object' || Array.isArray(limits)) return out
   const table = limits as TomlTable
@@ -82,6 +88,12 @@ export function limitsFromToml(toml: TomlTable): LimitsConfig {
   const skipHosts = table['skip_hosts']
   if (Array.isArray(skipHosts)) {
     out.skipHosts = skipHosts
+      .filter((h): h is string => typeof h === 'string')
+      .map((h) => h.toLowerCase())
+  }
+  const reviewHosts = table['review_hosts']
+  if (Array.isArray(reviewHosts)) {
+    out.reviewHosts = reviewHosts
       .filter((h): h is string => typeof h === 'string')
       .map((h) => h.toLowerCase())
   }
@@ -107,6 +119,35 @@ export function limitsFromToml(toml: TomlTable): LimitsConfig {
 /** Parse the `[limits]` table out of raw TOML text. */
 export function parseLimitsConfig(tomlText: string): LimitsConfig {
   return limitsFromToml(parseToml(tomlText) as TomlTable)
+}
+
+/**
+ * Parse the `[login]` table. Shape:
+ *
+ *   [login]
+ *   allow = ["app.devin.ai", "chat.z.ai", "docs.google.com"]
+ *
+ * `allow` holds host patterns with the same syntax as `skip_hosts` (exact
+ * host or `*.suffix`). An empty or missing table means "no restriction":
+ * every login-walled host behaves as before.
+ */
+export function loginFromToml(toml: TomlTable): LoginConfig {
+  const out: LoginConfig = { allow: [...DEFAULT_LOGIN_CONFIG.allow] }
+  const login = toml['login']
+  if (!login || typeof login !== 'object' || Array.isArray(login)) return out
+  const table = login as TomlTable
+  const allow = table['allow']
+  if (Array.isArray(allow)) {
+    out.allow = allow
+      .filter((h): h is string => typeof h === 'string')
+      .map((h) => h.toLowerCase())
+  }
+  return out
+}
+
+/** Parse the `[login]` table out of raw TOML text. */
+export function parseLoginConfig(tomlText: string): LoginConfig {
+  return loginFromToml(parseToml(tomlText) as TomlTable)
 }
 
 /** Parse the `[media]` table out of raw TOML text. */
@@ -176,6 +217,6 @@ export function parsePacingConfig(tomlText: string): PacingConfig {
 }
 
 
-export { DEFAULT_LIMITS, ORDINARY_LIMIT, WALLED_GARDEN_LIMIT, DEFAULT_CAPTURE_CONFIG }
+export { DEFAULT_LIMITS, DEFAULT_LOGIN_CONFIG, ORDINARY_LIMIT, WALLED_GARDEN_LIMIT, DEFAULT_CAPTURE_CONFIG }
 
-export type { LimitsConfig, CaptureConfig, PacingConfig }
+export type { LimitsConfig, LoginConfig, CaptureConfig, PacingConfig }

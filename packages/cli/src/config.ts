@@ -8,12 +8,14 @@ import { existsSync, readFileSync } from 'node:fs'
 import { parse as parseToml } from 'smol-toml'
 import {
   limitsFromToml,
+  loginFromToml,
   mediaFromToml,
   pacingFromToml,
   ttlFromToml,
   captureFromToml,
   type CaptureConfig,
   type LimitsConfig,
+  type LoginConfig,
   type MediaConfig,
   type PacingConfig,
   type TomlTable,
@@ -26,6 +28,8 @@ export interface AppConfig {
   ttl: TtlConfig
   /** Rate limit and breaker configuration from `[limits]`. */
   limits: LimitsConfig
+  /** Which hosts may be logged in to, from `[login]`. */
+  login: LoginConfig
   /** Human pacing profile for strict hosts from `[pacing]`. */
   pacing: PacingConfig
   /** Tiered media stage configuration from `[media]`. */
@@ -94,6 +98,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     dbPath: resolveDbPath(toml, env),
     ttl: ttlFromToml(toml),
     limits: limitsFromToml(toml),
+    login: loginFromToml(toml),
     pacing: pacingFromToml(toml),
     media: mediaFromToml(toml),
     capture: captureFromToml(toml as unknown as Record<string, unknown>),
