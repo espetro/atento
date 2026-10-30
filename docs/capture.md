@@ -121,3 +121,15 @@ In both cases add the origin the mobile client presents (or none, if it is a nat
 ## iOS today
 
 Safari on iOS cannot run this extension path today. The Reading List plist import (`linkinbox import <plist>`) remains the iOS route. An iOS Shortcut that POSTs to `/capture` is untested and is not claimed to work.
+
+## Per-site cleaning of browser extractions
+
+Headless reads of logged-in pages (`agent-browser read`) dump everything on the screen: navigation menus, keyboard-shortcut hints, the logged-in viewer's own name and headline, footers and language lists. That chrome pollutes the stored markdown and the enrichment prompt, so `cleanBrowserMarkdown` in `packages/extractors/src/clean.ts` strips it after the login-wall check in the browser extractor.
+
+Cleaning dispatches on hostname:
+
+- `x.com`: the leading keyboard-shortcut boilerplate and the right-hand sidebar (search filters, trending, who to follow, footer) are dropped; the timeline or conversation is kept.
+- `www.linkedin.com`: everything before the `Feed post` heading (nav, search suggestions, the viewer's profile, Premium upsell) and the ad options plus footer after the post body are dropped; author, headline, age, post text and comments are kept.
+- `www.instagram.com`: the left-nav words, the trailing footer with the language list and the duplicate caption echo are dropped; author, caption, hashtags and comment/like counts are kept.
+
+Passthrough rule: cleaning is pure and never throws. Any other hostname is returned unchanged, and when a site's anchor is not found in the page the input is returned unchanged. It never returns empty output for non-empty input, and it never removes real content to hit a size target.

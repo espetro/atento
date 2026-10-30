@@ -100,6 +100,20 @@ describe("browser extractor: login wall detection", () => {
 });
 
 describe("browser extractor: human pacing", () => {
+  it("cleans site chrome out of the returned markdown", async () => {
+    const extractor = createBrowserExtractor({
+      exec: execOk(
+        "##\n\nTo view keyboard shortcuts, press question mark\n\nView keyboard shortcuts\n\n# Search timeline\n\nMalte Ubl\n\n@cramforce",
+      ),
+      profilesDir: "/tmp/linkinbox-profiles",
+      profileExists: () => true,
+    });
+    const result = await extractor.extract("https://x.com/search?q=claude");
+    expect(result.markdown).not.toContain("keyboard shortcuts");
+    expect(result.markdown).toContain("# Search timeline");
+    expect(result.markdown).toContain("Malte Ubl");
+  });
+
   it("waits the dwell time and scrolls before reading, in order", async () => {
     const events: string[] = [];
     let scrolls: number[] = [];

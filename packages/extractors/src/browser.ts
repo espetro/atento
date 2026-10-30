@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { Extractor, ExtractResult, ExecLike } from "./types.js";
+import { cleanBrowserMarkdown } from "./clean.js";
 
 export interface BrowserExtractorOptions {
   /** agent-browser binary; overridable for tests. */
@@ -161,7 +162,7 @@ export function createBrowserExtractor(options: BrowserExtractorOptions = {}): E
             meta: { blocked: true, reason: "login_wall" },
           };
         }
-        return { markdown };
+        return { markdown: cleanBrowserMarkdown(url, markdown) };
       } catch {
         return { markdown: "", needsBrowser: true, meta: { failed: true } };
       }
