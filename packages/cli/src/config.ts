@@ -13,6 +13,8 @@ import {
   pacingFromToml,
   ttlFromToml,
   captureFromToml,
+  browserFromToml,
+  type BrowserConfig,
   type CaptureConfig,
   type LimitsConfig,
   type LoginConfig,
@@ -36,6 +38,8 @@ export interface AppConfig {
   media: MediaConfig
   /** Capture endpoint configuration from `[capture]`. */
   capture: CaptureConfig
+  /** Browser engine configuration from `[browser]`. */
+  browser: BrowserConfig
   /** Directory holding agent-browser login profiles. */
   profilesDir: string
   /** Directory holding config.toml. */
@@ -102,6 +106,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     pacing: pacingFromToml(toml),
     media: mediaFromToml(toml),
     capture: captureFromToml(toml as unknown as Record<string, unknown>),
+    browser: browserFromToml(toml as unknown as Record<string, unknown>),
     profilesDir: defaultProfilesDir(env),
     dir,
   }
