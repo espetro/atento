@@ -54,7 +54,7 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
       // Human pacing: dwell the sampled time and scroll a little before
       // reading, so a logged-in session does not look like a script. The
       // sleep is the real one; tests inject fakes at the extractor level.
-      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms).unref?.()),
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       scroll: async (px) => {
         const { execFile } = await import('node:child_process')
         await new Promise<void>((resolve) => {

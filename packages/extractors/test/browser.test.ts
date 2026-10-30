@@ -34,15 +34,10 @@ describe("browser extractor", () => {
       profileExists: () => true,
     });
     const result = await extractor.extract("https://example.dev/article");
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.file).toBe("agent-browser");
-    expect(calls[0]!.args).toEqual([
-      "--headless",
-      "--profile",
-      join("/tmp/fake-profiles", "example.dev"),
-      "read",
-      "https://example.dev/article",
-    ]);
+    const profile = join("/tmp/fake-profiles", "example.dev");
+    expect(calls.map((c) => c.file)).toEqual(["agent-browser", "agent-browser"]);
+    expect(calls[0]!.args).toEqual(["--profile", profile, "open", "https://example.dev/article"]);
+    expect(calls[1]!.args).toEqual(["--profile", profile, "read"]);
     expect(result.markdown).toBe("# extracted\n\ncontent body");
     expect(result.needsBrowser).toBeFalsy();
   });
@@ -108,8 +103,8 @@ describe("browser extractor: human pacing", () => {
   it("waits the dwell time and scrolls before reading, in order", async () => {
     const events: string[] = [];
     let scrolls: number[] = [];
-    const exec: ExecLike = async () => {
-      events.push("read");
+    const exec: ExecLike = async (_file, args) => {
+      events.push(args.includes("open") ? "open" : "read");
       return { code: 0, stdout: "# page\n\ncontent", stderr: "" };
     };
     const extractor = createBrowserExtractor({
@@ -127,7 +122,7 @@ describe("browser extractor: human pacing", () => {
     });
     const result = await extractor.extract("https://x.com/post/3");
     expect(result.markdown).toBe("# page\n\ncontent");
-    expect(events).toEqual(["dwell:20000", "scroll", "read"]);
+    expect(events).toEqual(["open", "dwell:20000", "scroll", "read"]);
     expect(scrolls).toEqual([350]);
   });
 
@@ -139,7 +134,7 @@ describe("browser extractor: human pacing", () => {
     };
     const extractor = createBrowserExtractor({ exec, profileExists: () => true });
     await extractor.extract("https://x.com/post/4");
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2);
   });
 
   it("does not dwell when the profile is missing", async () => {

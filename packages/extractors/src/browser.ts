@@ -126,17 +126,22 @@ export function createBrowserExtractor(options: BrowserExtractorOptions = {}): E
         return { markdown: "", needsBrowser: true, meta: { missingProfile: true } };
       }
       try {
-        // Human pacing: after the page loads, wait the sampled dwell time
-        // and scroll a little before reading, so the session does not look
-        // like a script. Both are injected, so tests never sleep and never
-        // need a browser.
+        // Load the page first, then dwell and scroll like a person, then
+        // read it. Both pacing steps are injected, so tests never sleep and
+        // never need a browser. agent-browser runs headless by default.
+        const base = ["--profile", profileDir];
+        const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+        const opened = await exec(command, [...base, "open", url], { timeoutMs });
+        if (opened.code !== 0) {
+          return {
+            markdown: "",
+            needsBrowser: true,
+            meta: { exitCode: opened.code, stderr: opened.stderr.slice(0, 200) },
+          };
+        }
         if (options.sleep) await options.sleep(dwellMs);
         if (options.scroll) await options.scroll(scrollPx);
-        const result = await exec(
-          command,
-          ["--headless", "--profile", profileDir, "read", url],
-          { timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS },
-        );
+        const result = await exec(command, [...base, "read"], { timeoutMs });
         if (result.code !== 0) {
           return {
             markdown: "",
