@@ -31,6 +31,20 @@ export const SKIP_HOST_REASON = 'skip_host'
 /** The reason recorded on links parked behind a login wall. */
 export const LOGIN_WALL_REASON = 'login_wall'
 
+/**
+ * Normalize a host filter to the shape `hostOf` returns: a lowercase
+ * hostname without the port, so `--host localhost:3000` still matches the
+ * links of `http://localhost:3000/x`.
+ */
+function hostFilter(host: string): string {
+  const trimmed = host.trim().toLowerCase()
+  try {
+    return new URL(`http://${trimmed}`).hostname.toLowerCase()
+  } catch {
+    return trimmed
+  }
+}
+
 export interface ExtractOptions extends StageOptions {
   /** Injected extraction function (the CLI adapts the extractors router). */
   extract: ExtractFn
@@ -108,7 +122,9 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
   await releaseDueDeferred(store, 'extract', startedAt)
 
   const queued = options.host
-    ? (await store.listByStates(['created'])).filter((link) => hostOf(link.url) === options.host)
+    ? (await store.listByStates(['created'])).filter(
+        (link) => hostOf(link.url) === hostFilter(options.host as string),
+      )
     : await store.listByStates(['created'], options.limit)
   const batch = queued.slice(0, options.limit ?? maxBatch).slice(0, maxBatch)
   const run = await store.startRun(STAGES.extract, batch.length, startedAt)

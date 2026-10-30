@@ -80,6 +80,10 @@ export interface LimitsConfig {
    * Hosts that are never fetched. Exact host (`gemini.google.com`) or a
    * `*.suffix` wildcard (`*.duckduckgo.com` matches every subdomain too when
    * the bare suffix is listed? No: the bare suffix must be listed itself).
+   *
+   * The match runs against the hostname without the port, so `localhost`
+   * matches `http://localhost:3000/x`. Loopback hosts are skipped by
+   * default anyway (see `isLoopbackHost`).
    */
   skipHosts: string[]
   /** Per-host overrides keyed by host, e.g. from `[limits.hosts."x.com"]`. */
@@ -129,7 +133,7 @@ export function hostPolicy(
     loginGated?: boolean
   } = {},
 ): HostPolicy {
-  if (matchesPattern(config.skipHosts, host)) {
+  if (matchesPattern(config.skipHosts, host) || isLoopbackHost(host)) {
     return { strict: false, browser: false, skipped: true, reason: 'skip_list' }
   }
   if (config.walledGardens.includes(host)) {
@@ -147,16 +151,47 @@ export function hostPolicy(
   return { strict: false, browser: false, skipped: false, reason: null }
 }
 
+/**
+ * Normalize a host for pattern matching: lowercase, without the port and
+ * without the brackets the URL API keeps around an IPv6 literal (`[::1]`
+ * becomes `::1`). A config entry may be written either way.
+ */
+export function normalizeHost(host: string): string {
+  const lower = host.trim().toLowerCase()
+  if (lower.startsWith('[') && lower.endsWith(']')) return lower.slice(1, -1)
+  return lower
+}
+
 /** True when the host matches the skip-list entry (exact host or `*.suffix`). */
 export function matchesPattern(patterns: string[], host: string): boolean {
-  const lower = host.toLowerCase()
+  const lower = normalizeHost(host)
   return patterns.some((pattern) => {
-    if (pattern.startsWith('*.')) {
-      const suffix = pattern.slice(2).toLowerCase()
+    const normalized = normalizeHost(pattern)
+    if (normalized.startsWith('*.')) {
+      const suffix = normalized.slice(2)
       return lower === suffix || lower.endsWith(`.${suffix}`)
     }
-    return lower === pattern.toLowerCase()
+    return lower === normalized
   })
+}
+
+/**
+ * The loopback hosts: `localhost`, `127.0.0.1`, `::1` and any `*.localhost`
+ * name. A pipeline run can never fetch them (they are the user's own
+ * services, and a headless agent-browser has no session for them), so they
+ * are skipped by default.
+ *
+ * This is a built-in rule, not a config entry: it names no third-party site
+ * and it cannot be disabled by accident. The config skip-list still wins for
+ * everything else.
+ */
+const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '::1']
+
+/** True when the host is a loopback address (or a `*.localhost` name). */
+export function isLoopbackHost(host: string): boolean {
+  const lower = normalizeHost(host)
+  if (LOOPBACK_HOSTS.includes(lower)) return true
+  return lower.endsWith('.localhost')
 }
 
 /** The effective limit for a host after config merges. */

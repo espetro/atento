@@ -55,10 +55,20 @@ export function guardDepsFromStore(
   }
 }
 
-/** The guard key for a link URL: its host, or `llm` for the enrich stage. */
+/**
+ * The guard key for a link URL: its host, or `llm` for the enrich stage.
+ *
+ * The host is the hostname WITHOUT the port, so `http://localhost:3000/x`
+ * yields `localhost`. Host patterns in the config (`skip_hosts`,
+ * `review_hosts`, `[login] allow`) therefore match a host regardless of the
+ * port it was captured on.
+ */
 export function hostOf(url: string): string {
   try {
-    return new URL(url).host.toLowerCase()
+    const parsed = new URL(url)
+    // The URL API keeps the brackets on an IPv6 literal; drop them so the
+    // host matches the config patterns (`::1`, not `[::1]`).
+    return parsed.hostname.replace(/^\[(.*)\]$/, '$1').toLowerCase()
   } catch {
     return 'unknown'
   }
