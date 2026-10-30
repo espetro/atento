@@ -150,3 +150,39 @@ Every applied event is appended to the `link_events` table in the same transacti
 ## Backwards compatibility
 
 The `status` field of the API is unchanged. It is the `legacyStatus` projection of the state, one of `inbox`, `scheduled`, `archived`, `discarded` or `deleted`. Pipeline states project onto `inbox`, which is what the old code expected from a link that had not been triaged yet. `linkinbox list --state <state>` filters on the fine grained state.
+
+## Seeing everything
+
+The twelve states are only useful if you can see them. There are four surfaces, all backed by the same core functions (`pipelineOverview`, `listPipelineLinks`), so the numbers cannot disagree.
+
+The CLI prints the whole corpus at a glance:
+
+```
+linkinbox overview            # state counts + busiest hosts, as tables
+linkinbox overview --json     # the same shape as the MCP tool
+```
+
+`linkinbox list --state <state>` grows the state, reason and retry columns, so the fine-grained position of each link is visible in the table.
+
+The MCP server exposes two read-only tools: `links.overview` (the state histogram plus the top 50 hosts with their per-state breakdown) and `links.pipeline` (every link with its state, reason and next retry time, filterable by `state`, `host` and `q`).
+
+The web UI has a Pipeline tab in the dock. It shows one row per link with a state badge, the reason the link sits in that state (`login_wall`, `throttled`, `private_404`...), the host, the title and the next retry time. The state filter chips carry live counts, and a host filter and a free-text search narrow the list. Filters live in the URL, so a filtered view is a link you can paste somewhere.
+
+### The API
+
+`GET /api/pipeline` returns the overview:
+
+```json
+{
+  "byState": { "created": 2, "needs_browser": 1, "inbox": 0, "...": 0 },
+  "byHost": [{ "host": "example.com", "total": 3, "byState": { "...": 0 } }]
+}
+```
+
+`byHost` lists at most 50 hosts, busiest first.
+
+`GET /api/links` gained additive filters and fields: `?state=needs_browser` filters on the FSM state, `?host=example.com` on the host of the url, and every row now carries `state`, `reason`, `host`, `next_attempt_at` and `updated_at` alongside the existing summary fields. Nothing was removed: `?status=inbox` and the rest of the old contract behave exactly as before.
+
+### Badge colours
+
+The UI maps the states onto semantic daisyUI badge colours, never a raw palette, so dark mode keeps working: processing states (`extracting`, `extracted`, `enriching`) are info, blocked states (`needs_browser`, `deferred`) are warning, `errored` is error, the triage states keep their own colours and the parked/dead states (`archived`, `discarded`, `deleted`) are ghost.
