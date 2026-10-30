@@ -784,13 +784,18 @@ function detectLoginWall(
   url: string,
   policy: { hasProfile: boolean },
 ): string | null {
-  const body = raw.html ?? raw.markdown ?? ''
-  if (isLoginWall({
-    url: raw.finalUrl ?? url,
-    body,
-    status: raw.status,
-    hasProfile: policy.hasProfile,
-  })) {
+  // The password-field rule needs the html; the content rules need markdown.
+  const present = [raw.html, raw.markdown].filter((b): b is string => typeof b === 'string')
+  const bodies = present.length > 0 ? present : ['']
+  const isWall = bodies.some((body) =>
+    isLoginWall({
+      url: raw.finalUrl ?? url,
+      body,
+      status: raw.status,
+      hasProfile: policy.hasProfile,
+    }),
+  )
+  if (isWall) {
     return LOGIN_WALL_REASON
   }
   return null

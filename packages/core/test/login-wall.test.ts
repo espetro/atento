@@ -63,3 +63,29 @@ describe('isLoginWall', () => {
     expect(isLoginWall({ url: 'https://example.com/post', status: 200, body: ARTICLE })).toBe(false)
   })
 })
+
+describe('isLoginWall: content-level walls', () => {
+  it('flags a shell page of data: images with no text', () => {
+    const body = `![](data:image/png;base64,${'A'.repeat(5000)})\n\n![](data:image/png;base64,${'B'.repeat(5000)})`
+    expect(isLoginWall({ url: 'https://example.com/p/abc/', body })).toBe(true)
+  })
+
+  it('keeps a page with real text next to a data: image', () => {
+    const body = `![](data:image/png;base64,AAAA)\n\n${'A real caption with substance. '.repeat(20)}`
+    expect(isLoginWall({ url: 'https://example.com/p/abc/', body })).toBe(false)
+  })
+
+  it('flags a sign-up wall at the top of an anonymous page', () => {
+    const body = '## Explore jobs and grow your network\n\nNew to LinkedIn? [Join now](https://www.linkedin.com/signup)\n\n' + 'Jobs. '.repeat(500)
+    expect(isLoginWall({ url: 'https://www.linkedin.com/posts/x', body })).toBe(true)
+  })
+
+  it('does not flag the sign-up phrases once the host has a profile', () => {
+    const body = '## Explore jobs and grow your network\n\n' + 'Jobs. '.repeat(500)
+    expect(isLoginWall({ url: 'https://www.linkedin.com/posts/x', body, hasProfile: true })).toBe(false)
+  })
+
+  it('keeps a short real post', () => {
+    expect(isLoginWall({ url: 'https://x.com/a/status/1', body: '## Post\n\nShort but real tweet text here.' })).toBe(false)
+  })
+})

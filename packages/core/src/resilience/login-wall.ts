@@ -9,6 +9,8 @@
  *   - the final URL path looks like a login endpoint
  *   - the page has a password input form and little article text
  *   - the HTTP status is 401 or 403 on a host without a saved profile
+ *   - a shell page: embedded data: images and almost no real text
+ *   - sign-up wall phrases at the top of the page, with no saved profile
  */
 
 /** Path segments that mark a login endpoint. */
@@ -47,6 +49,23 @@ export function textLength(html: string): number {
     .length
 }
 
+/** Sign-up wall phrases that appear at the top of an anonymous wall page. */
+const SIGNUP_WALL = /(Explore jobs and grow your network|New to [A-Z][\w]+\?\s*\[?Join now|Sign in to (view|see|continue)|Log in to (continue|see|view))/i
+
+/** How much of the top of the page the sign-up phrases are searched in. */
+const SIGNUP_WALL_HEAD_CHARS = 500
+
+/** Real text of a markdown body: images, data URIs and link targets removed. */
+export function substantiveTextLength(markdown: string): number {
+  if (!markdown) return 0
+  return markdown
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .length
+}
+
 export interface LoginWallInput {
   /** The final URL after redirects. */
   url: string
@@ -71,6 +90,12 @@ export function isLoginWall(input: LoginWallInput): boolean {
   if (isLoginPath(input.url)) return true
 
   if (hasPasswordField(body) && textLength(body) < minChars) return true
+
+  // A shell page: only embedded images, no real text (anonymous Instagram).
+  if (/data:image\//i.test(body) && substantiveTextLength(body) < minChars) return true
+
+  // Sign-up wall phrases at the top of an anonymous page.
+  if (input.hasProfile !== true && SIGNUP_WALL.test(body.slice(0, SIGNUP_WALL_HEAD_CHARS))) return true
 
   const status = input.status
   if (status === 401) return true
