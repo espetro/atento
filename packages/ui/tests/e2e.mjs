@@ -90,6 +90,11 @@ await page.click('[data-testid=state-chip][data-state=needs_browser]')
 await page.waitForTimeout(800)
 const filtered = await page.locator('[data-testid=pipeline-row]').count()
 check('state chip filters the pipeline', filtered <= pipelineRows)
+await page.click('[data-testid=row-title]')
+await page.waitForSelector('[data-testid=drawer-close]')
+check('pipeline row opens the detail drawer', true)
+await page.click('[data-testid=drawer-close]')
+await page.waitForTimeout(300)
 check(
   'no horizontal scroll on the pipeline view',
   (await page.evaluate(() => document.documentElement.scrollWidth)) <=

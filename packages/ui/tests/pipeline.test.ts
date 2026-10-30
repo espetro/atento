@@ -147,6 +147,29 @@ describe('Pipeline view', () => {
     await waitFor(() => expect(chip?.textContent).toContain('2'))
   })
 
+  it('shows a zero count on the states with no links', async () => {
+    render(PipelineHarness, { props: { url: urlState(), setUrl: vi.fn() } })
+    await waitFor(() => expect(screen.getAllByTestId('state-chip').length).toBeGreaterThan(12))
+    const chip = screen
+      .getAllByTestId('state-chip')
+      .find((c) => c.getAttribute('data-state') === 'enriching')
+    await waitFor(() => expect(chip?.textContent).toContain('0'))
+  })
+
+  it('pluralizes the header count', async () => {
+    render(PipelineHarness, { props: { url: urlState(), setUrl: vi.fn() } })
+    await waitFor(() => expect(screen.getByTestId('pipeline-total').textContent).toContain('2 links'))
+  })
+
+  it('marks the row without a retry time', async () => {
+    render(PipelineHarness, { props: { url: urlState(), setUrl: vi.fn() } })
+    await waitFor(() => expect(screen.getAllByTestId('pipeline-row')).toHaveLength(2))
+    const retries = screen.getAllByTestId('row-retry')
+    // Only the deferred link carries a retry time.
+    expect(retries[0]?.textContent).not.toContain('2026')
+    expect(retries[1]?.textContent).toContain('2026-10-30 12:00')
+  })
+
   it('filters by state through setUrl', async () => {
     const setUrl = vi.fn()
     render(PipelineHarness, { props: { url: urlState(), setUrl } })
@@ -184,7 +207,7 @@ describe('Pipeline view', () => {
     const setUrl = vi.fn()
     render(PipelineHarness, { props: { url: urlState(), setUrl } })
     await waitFor(() => expect(screen.getAllByTestId('pipeline-row')).toHaveLength(2))
-    await fireEvent.click(screen.getAllByTestId('pipeline-row')[0]!)
+    await fireEvent.click(screen.getAllByTestId('row-title')[0]!)
     expect(setUrl).toHaveBeenCalledWith({ selected: 1 })
   })
 })

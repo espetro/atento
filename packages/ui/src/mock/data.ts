@@ -114,7 +114,13 @@ const PIPELINE_REASONS: Record<string, string> = {
   created: 'queued',
 }
 
-function makeLink(id: number): LinkSummary & { confidence: number; extracted_content: string } {
+function makeLink(
+  id: number,
+): LinkSummary & {
+  confidence: number
+  extracted_content: string
+  enrichment: Record<string, unknown>
+} {
   const priority: Priority = pick(['low', 'normal', 'high'] as const)
   const status: Status =
     id <= 100 ? 'inbox' : pick(['inbox', 'inbox', 'scheduled', 'archived', 'discarded'] as const)
@@ -135,13 +141,25 @@ function makeLink(id: number): LinkSummary & { confidence: number; extracted_con
             ? 'scheduled'
             : 'inbox'
   const url = `${pick(DOMAINS)}/${pick(TITLES).toLowerCase().replace(/[^a-z]+/g, '-')}/${id}`
+  const category = pick(CATEGORIES)
+  const why = pick(WHYS)
+  const enrichment: Record<string, unknown> = {
+    category,
+    priority,
+    why_it_matters: why,
+    read_minutes: minutes,
+    action: 'read_now',
+    expires_at: hasExpiry ? expires.toISOString() : null,
+    expiry_reason: hasExpiry ? pick(REASONS) : null,
+    confidence: Number((0.55 + rand() * 0.45).toFixed(3)),
+  }
   return {
     id,
     title: `${pick(TITLES)} (${id})`,
     url,
-    category: pick(CATEGORIES),
+    category,
     priority,
-    why_it_matters: pick(WHYS),
+    why_it_matters: why,
     read_minutes: minutes,
     status,
     expires_at: hasExpiry ? expires.toISOString() : null,
@@ -149,6 +167,8 @@ function makeLink(id: number): LinkSummary & { confidence: number; extracted_con
     action: pick(['read_now', 'schedule', 'archive', 'discard'] as const),
     confidence: Number((0.55 + rand() * 0.45).toFixed(3)),
     extracted_content: EXTRACTED.replace('the mock link inbox', `mock link inbox #${id}`),
+    // The detail drawer renders this blob verbatim, so the mock carries one.
+    enrichment,
     state,
     reason: PIPELINE_REASONS[state] ?? null,
     host: new URL(url).host,
@@ -161,7 +181,13 @@ function makeLink(id: number): LinkSummary & { confidence: number; extracted_con
 }
 
 export interface MockState {
-  links: (LinkSummary & { confidence: number; extracted_content: string })[]
+  links: (
+    LinkSummary & {
+      confidence: number
+      extracted_content: string
+      enrichment: Record<string, unknown>
+    }
+  )[]
 }
 
 export function createMockState(count = 128): MockState {

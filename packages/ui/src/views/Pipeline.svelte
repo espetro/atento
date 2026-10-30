@@ -56,17 +56,19 @@
   }
 </script>
 
-<div class="mx-auto w-full max-w-4xl p-3 md:p-6 space-y-3">
+<div class="mx-auto w-full max-w-4xl lg:max-w-6xl p-3 md:p-6 space-y-3">
   <header class="flex items-center justify-between gap-2">
     <h1 class="text-xl font-semibold">Pipeline</h1>
-    <span class="text-sm text-base-content/60" data-testid="pipeline-total">{total} links</span>
+    <span class="text-sm text-base-content/60" data-testid="pipeline-total">
+      {total} link{total === 1 ? '' : 's'}
+    </span>
   </header>
 
   <!-- State filter chips with counts -->
   <div class="flex flex-wrap gap-1.5" data-testid="state-chips">
     <button
       type="button"
-      class="join-item btn btn-xs {url.state === '' ? 'btn-primary' : 'btn-outline'}"
+        class="join-item btn btn-xs min-h-9 {url.state === '' ? 'btn-primary' : 'btn-outline'}"
       data-testid="state-chip"
       data-state=""
       onclick={() => {
@@ -84,7 +86,7 @@
     {#each PIPELINE_STATES as s (s)}
       <button
         type="button"
-        class="btn btn-xs {url.state === s ? 'btn-primary' : 'btn-outline'}"
+        class="btn btn-xs min-h-9 {url.state === s ? 'btn-primary' : 'btn-outline'}"
         data-testid="state-chip"
         data-state={s}
         onclick={() => {
@@ -93,8 +95,8 @@
         }}
       >
         {s}
-        {#if byState && byState[s] > 0}
-          <span class="badge badge-ghost badge-sm">{byState[s]}</span>
+        {#if byState}
+          <span class="badge badge-ghost badge-sm" data-testid="state-count">{byState[s] ?? 0}</span>
         {/if}
       </button>
     {/each}
@@ -147,49 +149,69 @@
   {:else if items.length === 0}
     <div class="alert" data-testid="pipeline-empty">No links match the current filters.</div>
   {:else}
-    <div class="overflow-x-auto" data-testid="pipeline-list">
-      <table class="table table-sm">
-        <thead>
-          <tr>
-            <th>State</th>
-            <th>Reason</th>
-            <th>Host</th>
-            <th>Title</th>
-            <th>Next retry</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each items as item (item.id)}
-            <tr
-              class="hover cursor-pointer"
-              data-testid="pipeline-row"
-              data-link-id={item.id}
+    <!-- Mobile-first rows: badge + title on the first line, the meta on the
+         second. From lg the same rows reflow into a single grid line; the
+         meta wrapper becomes display:contents so its cells join the grid. -->
+    <ul data-testid="pipeline-list">
+      <li
+        class="hidden lg:flex gap-2 px-2 pb-1 text-xs uppercase tracking-wide text-base-content/50"
+      >
+        <span class="w-24 shrink-0">State</span>
+        <span class="flex-1 min-w-0">Title</span>
+        <span class="w-28 shrink-0">Reason</span>
+        <span class="w-40 shrink-0">Host</span>
+        <span class="w-32 shrink-0 text-right">Next retry</span>
+      </li>
+      {#each items as item (item.id)}
+        <li
+          class="grid grid-cols-[auto_1fr] lg:grid-cols-[6rem_minmax(0,1fr)_7rem_10rem_8rem] items-center gap-x-2 gap-y-1 rounded-lg px-2 py-1.5 hover:bg-base-200 cursor-pointer"
+          data-testid="pipeline-row"
+          data-link-id={item.id}
+        >
+          <span class="justify-self-start">
+            {#if item.state}<StateBadge state={item.state} />{/if}
+          </span>
+          <span class="min-w-0">
+            <button
+              type="button"
+              class="text-left block w-full truncate hover:underline"
+              data-testid="row-title"
+              title={item.title || item.url}
               onclick={() => setUrl({ selected: item.id })}
             >
-              <td>{#if item.state}<StateBadge state={item.state} />{/if}</td>
-              <td class="text-sm text-base-content/70" data-testid="row-reason">{item.reason ?? ''}</td>
-              <td class="text-sm whitespace-nowrap" data-testid="row-host">{item.host ?? ''}</td>
-              <td class="max-w-0">
-                <button
-                  type="button"
-                  class="text-left block truncate max-w-[16rem] hover:underline"
-                  data-testid="row-title"
-                  onclick={(e) => {
-                    e.stopPropagation()
-                    setUrl({ selected: item.id })
-                  }}
-                >
-                  {item.title || item.url}
-                </button>
-              </td>
-              <td class="text-sm whitespace-nowrap text-base-content/60">
-                {shortTime(item.next_attempt_at)}
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
+              {item.title || item.url}
+            </button>
+          </span>
+          <span class="col-span-2 lg:contents">
+            <span
+              class="flex gap-3 text-sm text-base-content/70 min-w-0 lg:block lg:w-28 lg:truncate"
+              data-testid="row-reason"
+            >
+              {item.reason ?? ''}
+            </span>
+            <span
+              class="flex gap-3 text-sm text-base-content/60 min-w-0 lg:block lg:w-40 lg:truncate"
+              data-testid="row-host"
+            >
+              {item.host ?? ''}
+            </span>
+            <!-- Only deferred links carry a retry time, so mobile shows the
+                 chip when there is one and the desktop column a muted dash. -->
+            <span
+              class="flex gap-3 text-sm text-base-content/60 min-w-0 lg:block lg:w-32 lg:text-right lg:whitespace-nowrap"
+              data-testid="row-retry"
+            >
+              {#if item.next_attempt_at}
+                <span class="badge badge-outline badge-sm lg:hidden">retry {shortTime(item.next_attempt_at)}</span>
+                <span class="hidden lg:inline">{shortTime(item.next_attempt_at)}</span>
+              {:else}
+                <span class="hidden lg:inline text-base-content/30" aria-hidden="true">-</span>
+              {/if}
+            </span>
+          </span>
+        </li>
+      {/each}
+    </ul>
 
     {#if total > limit}
       <div class="flex justify-center">

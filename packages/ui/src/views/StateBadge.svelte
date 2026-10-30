@@ -5,16 +5,17 @@
 
   // Semantic daisyUI badge colours only: no raw Tailwind palette, so dark
   // mode keeps working. Processing states are info, blocked states warning,
-  // failed states error, done/triage states neutral/success.
+  // failed states error, the triage states success and the parked or dead
+  // states neutral/ghost.
   const badgeClass: Record<PipelineState, string> = {
-    created: 'badge-neutral',
+    created: 'badge-neutral badge-outline',
     extracting: 'badge-info',
     extracted: 'badge-info',
     needs_browser: 'badge-warning',
     deferred: 'badge-warning',
     enriching: 'badge-info',
-    inbox: 'badge-primary',
-    scheduled: 'badge-secondary',
+    inbox: 'badge-success badge-outline',
+    scheduled: 'badge-success badge-outline',
     archived: 'badge-ghost',
     discarded: 'badge-ghost',
     errored: 'badge-error',
