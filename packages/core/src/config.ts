@@ -22,6 +22,10 @@ import {
   DEFAULT_PACING,
   type PacingConfig,
 } from './resilience/human-pacing.js'
+import {
+  browserFromToml,
+  type BrowserConfig,
+} from './browser-config.js'
 
 /**
  * Parse the `[ttl]` table out of raw TOML text. The only TOML the pipeline
@@ -173,6 +177,11 @@ export function pacingFromToml(toml: TomlTable): PacingConfig {
 /** Parse the `[pacing]` table out of raw TOML text. */
 export function parsePacingConfig(tomlText: string): PacingConfig {
   return pacingFromToml(parseToml(tomlText) as TomlTable)
+}
+
+/** Parse the `[browser]` table out of raw TOML text. */
+export function parseBrowserConfig(tomlText: string): BrowserConfig {
+  return browserFromToml(parseToml(tomlText) as TomlTable)
 }
 
 
