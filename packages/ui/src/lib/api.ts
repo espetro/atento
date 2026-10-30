@@ -6,6 +6,7 @@ import type {
   LinkSummary,
   LinksResponse,
   MetricsResponse,
+  PipelineOverviewResponse,
   SweepResponse,
   TriageResponse,
 } from './types'
@@ -26,6 +27,10 @@ export interface LinkQuery {
   stale?: boolean
   limit?: number
   offset?: number
+  /** Filter on the FSM state. */
+  state?: string
+  /** Filter on the host of the url. */
+  host?: string
 }
 
 export function linksQueryString(q: LinkQuery): string {
@@ -36,6 +41,8 @@ export function linksQueryString(q: LinkQuery): string {
   if (q.stale) p.set('stale', '1')
   if (q.limit != null) p.set('limit', String(q.limit))
   if (q.offset != null) p.set('offset', String(q.offset))
+  if (q.state) p.set('state', q.state)
+  if (q.host) p.set('host', q.host)
   const s = p.toString()
   return s ? `?${s}` : ''
 }
@@ -43,6 +50,9 @@ export function linksQueryString(q: LinkQuery): string {
 export const api = {
   links(q: LinkQuery) {
     return request<LinksResponse>(`/api/links${linksQueryString(q)}`)
+  },
+  pipeline() {
+    return request<PipelineOverviewResponse>('/api/pipeline')
   },
   link(id: number) {
     return request<LinkDetail>(`/api/links/${id}`)

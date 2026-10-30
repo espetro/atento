@@ -2,6 +2,24 @@ export type LinkStatus = 'inbox' | 'scheduled' | 'archived' | 'discarded'
 export type Priority = 'low' | 'normal' | 'high'
 export type LinkAction = 'read_now' | 'schedule' | 'archive' | 'discard'
 
+/** The twelve pipeline states, in the FSM order. */
+export const PIPELINE_STATES = [
+  'created',
+  'extracting',
+  'extracted',
+  'needs_browser',
+  'deferred',
+  'enriching',
+  'inbox',
+  'scheduled',
+  'archived',
+  'discarded',
+  'errored',
+  'deleted',
+] as const
+
+export type PipelineState = (typeof PIPELINE_STATES)[number]
+
 export interface LinkSummary {
   id: number
   title: string
@@ -14,6 +32,16 @@ export interface LinkSummary {
   expires_at: string | null
   expiry_reason: string | null
   action: LinkAction
+  /** The FSM state of the link, when the row carries one. */
+  state?: PipelineState
+  /** Why the link sits in that state, when the state records a reason. */
+  reason?: string | null
+  /** The host of the url. */
+  host?: string
+  /** When the link is retried, for deferred links. */
+  next_attempt_at?: string | null
+  /** When the row last changed. */
+  updated_at?: string
 }
 
 export interface LinkDetail extends LinkSummary {
@@ -25,6 +53,16 @@ export interface LinkDetail extends LinkSummary {
 export interface LinksResponse {
   items: LinkSummary[]
   total: number
+}
+
+/** The pipeline overview: the state histogram plus the busiest hosts. */
+export interface PipelineOverviewResponse {
+  byState: Record<PipelineState, number>
+  byHost: {
+    host: string
+    total: number
+    byState: Record<PipelineState, number>
+  }[]
 }
 
 export interface SweepGroup {

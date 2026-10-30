@@ -2,10 +2,13 @@ import type {
   LinkSummary,
   LinksResponse,
   MetricsResponse,
+  PipelineOverviewResponse,
+  PipelineState,
   Priority,
   LinkStatus as Status,
   SweepResponse,
 } from '../lib/types'
+import { PIPELINE_STATES } from '../lib/types'
 
 const CATEGORIES = [
   'ai',
@@ -103,6 +106,14 @@ function pick<T>(arr: readonly T[]): T {
   return arr[Math.floor(rand() * arr.length)]
 }
 
+/** The reason a link sits in a non-happy pipeline state. */
+const PIPELINE_REASONS: Record<string, string> = {
+  needs_browser: 'login_wall',
+  deferred: 'throttled',
+  errored: 'private_404',
+  created: 'queued',
+}
+
 function makeLink(id: number): LinkSummary & { confidence: number; extracted_content: string } {
   const priority: Priority = pick(['low', 'normal', 'high'] as const)
   const status: Status =
@@ -111,10 +122,23 @@ function makeLink(id: number): LinkSummary & { confidence: number; extracted_con
   const expires = new Date(Date.now() - ageDays * 86_400_000)
   const hasExpiry = rand() > 0.25
   const minutes = 1 + Math.floor(rand() * 25)
+  // The pipeline state mirrors the legacy status for the triage states; the
+  // rest are the mid-pipeline states the Pipeline tab exists to show.
+  const state: PipelineState =
+    id % 11 === 0
+      ? pick(['needs_browser', 'deferred', 'errored', 'created', 'extracting'] as const)
+      : status === 'archived'
+        ? 'archived'
+        : status === 'discarded'
+          ? 'discarded'
+          : status === 'scheduled'
+            ? 'scheduled'
+            : 'inbox'
+  const url = `${pick(DOMAINS)}/${pick(TITLES).toLowerCase().replace(/[^a-z]+/g, '-')}/${id}`
   return {
     id,
     title: `${pick(TITLES)} (${id})`,
-    url: `${pick(DOMAINS)}/${pick(TITLES).toLowerCase().replace(/[^a-z]+/g, '-')}/${id}`,
+    url,
     category: pick(CATEGORIES),
     priority,
     why_it_matters: pick(WHYS),
@@ -125,6 +149,14 @@ function makeLink(id: number): LinkSummary & { confidence: number; extracted_con
     action: pick(['read_now', 'schedule', 'archive', 'discard'] as const),
     confidence: Number((0.55 + rand() * 0.45).toFixed(3)),
     extracted_content: EXTRACTED.replace('the mock link inbox', `mock link inbox #${id}`),
+    state,
+    reason: PIPELINE_REASONS[state] ?? null,
+    host: new URL(url).host,
+    next_attempt_at:
+      state === 'deferred'
+        ? new Date(Date.now() + Math.floor(rand() * 3_600_000)).toISOString()
+        : null,
+    updated_at: new Date(Date.now() - ageDays * 86_400_000).toISOString(),
   }
 }
 
@@ -139,6 +171,8 @@ export function createMockState(count = 128): MockState {
 export function listLinks(state: MockState, params: URLSearchParams): LinksResponse {
   const status = params.get('status')
   const category = params.get('category')
+  const pipelineState = params.get('state')
+  const host = params.get('host')
   const q = params.get('q')?.toLowerCase() ?? ''
   const stale = params.get('stale') === '1' || params.get('stale') === 'true'
   const limit = Number(params.get('limit') ?? 50)
@@ -148,6 +182,8 @@ export function listLinks(state: MockState, params: URLSearchParams): LinksRespo
   let items = state.links.filter((l) => {
     if (status && l.status !== status) return false
     if (category && l.category !== category) return false
+    if (pipelineState && l.state !== pipelineState) return false
+    if (host && l.host !== host) return false
     if (q && !(`${l.title} ${l.url} ${l.why_it_matters}`.toLowerCase().includes(q))) return false
     if (stale && !(l.expires_at && new Date(l.expires_at).getTime() < now)) return false
     return true
@@ -156,6 +192,38 @@ export function listLinks(state: MockState, params: URLSearchParams): LinksRespo
   const total = items.length
   items = items.slice(offset, offset + limit)
   return { items, total }
+}
+
+/** The pipeline overview: the state histogram plus the busiest hosts. */
+export function pipelineOverview(state: MockState): PipelineOverviewResponse {
+  const byState = Object.fromEntries(PIPELINE_STATES.map((s) => [s, 0])) as Record<
+    PipelineState,
+    number
+  >
+  const hosts = new Map<string, { total: number; byState: Record<PipelineState, number> }>()
+  for (const link of state.links) {
+    const s = link.state ?? 'inbox'
+    byState[s] = (byState[s] ?? 0) + 1
+    const host = link.host ?? ''
+    if (host === '') continue
+    const row = hosts.get(host) ?? {
+      total: 0,
+      byState: Object.fromEntries(PIPELINE_STATES.map((x) => [x, 0])) as Record<
+        PipelineState,
+        number
+      >,
+    }
+    row.total += 1
+    row.byState[s] = (row.byState[s] ?? 0) + 1
+    hosts.set(host, row)
+  }
+  return {
+    byState,
+    byHost: [...hosts.entries()]
+      .map(([host, row]) => ({ host, total: row.total, byState: row.byState }))
+      .sort((a, b) => b.total - a.total || a.host.localeCompare(b.host))
+      .slice(0, 50),
+  }
 }
 
 export function sweep(state: MockState): SweepResponse {

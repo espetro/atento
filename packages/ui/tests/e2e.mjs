@@ -77,6 +77,25 @@ await page.click('[data-testid=dock-metrics]')
 await page.waitForSelector('[data-testid=metrics-table]')
 check('metrics view renders', (await page.locator('[data-testid=metrics-row]').count()) > 0)
 
+// Pipeline view: every link with its state, filterable by state
+await page.click('[data-testid=dock-pipeline]')
+await page.waitForSelector('[data-testid=pipeline-row]')
+const pipelineRows = await page.locator('[data-testid=pipeline-row]').count()
+check('pipeline view lists links', pipelineRows > 0)
+const badges = await page.locator('[data-testid=state-badge]').count()
+check('pipeline rows carry a state badge', badges > 0)
+const pipelineTotal = await page.textContent('[data-testid=pipeline-total]')
+check('pipeline shows a total', Number(pipelineTotal?.match(/\d+/)?.[0] ?? 0) > 0)
+await page.click('[data-testid=state-chip][data-state=needs_browser]')
+await page.waitForTimeout(800)
+const filtered = await page.locator('[data-testid=pipeline-row]').count()
+check('state chip filters the pipeline', filtered <= pipelineRows)
+check(
+  'no horizontal scroll on the pipeline view',
+  (await page.evaluate(() => document.documentElement.scrollWidth)) <=
+    (await page.evaluate(() => document.documentElement.clientWidth)),
+)
+
 await browser.close()
 
 if (failures.length) {

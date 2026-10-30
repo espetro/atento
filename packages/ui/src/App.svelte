@@ -4,6 +4,7 @@
   import { parseUrlState, toUrlState, type UrlState } from './lib/urlState'
   import Dock from './views/Dock.svelte'
   import Inbox from './views/Inbox.svelte'
+  import Pipeline from './views/Pipeline.svelte'
   import Sweep from './views/Sweep.svelte'
   import Metrics from './views/Metrics.svelte'
 
@@ -29,6 +30,8 @@
         <Sweep />
       {:else if url.view === 'metrics'}
         <Metrics />
+      {:else if url.view === 'pipeline'}
+        <Pipeline {url} {setUrl} />
       {:else}
         <Inbox {url} {setUrl} />
       {/if}
