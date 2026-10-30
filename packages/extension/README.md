@@ -28,7 +28,7 @@ pnpm --filter @linkinbox/extension build
 
 Then in BrowserOS (or any Chromium): the extensions page, developer mode on, load unpacked from `packages/extension/dist`.
 
-The token goes in the options page and lives in `chrome.storage.local`. The server must list the extension's origin in `[capture].allowed_origins` in `~/.linkinbox/config.toml` (`chrome-extension://<id>`), or the browser blocks the POST as a CORS error. Pin a `key` in the manifest if you need a stable id across reloads.
+The token goes in the options page and lives in `chrome.storage.local`. The server must list the extension's origin in `[capture].allowed_origins` in `~/.linkinbox/config.toml`, or the browser blocks the POST as a CORS error. The manifest pins a `key`, so the id is stable across reloads: `chrome-extension://dkongbmnamkaomnkljgognnbeamhfcci`.
 
 ## Tests
 
