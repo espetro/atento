@@ -106,6 +106,25 @@ export async function attemptsOf(store: Store, linkId: number): Promise<number> 
   return max
 }
 
+/**
+ * Defer reasons that are pure throttling: the link was never tried, so the
+ * deferral must not consume a retry attempt or push the link to errored.
+ */
+const THROTTLE_REASONS = new Set([
+  'spacing',
+  'daily_cap',
+  'concurrency',
+  'rate_limited',
+  'human_break',
+  'outside_hours',
+  'throttled',
+])
+
+/** True when the reason is a pure throttle and not a failed attempt. */
+export function isThrottleReason(reason: string): boolean {
+  return THROTTLE_REASONS.has(reason)
+}
+
 export interface DeferDecision {
   /** True when the link was moved to errored (max attempts exhausted). */
   errored: boolean
@@ -130,7 +149,8 @@ export async function deferOrError(
 ): Promise<DeferDecision> {
   const at = now.toISOString()
   const prior = await attemptsOf(store, link.id)
-  const attempts = prior + 1
+  const throttled = isThrottleReason(reason)
+  const attempts = throttled ? prior : prior + 1
 
   // Park the link in deferred first (legal from extracting/enriching).
   await store.applyEvent(link.id, {
@@ -142,7 +162,7 @@ export async function deferOrError(
     at,
   })
 
-  if (attempts >= maxAttempts) {
+  if (!throttled && attempts >= maxAttempts) {
     // Exhausted: walk back to the leased state and fail for good.
     const retryOutcome = await store.applyEvent(link.id, { type: 'RETRY', stage, at })
     if (retryOutcome.ok) {

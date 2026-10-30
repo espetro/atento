@@ -12,6 +12,7 @@ import {
   listHostsNeedingLogin,
   releaseDueDeferred,
   attemptsOf,
+  deferOrError,
   WALLED_GARDEN_LIMIT,
   DEFAULT_LIMITS,
   LLM_KEY,
@@ -393,6 +394,36 @@ describe('pipeline: max attempts move the link to errored', () => {
     const state = await store.getState(link.id)
     expect(state?.state).toBe('errored')
     expect(await attemptsOf(store, link.id)).toBeGreaterThanOrEqual(5)
+  })
+})
+
+describe('pipeline: throttle deferrals never exhaust attempts', () => {
+  async function lease(store: FakeStore, at: string): Promise<Link> {
+    const [link] = await insertLinks(store, ['https://example.com/throttled'])
+    await store.applyEvent(link!.id, { type: 'EXTRACT_STARTED', attempt: 1, at })
+    return link!
+  }
+
+  it('spacing deferrals beyond maxAttempts leave the link deferred', async () => {
+    const store = await tempStore()
+    const clock = fakeClock()
+    const link = await lease(store, clock.now().toISOString())
+    for (let round = 0; round < 6; round += 1) {
+      const decision = await deferOrError(store, link, 'extract', 'spacing', 1000, 3, clock.now())
+      expect(decision.errored).toBe(false)
+      await store.applyEvent(link.id, { type: 'RETRY', stage: 'extract', at: clock.now().toISOString() })
+      await store.applyEvent(link.id, { type: 'EXTRACT_STARTED', attempt: 1, at: clock.now().toISOString() })
+    }
+    expect(await attemptsOf(store, link.id)).toBe(0)
+  })
+
+  it('a real failure reason still counts and errors at the cap', async () => {
+    const store = await tempStore()
+    const clock = fakeClock()
+    const link = await lease(store, clock.now().toISOString())
+    const decision = await deferOrError(store, link, 'extract', 'blocked:challenge', 1000, 1, clock.now())
+    expect(decision.errored).toBe(true)
+    expect((await store.getState(link.id))?.state).toBe('errored')
   })
 })
 
