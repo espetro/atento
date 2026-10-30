@@ -84,6 +84,13 @@ export interface Store {
   getState(id: number): Promise<LinkState | null>
 
   /**
+   * Rewrite the state payload of a link without changing its state. Used by
+   * the host-policy sweep: a link parked in `needs_browser` keeps its state
+   * but its reason changes (e.g. to `review_only`).
+   */
+  setStateData(id: number, data: Record<string, unknown>): Promise<number>
+
+  /**
    * Return every leased link whose lease expired before `cutoff` to its
    * queue state. A killed process never strands a link.
    */

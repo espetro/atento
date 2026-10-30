@@ -58,6 +58,7 @@ export function createProgram(options: ProgramOptions = {}): Command {  const pr
     return createExtractFn({
       profilesDir: config.profilesDir,
       limits: config.limits,
+      login: config.login,
       pacing: config.pacing,
       store: ctx.store,
     })

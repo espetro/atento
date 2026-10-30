@@ -262,6 +262,16 @@ export class FakeStore implements Store {
     return parseLinkState(link.state, link.stateData)
   }
 
+  async setStateData(id: number, data: Record<string, unknown>): Promise<number> {
+    const link = this.links.find((l) => l.id === id)
+    if (!link) return 0
+    const merged = { ...(link.stateData ?? {}), ...data }
+    parseLinkState(link.state, merged)
+    link.stateData = merged
+    link.updatedAt = new Date()
+    return 1
+  }
+
   async deleteLinks(ids: number[]): Promise<number> {
     const at = new Date()
     let deleted = 0

@@ -561,6 +561,29 @@ export class SqliteStore implements Store {
     return parseLinkState(row.state, row.stateData)
   }
 
+  /**
+   * Rewrite the state payload without changing the state. The payload is
+   * validated against the state schema, so a bad payload is rejected before
+   * it reaches the row.
+   */
+  async setStateData(id: number, data: Record<string, unknown>): Promise<number> {
+    const row = this.db
+      .select({ state: links.state, stateData: links.stateData })
+      .from(links)
+      .where(eq(links.id, id))
+      .get()
+    if (!row) return 0
+    const merged = { ...((row.stateData as Record<string, unknown> | null) ?? {}), ...data }
+    // Validate the payload against the state schema before writing it.
+    parseLinkState(row.state, merged)
+    const r = this.db
+      .update(links)
+      .set({ stateData: merged, updatedAt: new Date() })
+      .where(eq(links.id, id))
+      .run()
+    return r.changes
+  }
+
   async startRun(stage: string, inputCount: number, startedAt?: Date): Promise<Run> {
     const row = this.db
       .insert(runs)

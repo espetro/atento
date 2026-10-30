@@ -18,6 +18,7 @@ import {
 } from './breaker.js'
 import {
   DEFAULT_LIMITS,
+  DEFAULT_LOGIN_CONFIG,
   hostPolicy,
   limitForHost,
   limiterGate,
@@ -26,6 +27,7 @@ import {
   type LimitsConfig,
   type LimiterDeps,
   type LimiterGate,
+  type LoginConfig,
 } from './limiter.js'
 import { retry, type RetryPolicy, type Sleep } from './retry.js'
 import {
@@ -46,12 +48,15 @@ export interface GuardConfig {
   retry: RetryPolicy
   /** Human pacing profile for strict (walled-garden) hosts. */
   pacing?: PacingConfig
+  /** Which hosts may be logged in to. Absent means no restriction. */
+  login?: LoginConfig
 }
 
 export const DEFAULT_GUARD_CONFIG: GuardConfig = {
   limits: DEFAULT_LIMITS,
   breaker: DEFAULT_BREAKER,
   pacing: DEFAULT_PACING,
+  login: DEFAULT_LOGIN_CONFIG,
   retry: {
     maxAttempts: 3,
     baseDelayMs: 1000,

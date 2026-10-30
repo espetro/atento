@@ -179,16 +179,18 @@ export function hostPolicy(
   if (config.walledGardens.includes(host)) {
     return { strict: true, browser: true, skipped: false, reviewOnly: false, reason: 'config_override' }
   }
-  if (options.trialState === 'flagged') {
-    return { strict: true, browser: false, skipped: false, reviewOnly: false, reason: 'canary_flagged' }
-  }
   if (options.loginGated === true) {
     // A login-gated host the owner never allowed to log in to is review-only:
-    // no browser is attempted for it, the links stay visible.
+    // no browser is attempted for it, the links stay visible. The login gate
+    // is checked before the canary flag: the flag on such a host IS the
+    // login wall, so the gate is the more specific verdict.
     if (!loginAllowed(options.loginAllow, host, options.hasProfile === true)) {
       return { strict: false, browser: false, skipped: false, reviewOnly: true, reason: 'review_only' }
     }
     return { strict: true, browser: true, skipped: false, reviewOnly: false, reason: 'login_gated' }
+  }
+  if (options.trialState === 'flagged') {
+    return { strict: true, browser: false, skipped: false, reviewOnly: false, reason: 'canary_flagged' }
   }
   if (options.hasProfile === true) {
     return { strict: true, browser: true, skipped: false, reviewOnly: false, reason: 'has_profile' }

@@ -12,6 +12,7 @@ import {
   hostPolicy,
   isLoginWall,
   type LimitsConfig,
+  type LoginConfig,
   type PacingConfig,
   type Store,
 } from '@linkinbox/core'
@@ -31,6 +32,8 @@ export interface RouterExtractOptions extends RouterOptions {
   }>
   /** The config limits: the skip-list and the manual walled-garden override. */
   limits?: LimitsConfig
+  /** Which hosts may be logged in to (`[login] allow`). */
+  login?: LoginConfig
   /** The human pacing profile: the dwell time before reading a page. */
   pacing?: PacingConfig
   /** The store, for the persisted canary state and the saved profiles. */
@@ -88,8 +91,15 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
             trialState = state?.trialState ?? 'unknown'
             loginGated = state?.loginGated ?? false
           }
-          const policy = hostPolicy(limits, host, { hasProfile, trialState, loginGated })
-          return { browser: policy.browser, skipped: policy.skipped }
+          const policy = hostPolicy(limits, host, {
+            hasProfile,
+            trialState,
+            loginGated,
+            loginAllow: options.login?.allow,
+          })
+          // A review-only host is never routed to the browser: no profile is
+          // opened for a host the owner reviews by hand.
+          return { browser: policy.browser && !policy.reviewOnly, skipped: policy.skipped }
         }
       : undefined,
   })

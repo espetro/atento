@@ -23,6 +23,7 @@ import {
   hostOf,
   releaseDueDeferred,
 } from './resilience.js'
+import { reconcileParkedLinks } from './reconcile.js'
 import { isMediaLink, type MediaFn, type MediaRun } from '../media.js'
 import { DEFAULT_MAX_ATTEMPTS } from './resilience-options.js'
 
@@ -30,6 +31,12 @@ import { DEFAULT_MAX_ATTEMPTS } from './resilience-options.js'
 export const SKIP_HOST_REASON = 'skip_host'
 /** The reason recorded on links parked behind a login wall. */
 export const LOGIN_WALL_REASON = 'login_wall'
+/**
+ * The reason recorded on links parked because their host must not be fetched
+ * but the owner reviews them by hand: a `[limits] review_hosts` entry or a
+ * login-walled host that the `[login] allow` list does not cover.
+ */
+export const REVIEW_ONLY_REASON = 'review_only'
 
 /**
  * Normalize a host filter to the shape `hostOf` returns: a lowercase
@@ -85,6 +92,16 @@ export interface ExtractResult extends StageResult {
   retryAfter: number
   /** Number of links parked (discarded) because their host is skip-listed. */
   skippedHostCount: number
+  /**
+   * Number of links parked in needs_browser because their host is
+   * review-only (never fetched, the owner reviews them by hand).
+   */
+  reviewOnlyCount: number
+  /**
+   * Links the host-policy sweep moved at the start of the run: discarded
+   * because the host is now skip-listed, or re-reasoned as review-only.
+   */
+  reconciledCount: number
   /** Number of links the media stage ran for (additive). */
   mediaCount: number
   /** Hosts whose canary was tried in this run: host -> flag/open. */
@@ -121,6 +138,29 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
   // Due deferred links come back to the created queue before selection.
   await releaseDueDeferred(store, 'extract', startedAt)
 
+  // The parked links are reconciled with the current host policy before the
+  // batch is selected: a host that is now skip-listed is discarded, a host
+  // that is now review-only keeps its link with the reason `review_only`.
+  const reconcile = guard
+    ? await reconcileParkedLinks(store, {
+        limits: guard.config.limits,
+        loginAllow: guard.config.login?.allow,
+        now: startedAt,
+      })
+    : { discarded: 0, reviewOnly: 0 }
+  if (reconcile.discarded > 0 || reconcile.reviewOnly > 0) {
+    await store.addMetric({
+      timestamp: startedAt,
+      stage: STAGES.extract,
+      key: 'reconciled',
+      value: reconcile.discarded + reconcile.reviewOnly,
+      tags: {
+        discarded: String(reconcile.discarded),
+        review_only: String(reconcile.reviewOnly),
+      },
+    })
+  }
+
   const queued = options.host
     ? (await store.listByStates(['created'])).filter(
         (link) => hostOf(link.url) === hostFilter(options.host as string),
@@ -139,6 +179,7 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
   let needsBrowserCount = 0
   let deferredCount = 0
   let skippedHostCount = 0
+  let reviewOnlyCount = 0
   let mediaCount = 0
   let retryAfter = 0
   const errorsByExtractor = new Map<string, number>()
@@ -173,6 +214,7 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
             hasProfile,
             trialState,
             loginGated: state?.loginGated ?? false,
+            loginAllow: guard?.config.login?.allow,
           })
         : { strict: false, browser: false, skipped: false, reviewOnly: false, reason: null },
       hasProfile,
@@ -229,6 +271,28 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
         ok: true,
         skipped: true,
         error: `skipped: ${SKIP_HOST_REASON}`,
+      })
+      continue
+    }
+
+    // Review-only hosts (review_hosts, or a login-walled host the allow
+    // list does not cover) are never fetched and never logged in to, but
+    // the links stay visible: parked in needs_browser with reason
+    // review_only so the owner reads them by hand.
+    if (policy.reviewOnly) {
+      needsBrowserCount += 1
+      reviewOnlyCount += 1
+      await parkReviewOnly(store, link, host, now())
+      logger.info('{host} is review-only: {url} parked for the owner to review', {
+        host,
+        url: link.url,
+      })
+      outcomes.push({
+        linkId: link.id,
+        url: link.url,
+        ok: true,
+        needsBrowser: true,
+        error: `deferred: ${REVIEW_ONLY_REASON}`,
       })
       continue
     }
@@ -677,6 +741,8 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
     deferredCount,
     retryAfter,
     skippedHostCount,
+    reviewOnlyCount,
+    reconciledCount: reconcile.discarded + reconcile.reviewOnly,
     mediaCount,
     canaryTrials,
   }
@@ -794,6 +860,28 @@ async function recordLoginWall(
   }
   // The expiry reason carries the wall reason for the login command.
   await store.setExpiry(link.id, null, reason, now)
+}
+
+/**
+ * Park a review-only link: the link moves to `needs_browser` with the reason
+ * `review_only` in its state data, so the owner sees it and reads it by
+ * hand. Nothing is fetched and no browser is attempted.
+ */
+async function parkReviewOnly(
+  store: Store,
+  link: Link,
+  host: string,
+  now: Date,
+): Promise<void> {
+  await store.setExtractedContent(link.id, '', true, now)
+  const outcome = await store.applyEvent(link.id, {
+    type: 'NEEDS_BROWSER',
+    host,
+    reason: REVIEW_ONLY_REASON,
+    at: now.toISOString(),
+  })
+  if (!outcome.ok) return
+  await store.setExpiry(link.id, null, REVIEW_ONLY_REASON, now)
 }
 
 /**

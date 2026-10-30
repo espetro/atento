@@ -24,7 +24,7 @@ function guardFor(ctx: CliContext): GuardDeps | undefined {
   const limits = ctx.config.limits ?? DEFAULT_LIMITS
   if (limits.disabled === true) return undefined
   return guardDepsFromStore(ctx.store, {
-    config: { limits, pacing: ctx.config.pacing },
+    config: { limits, pacing: ctx.config.pacing, login: ctx.config.login },
   })
 }
 
