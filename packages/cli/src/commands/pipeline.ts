@@ -7,6 +7,9 @@ import { importFile } from '@linkinbox/importers'
 import {
   enrich,
   extract,
+  extractUntilEmpty,
+  formatBatchSummary,
+  formatTotals,
   guardDepsFromStore,
   ingest,
   pipelineLogger,
@@ -90,19 +93,40 @@ export async function runExtract(
   limit?: number,
   mediaFn?: MediaFn,
   host?: string,
+  untilEmpty = false,
 ): Promise<void> {
-  const outcome = await extract(ctx.store, extractOptions(ctx, extractFn, mediaFn, limit, host))
-  printStage(outcome)
-  if (outcome.deferredCount > 0) {
-    console.log(`(${outcome.deferredCount} deferred; retry in ${Math.round(outcome.retryAfter / 1000)}s)`)
+  const outcome = untilEmpty
+    ? await extractUntilEmpty(ctx.store, {
+        ...extractOptions(ctx, extractFn, mediaFn, limit, host),
+        // Never sleep inside the CLI loop: the next `linkinbox extract`
+        // invocation handles the spacing wait, and a process that sleeps
+        // minutes is a process that gets killed.
+        sleep: async () => {},
+        onBatch: (summary) => console.log(formatBatchSummary(summary)),
+      })
+    : null
+  if (outcome) {
+    console.log(formatTotals(outcome))
+    if (outcome.hitCap) {
+      console.log('(stopped at the 100-batch cap with links still queued; re-run to continue)')
+    }
+    if (outcome.retryAfter > 0) {
+      console.log(`(deferred links wait; retry in ${Math.round(outcome.retryAfter / 1000)}s)`)
+    }
+    return
   }
-  if (outcome.needsBrowserCount > 0) {
+  const result = await extract(ctx.store, extractOptions(ctx, extractFn, mediaFn, limit, host))
+  printStage(result)
+  if (result.deferredCount > 0) {
+    console.log(`(${result.deferredCount} deferred; retry in ${Math.round(result.retryAfter / 1000)}s)`)
+  }
+  if (result.needsBrowserCount > 0) {
     console.log(
-      `(${outcome.needsBrowserCount} need a browser; run \`linkinbox login <host>\` and re-run)`,
+      `(${result.needsBrowserCount} need a browser; run \`linkinbox login <host>\` and re-run)`,
     )
   }
-  if (outcome.mediaCount > 0) {
-    console.log(`(${outcome.mediaCount} media link${outcome.mediaCount === 1 ? '' : 's'} processed)`)
+  if (result.mediaCount > 0) {
+    console.log(`(${result.mediaCount} media link${result.mediaCount === 1 ? '' : 's'} processed)`)
   }
 }
 
@@ -200,10 +224,18 @@ export function registerPipelineCommands(
     .description('extract content for inbox links that lack it')
     .option('--limit <n>', 'cap the number of links processed', Number)
     .option('--host <host>', 'only process links of this host (one site at a time)')
-    .action(async (opts: { limit?: number; host?: string }) => {
+    .option('--until-empty', 'repeat batches until no created link is eligible or no batch makes progress')
+    .action(async (opts: { limit?: number; host?: string; untilEmpty?: boolean }) => {
       const ctx = await deps.ctx()
       try {
-        await runExtract(ctx, await deps.extractFn(ctx), opts.limit, await deps.mediaFn?.(ctx), opts.host?.toLowerCase())
+        await runExtract(
+          ctx,
+          await deps.extractFn(ctx),
+          opts.limit,
+          await deps.mediaFn?.(ctx),
+          opts.host?.toLowerCase(),
+          opts.untilEmpty === true,
+        )
       } finally {
         await ctx.close()
       }
