@@ -8,7 +8,7 @@
  *   - the host is flagged (its canary was refused) and has no saved profile.
  */
 import type { Store } from '../store.js'
-import { DEFAULT_LIMITS, hostPolicy, type LimitsConfig } from '../resilience/index.js'
+import { DEFAULT_LIMITS, hostPolicy, matchesPattern, type LimitsConfig } from '../resilience/index.js'
 import { REVIEW_ONLY_REASON } from './extract.js'
 import { hostOf } from './resilience.js'
 
@@ -91,7 +91,12 @@ export async function listHostsNeedingLogin(
     const reason = typeof link.stateData?.['reason'] === 'string'
       ? (link.stateData['reason'] as string)
       : 'login_wall'
-    if (!isLoginWallReason(reason)) continue
+    // A host the owner listed in `[login] allow` and has not logged in to
+    // yet is pending whatever shape its parked page had (a shell page, a
+    // blank dashboard): the owner named it as worth a session.
+    const allowedWithoutSession =
+      matchesPattern(options.loginAllow, host) && (await store.getProfile(host)) === null
+    if (!isLoginWallReason(reason) && !allowedWithoutSession) continue
     if (await isDeliberatelyExcluded(store, host, options)) continue
     const existing = rows.get(host)
     const seen = link.updatedAt.getTime()
