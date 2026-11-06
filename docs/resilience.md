@@ -140,6 +140,34 @@ host with a saved profile or a login-gated host, a 404 is a private page
 answering an anonymous request: the link moves to `needs_browser` with the
 reason `private_404` (or `private_410`) instead of `errored`.
 
+## Automatic escalation
+
+Before a bot block or a login wall parks a link, the extract-fn adapter
+(`packages/cli/src/extract-fn.ts`) retries the URL once through the stealth
+engine (patchright), with no user input. The trigger is the first, non-stealth
+attempt returning a bot-block page (Cloudflare or captcha markers in the
+content, an HTTP 403 or 429) or a login wall; the whole attempt chain is
+scanned, because the router's fallback from the static route to the browser
+route can hide the challenge page the static route saw.
+
+The retry is not free of the pacing rules: it runs after the normal pacing
+gate for that host (the walled-garden human pacing profile for strict hosts,
+the host's spacing wait otherwise), so a block never buys a second,
+unthrottled fetch. It also never loops: the stealth route itself never
+escalates again, at most one retry happens per extraction.
+
+Outcomes:
+
+- The retry succeeded: its content is returned as the result, tagged with
+  `extractor: "patchright"`.
+- The retry still shows a login wall: the login-wall outcome is returned and
+  the pipeline parks the link as before (`needs_browser`, reason
+  `login_wall`; run `linkinbox login <host>`).
+- The retry is still blocked (captcha, another challenge): the blocked
+  outcome is returned, the circuit breaker opens and the host is flagged.
+- The stealth engine cannot run (patchright not installed, no browser, no
+  profile): the original outcome is returned unchanged, silently.
+
 ## Host policy: skip, review only, login allow
 
 Three host lists decide what the pipeline does with a host. All of them use
