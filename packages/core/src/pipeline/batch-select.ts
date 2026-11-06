@@ -3,8 +3,8 @@
  * many links cannot fill every batch and starve the others.
  *
  * Rules: hosts are ordered by their oldest `created` link; within a host the
- * oldest links come first; each host contributes at most `perHost` links per
- * batch. Hosts whose persisted limiter state says they are inside a spacing
+ * oldest links come first; the batch is filled round-robin, one link per host
+ * per round, so every host gets a slot before any host gets a second. Hosts whose persisted limiter state says they are inside a spacing
  * wait, rate limited until a future time, or past their daily cap are skipped
  * when that is cheaply readable from `host_state` (no fetch, pure check).
  */
@@ -13,9 +13,6 @@ import { hostOf } from './resilience.js'
 import type { HostState, HostLimit } from '../resilience/index.js'
 /** Milliseconds in a day, matching the limiter's daily window. */
 const DAY_MS = 24 * 60 * 60 * 1000
-
-/** Default cap on links per host per batch. */
-export const DEFAULT_PER_HOST = 3
 
 export interface HostEligibility {
   /** True when the host may be contacted now. */
@@ -88,9 +85,8 @@ export function hostInSpacingWait(
 export function selectFairBatch(
   queued: Link[],
   maxBatch: number,
-  options: { perHost?: number; blocked?: Set<string>; waiting?: Set<string> } = {},
+  options: { blocked?: Set<string>; waiting?: Set<string> } = {},
 ): Link[] {
-  const perHost = options.perHost ?? DEFAULT_PER_HOST
   const blocked = options.blocked ?? new Set<string>()
   const waiting = options.waiting ?? new Set<string>()
   // Group by host preserving the input order (oldest first within a host).
@@ -102,12 +98,11 @@ export function selectFairBatch(
     if (list) list.push(link)
     else byHost.set(host, [link])
   }
-  // Fairness only matters when several hosts compete: with a single host the
-  // whole batch is that host's links anyway.
-  const share = byHost.size <= 1 ? maxBatch : perHost
   // Round-robin: hosts ordered by their oldest created link (insertion order
-  // of the map is already that order); take one link per host per round, at
-  // most `perHost` rounds.
+  // of the map is already that order); take one link per host per round until
+  // the batch is full. Every host gets a slot before any host gets a second
+  // one, and the batch is never left under-filled.
+  const share = maxBatch
   const take = (hosts: Map<string, Link[]>): Link[] => {
     const picked: Link[] = []
     for (let round = 0; round < share && picked.length < maxBatch; round += 1) {

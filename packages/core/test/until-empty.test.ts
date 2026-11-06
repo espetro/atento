@@ -36,8 +36,8 @@ describe('extractUntilEmpty', () => {
   it('drains links across multiple batches and prints per-batch summaries', async () => {
     const store = new FakeStore()
     await seed(store, [
-      ...Array.from({ length: 10 }, (_, i) => `https://a.example.com/${i}`),
-      ...Array.from({ length: 10 }, (_, i) => `https://b.example.com/${i}`),
+      ...Array.from({ length: 15 }, (_, i) => `https://a.example.com/${i}`),
+      ...Array.from({ length: 15 }, (_, i) => `https://b.example.com/${i}`),
     ])
     const batches: string[] = []
     const result = await extractUntilEmpty(store, {
@@ -45,14 +45,13 @@ describe('extractUntilEmpty', () => {
       sleep: async () => {},
       onBatch: (s) => batches.push(formatBatchSummary(s)),
     })
-    // Two hosts, 3 per host per batch of 20 => 6 links per batch, 20 links
-    // total: 4 batches drain the queue.
-    expect(result.totals.ok).toBe(20)
+    // 30 links over a batch size of 20 => two batches drain the queue.
+    expect(result.totals.ok).toBe(30)
     expect(result.batches.length).toBeGreaterThanOrEqual(2)
     expect(batches[0]).toContain('batch 1:')
-    expect((await store.countByState())['extracted']).toBe(20)
+    expect((await store.countByState())['extracted']).toBe(30)
     expect(result.hitCap).toBe(false)
-    expect(formatTotals(result)).toContain('extracted: 20')
+    expect(formatTotals(result)).toContain('extracted: 30')
   })
 
   it('stops when an iteration makes no progress (all deferred)', async () => {

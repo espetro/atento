@@ -50,21 +50,21 @@ describe('fair batch selection', () => {
     expect(result.outcomes.length).toBeLessThanOrEqual(DEFAULT_LIMITS.maxBatch)
   })
 
-  it('caps a host at 3 links per batch and orders hosts by their oldest link', async () => {
+  it('fills the batch round-robin so no host takes more than its turn', async () => {
     const store = new FakeStore()
     await seed(store, [
       ...Array.from({ length: 10 }, (_, i) => `https://a.example.com/${i}`),
       ...Array.from({ length: 10 }, (_, i) => `https://b.example.com/${i}`),
     ])
-    const result = await extract(store, { extract: okExtract })
+    const result = await extract(store, { extract: okExtract, maxBatch: 6 })
 
     const byHost = new Map<string, number>()
     for (const o of result.outcomes) {
       const host = new URL(o.url).hostname
       byHost.set(host, (byHost.get(host) ?? 0) + 1)
     }
-    for (const count of byHost.values()) expect(count).toBeLessThanOrEqual(3)
-    // Two hosts, 3 links each = 6 processed in the first batch.
+    for (const count of byHost.values()) expect(count).toBe(3)
+    // Two hosts alternate until the batch of 6 is full.
     expect(result.outcomes.length).toBe(6)
   })
 

@@ -33,7 +33,7 @@ import {
 } from '../pipeline/park-reason.js'
 import { isMediaLink, type MediaFn, type MediaRun } from '../media.js'
 import { DEFAULT_MAX_ATTEMPTS } from './resilience-options.js'
-import { DEFAULT_PER_HOST, selectFairBatch, hostEligible, hostInSpacingWait } from './batch-select.js'
+import { selectFairBatch, hostEligible, hostInSpacingWait } from './batch-select.js'
 
 /** The reason recorded on links parked because their host is skip-listed. */
 export const SKIP_HOST_REASON = 'skip_host'
@@ -205,7 +205,6 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
   }
   const cap = options.limit ?? maxBatch
   const batch = selectFairBatch(queued, cap, {
-    perHost: DEFAULT_PER_HOST,
     blocked: blockedHostsInBatch,
     waiting: waitingHosts,
   }).slice(0, maxBatch)
