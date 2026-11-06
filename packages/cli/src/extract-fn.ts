@@ -11,6 +11,9 @@
 import {
   hostPolicy,
   isLoginWall,
+  isListedStealthHost,
+  isStealthHost,
+  type BrowserConfig,
   type LimitsConfig,
   type LoginConfig,
   type PacingConfig,
@@ -19,9 +22,12 @@ import {
 import { createRouter, type RouterOptions } from '@linkinbox/extractors'
 import type { ExtractFn } from '@linkinbox/core'
 
+/** An empty browser config, used when the caller passes none. */
+const EMPTY_BROWSER_CONFIG: BrowserConfig = { engine: 'agent-browser', stealthHosts: [] }
+
 export interface RouterExtractOptions extends RouterOptions {
   /** Directory holding agent-browser login profiles. */
-  profilesDir?: string
+  profilesDir?: string;
   /** Override the underlying fetch (tests). */
   fetchImpl?: (url: string) => Promise<{
     status: number
@@ -38,6 +44,11 @@ export interface RouterExtractOptions extends RouterOptions {
   pacing?: PacingConfig
   /** The store, for the persisted canary state and the saved profiles. */
   store?: Store
+  /**
+   * The browser engine config (`[browser]`): which hosts use the stealth
+   * engine and which Chromium binary both engines run.
+   */
+  browserConfig?: BrowserConfig
 }
 
 /**
@@ -49,6 +60,8 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
   const limits = options.limits
   const store = options.store
   const pacing = options.pacing
+  const browserConfig = options.browserConfig
+  const executablePath = browserConfig?.executablePath
   const router = createRouter({
     ...options,
     fetch: options.fetchImpl ? adaptFetch(options.fetchImpl) : defaultFetch,
@@ -72,7 +85,18 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
       dwellMs: options.pacing
         ? Math.min(options.pacing.dwellMaxS, options.pacing.dwellMedianS) * 1000
         : undefined,
+      // The Chromium binary applies to both engines.
+      ...(executablePath ? { executablePath } : {}),
       ...options.browser,
+    },
+    patchright: {
+      profilesDir: options.profilesDir,
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      dwellMs: options.pacing
+        ? Math.min(options.pacing.dwellMaxS, options.pacing.dwellMedianS) * 1000
+        : undefined,
+      ...(executablePath ? { executablePath } : {}),
+      ...options.patchright,
     },
     // The host policy: one shared function from the core package. Skipped
     // hosts never reach the router (the pipeline parks them first), but the
@@ -99,7 +123,15 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
           })
           // A review-only host is never routed to the browser: no profile is
           // opened for a host the owner reviews by hand.
-          return { browser: policy.browser && !policy.reviewOnly, skipped: policy.skipped }
+          return {
+            browser: (policy.browser || isListedStealthHost(browserConfig ?? EMPTY_BROWSER_CONFIG, host)) &&
+              !policy.reviewOnly,
+            // The stealth engine: the host is in stealth_hosts or the config
+            // engine is patchright.
+            stealth:
+              browserConfig !== undefined && isStealthHost(browserConfig, host),
+            skipped: policy.skipped,
+          }
         }
       : undefined,
   })
