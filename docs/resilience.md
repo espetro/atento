@@ -224,7 +224,9 @@ defers the remaining links when the llm breaker is open.
 
 The browser extractor always runs headless and only with the saved profile
 for the host. On a login wall it opens the breaker and the CLI tells the user
-to run `linkinbox login <host>`.
+to run `linkinbox login <host>`. The browser engine per host (agent-browser
+or the patchright stealth engine) is chosen by the `[browser]` config; see
+`docs/stealth.md`.
 
 ## Config
 
