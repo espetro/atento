@@ -382,3 +382,30 @@ describe('guardRun integration', () => {
     expect(second.kind).toBe('ok')
   })
 })
+
+describe('hoursGate: the wait to the next opening', () => {
+  it('waits until tomorrow when the window start is already past today', () => {
+    const config = base({ hoursStart: 3, hoursEnd: 4 })
+    const at = (h: number, min = 0) => {
+      const d = new Date()
+      d.setHours(h, min, 0, 0)
+      return d.getTime()
+    }
+    // 19:30 with a 03:00 to 04:00 window: the next opening is tomorrow 03:00.
+    const { open, opensInMs } = hoursGate(config, at(19, 30))
+    expect(open).toBe(false)
+    expect(opensInMs).toBe(7.5 * 60 * 60 * 1000)
+  })
+
+  it('never reports a zero wait for a closed window', () => {
+    for (let start = 0; start < 24; start += 5) {
+      const config = base({ hoursStart: start, hoursEnd: (start + 1) % 24 })
+      for (let hour = 0; hour < 24; hour += 3) {
+        const d = new Date()
+        d.setHours(hour, 17, 0, 0)
+        const { open, opensInMs } = hoursGate(config, d.getTime())
+        if (!open) expect(opensInMs).toBeGreaterThan(0)
+      }
+    }
+  })
+})

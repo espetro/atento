@@ -51,6 +51,12 @@ export interface BrowseReaderOptions {
   closeAfterRead?: boolean;
   /** The agent-browser binary, overridable for tests. */
   command?: string;
+  /**
+   * The environment the binary is resolved from. The env var
+   * LINKINBOX_AGENT_BROWSER wins over the default name, the same way the
+   * login command resolves it.
+   */
+  env?: Record<string, string | undefined>;
   /** Subprocess runner, injected in tests. */
   exec?: ExecLike;
   /** Override the profile-existence check (tests). */
@@ -106,9 +112,14 @@ export function toBrowseOutcome(
 export function createBrowseReader(options: BrowseReaderOptions = {}): BrowseReader {
   const closeAfterRead = options.closeAfterRead !== false;
   const stealth = options.stealthHost ?? (() => false);
+  const env = options.env ?? process.env;
+  // The binary comes from the env var first, like the login command, so an
+  // operator can point the read at another build without a rebuild.
+  const command =
+    options.command ?? env["LINKINBOX_AGENT_BROWSER"] ?? options.browser?.command ?? "agent-browser";
 
   const browserExtractor = createBrowserExtractor({
-    command: options.command,
+    command,
     exec: options.exec,
     profileExists: options.profileExists,
     ...options.browser,
@@ -126,11 +137,11 @@ export function createBrowseReader(options: BrowseReaderOptions = {}): BrowseRea
       return toBrowseOutcome(result, "patchright");
     }
     const result = await browserExtractor.extract(url);
-    if (closeAfterRead && options.exec && options.command) {
+    if (closeAfterRead && options.exec) {
       // The session is closed best effort: a failure here must never fail
       // the read that already succeeded.
       await options.exec(
-        options.command,
+        command,
         ["--profile", profileDirFor(options.profilesDir, host), "close"],
         { timeoutMs: 15_000 },
       ).catch(() => undefined);
