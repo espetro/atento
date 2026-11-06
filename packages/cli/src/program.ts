@@ -8,7 +8,7 @@ import { createContext, type CliContext, type ContextOptions } from './context.j
 import { registerPipelineCommands } from './commands/pipeline.js'
 import { registerLinkCommands } from './commands/links.js'
 import { registerMaintenanceCommands } from './commands/maintenance.js'
-import { registerLoginCommand } from './commands/login.js'
+import { registerLoginCommand, registerRequeueCommand } from './commands/login.js'
 import { registerReportingCommands } from './commands/metrics.js'
 import { registerResilienceCommands } from './commands/resilience.js'
 import { registerMediaCommand } from './commands/media.js'
@@ -102,6 +102,7 @@ export function createProgram(options: ProgramOptions = {}): Command {  const pr
   registerLinkCommands(program, { ctx })
   registerMaintenanceCommands(program, { ctx, ttl })
   registerLoginCommand(program, { ctx })
+  registerRequeueCommand(program, { ctx })
   registerReportingCommands(program, { ctx })
   registerResilienceCommands(program, { ctx })
   registerMediaCommand(program, {
