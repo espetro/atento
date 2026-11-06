@@ -256,6 +256,14 @@ to run `linkinbox login <host>`. The browser engine per host (agent-browser
 or the patchright stealth engine) is chosen by the `[browser]` config; see
 `docs/stealth.md`.
 
+## Batch fairness and --until-empty
+
+Without fairness, `extract` takes the first 20 `created` links by id. One host with many links fills every batch; most of its links get deferred by per-host spacing, so a loop of runs makes no progress and links from other hosts are never attempted.
+
+Batch selection is now round-robin across hosts (`batch-select.ts`): hosts are ordered by their oldest `created` link, links within a host are oldest first, and each host contributes at most 3 links per batch (when several hosts compete; a single-host queue still uses the full batch). Hosts whose persisted `host_state` says they cannot make progress are skipped cheaply, before any fetch: a daily cap hit in the current window, an upstream `rateLimitedUntil` in the future, or an open breaker drops the host from the batch entirely. A host inside a spacing wait only gets a slot when no other host has a pending link, so busy hosts do not crowd out fresh ones.
+
+`linkinbox extract --until-empty` repeats batches until no `created` link is eligible or an iteration makes no progress (every link deferred or skipped), stopping at 100 iterations. It prints one summary line per batch and a final per-state summary, and never sleeps more than the shortest retry-after seen; the CLI process itself never sleeps, so spacing waits are handled by re-running or by an external scheduler.
+
 ## Config
 
 All values are overridable in `~/.linkinbox/config.toml`:
