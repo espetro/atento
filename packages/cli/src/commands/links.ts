@@ -314,10 +314,15 @@ export interface OverviewOptions {
   json?: boolean
 }
 
-/** Render the overview as a compact pair of tables. */
+/** Render the overview as a compact set of tables. */
 export function formatOverview(overview: PipelineOverview): string {
   const stateRows = Object.entries(overview.byState).map(([state, n]) => [state, String(n)])
   const stateTable = renderTable(['state', 'count'], stateRows)
+  const reasonRows = Object.entries(overview.byParkReason)
+    .filter(([, n]) => n > 0)
+    .map(([reason, n]) => [reason, String(n)])
+  const reasonTable =
+    reasonRows.length > 0 ? renderTable(['park reason', 'count'], reasonRows) : 'no parked links'
   const hostRows = overview.byHost.map((h) => [
     h.host,
     String(h.total),
@@ -325,12 +330,19 @@ export function formatOverview(overview: PipelineOverview): string {
       .filter(([, n]) => n > 0)
       .map(([state, n]) => `${state}:${n}`)
       .join(' '),
+    Object.entries(h.byParkReason)
+      .filter(([, n]) => n > 0)
+      .map(([reason, n]) => `${reason}:${n}`)
+      .join(' '),
   ])
-  const hostTable = hostRows.length > 0 ? renderTable(['host', 'total', 'states'], hostRows) : 'no hosts'
+  const hostTable =
+    hostRows.length > 0 ? renderTable(['host', 'total', 'states', 'park reasons'], hostRows) : 'no hosts'
   return [
     `${overview.total} link${overview.total === 1 ? '' : 's'}`,
     '',
     stateTable,
+    '',
+    reasonTable,
     '',
     hostTable,
   ].join('\n')

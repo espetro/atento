@@ -124,7 +124,9 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     {
       description:
         'Pipeline overview (spec name links.overview): how many links sit in ' +
-        'each pipeline state, plus the busiest hosts with their per-state ' +
+        'each pipeline state, how many parked links carry each park reason ' +
+        '(login_wall, bot_block, js_shell, http_error, timeout, review_only, ' +
+        'unknown), plus the busiest hosts with their per-state and per-reason ' +
         'breakdown. Read-only: it never mutates state. Use it to see where ' +
         'the whole corpus stands without listing every link.',
       inputSchema: {
@@ -138,6 +140,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
         return json({
           total: overview.total,
           byState: overview.byState,
+          byParkReason: overview.byParkReason,
           byHost: overview.byHost,
         })
       }

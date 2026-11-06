@@ -213,13 +213,20 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
     return c.json({ items: items.map(shapePipelineRow), total })
   })
 
-  // The pipeline overview: every state with its count, plus the busiest
-  // hosts. Read-only: it reads the link rows once.
+  // The pipeline overview: every state with its count, every park reason
+  // with its parked-link count, plus the busiest hosts. Read-only: it reads
+  // the link rows once.
   app.get('/api/pipeline', async (c) => {
     const overview = await pipelineOverview(store)
     return c.json({
       byState: overview.byState,
-      byHost: overview.byHost.map((h) => ({ host: h.host, total: h.total, byState: h.byState })),
+      byParkReason: overview.byParkReason,
+      byHost: overview.byHost.map((h) => ({
+        host: h.host,
+        total: h.total,
+        byState: h.byState,
+        byParkReason: h.byParkReason,
+      })),
     })
   })
 

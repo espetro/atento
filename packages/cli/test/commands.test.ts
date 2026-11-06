@@ -160,6 +160,38 @@ describe('cli overview', () => {
       expect(out.stdout).toContain('needs_browser')
       expect(out.stdout).toContain('a.example')
       expect(out.stdout).toContain('needs_browser:1')
+      // The park reasons table: the parked link carries its class.
+      expect(out.stdout).toContain('park reason')
+      expect(out.stdout).toContain('login_wall')
+    } finally {
+      await db.cleanup()
+    }
+  })
+
+  it('prints the park reason counts', async () => {
+    const db = await tempDb()
+    try {
+      const ctx = await contextFor(db)
+      await insertLink(db.store, 'https://gated.example/one', {
+        urlHash: 'g1',
+        state: 'needs_browser',
+        stateData: { host: 'gated.example', reason: 'login_wall' },
+      })
+      // A legacy row parked before reasons existed: unknown.
+      await insertLink(db.store, 'https://old.example/one', {
+        urlHash: 'o1',
+        state: 'needs_browser',
+        stateData: { host: 'old.example' },
+      })
+      const out = await capture(() => runOverview(ctx, { json: true }))
+      const parsed = JSON.parse(out.stdout) as {
+        byParkReason: Record<string, number>
+        byHost: { byParkReason: Record<string, number> }[]
+      }
+      expect(parsed.byParkReason.login_wall).toBe(1)
+      expect(parsed.byParkReason.unknown).toBe(1)
+      expect(parsed.byParkReason.bot_block).toBe(0)
+      expect(parsed.byHost[0]?.byParkReason.login_wall).toBe(1)
     } finally {
       await db.cleanup()
     }
@@ -195,6 +227,15 @@ describe('cli overview', () => {
         discarded: 0,
         errored: 0,
         deleted: 0,
+      },
+      byParkReason: {
+        login_wall: 0,
+        bot_block: 0,
+        js_shell: 0,
+        http_error: 0,
+        timeout: 0,
+        review_only: 0,
+        unknown: 0,
       },
       byHost: [],
     })
