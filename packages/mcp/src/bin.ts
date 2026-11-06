@@ -2,10 +2,14 @@
  * stdio entry point: `linkinbox-mcp`. Wiring mirrors the CLI program: config
  * from the environment, a SQLite store, a LogTape-backed pipeline logger and
  * the same extract/enrich adapters the CLI builds.
+ *
+ * The browse tools use the same read path as the CLI: the saved profile of
+ * the host, the allowlist from `[share] hosts` and the same per-host budget
+ * as the extraction stage. Nothing is written to the link store.
  */
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { loadConfig, createExtractFn, createEnrichFn } from '@linkinbox/cli'
-import { pipelineLogger } from '@linkinbox/core'
+import { loadConfig, createExtractFn, createEnrichFn, createBrowseFn } from '@linkinbox/cli'
+import { guardDepsFromStore, pipelineLogger } from '@linkinbox/core'
 import { openStore } from '@linkinbox/db'
 import { createMcpServer } from './server.js'
 import { TOOL_NAME_MAP, type McpContext, type McpDeps } from './deps.js'
@@ -20,6 +24,7 @@ const context: McpContext = {
   logger,
   limits: config.limits,
   login: config.login,
+  share: config.share,
 }
 
 export const deps: McpDeps = {
@@ -33,6 +38,17 @@ export const deps: McpDeps = {
       store: (ctx ?? context).store,
     }),
   enrichFn: () => createEnrichFn(),
+  browseFn: async () =>
+    createBrowseFn({
+      share: config.share,
+      browser: config.browser,
+      profilesDir: config.profilesDir,
+    }),
+  browseGuard: async (ctx) =>
+    guardDepsFromStore((ctx ?? context).store, {
+      config: { limits: config.limits, pacing: config.pacing },
+    }),
+  hasProfile: async (host) => (await store.getProfile(host)) !== null,
   close: async () => {
     await store.close()
   },

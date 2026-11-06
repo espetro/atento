@@ -28,6 +28,11 @@ import {
   browserFromToml,
   type BrowserConfig,
 } from './browser-config.js'
+import {
+  DEFAULT_SHARE_CONFIG,
+  shareFromToml,
+  type ShareConfig,
+} from './share-config.js'
 
 /**
  * Parse the `[ttl]` table out of raw TOML text. The only TOML the pipeline
@@ -220,12 +225,17 @@ export function parsePacingConfig(tomlText: string): PacingConfig {
   return pacingFromToml(parseToml(tomlText) as TomlTable)
 }
 
+/** Parse the `[share]` table out of raw TOML text. */
+export function parseShareConfig(tomlText: string): ShareConfig {
+  return shareFromToml(parseToml(tomlText) as unknown as Record<string, unknown>)
+}
+
 /** Parse the `[browser]` table out of raw TOML text. */
 export function parseBrowserConfig(tomlText: string): BrowserConfig {
   return browserFromToml(parseToml(tomlText) as TomlTable)
 }
 
 
-export { DEFAULT_LIMITS, DEFAULT_LOGIN_CONFIG, ORDINARY_LIMIT, WALLED_GARDEN_LIMIT, DEFAULT_CAPTURE_CONFIG }
+export { DEFAULT_LIMITS, DEFAULT_LOGIN_CONFIG, ORDINARY_LIMIT, WALLED_GARDEN_LIMIT, DEFAULT_CAPTURE_CONFIG, DEFAULT_SHARE_CONFIG }
 
-export type { LimitsConfig, LoginConfig, CaptureConfig, PacingConfig }
+export type { LimitsConfig, LoginConfig, CaptureConfig, PacingConfig, ShareConfig, BrowserConfig }

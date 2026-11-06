@@ -8,6 +8,8 @@ export type { BrowserExtractorOptions } from "./browser.js";
 export { cleanBrowserMarkdown } from "./clean.js";
 export { createPatchrightExtractor } from "./patchright.js";
 export type { PatchrightExtractorOptions } from "./patchright.js";
+export { createBrowseReader, toBrowseOutcome, profileDirFor } from "./browse-reader.js";
+export type { BrowseReader, BrowseReaderOptions, BrowseReadOutcome, BrowseReadReason } from "./browse-reader.js";
 export { createYtdlpExtractor, vttToTranscript } from "./ytdlp.js";
 export type { YtdlpExtractorOptions } from "./ytdlp.js";
 export { createPdfExtractor } from "./pdf.js";

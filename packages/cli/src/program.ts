@@ -12,6 +12,7 @@ import { registerLoginCommand } from './commands/login.js'
 import { registerReportingCommands } from './commands/metrics.js'
 import { registerResilienceCommands } from './commands/resilience.js'
 import { registerMediaCommand } from './commands/media.js'
+import { registerBrowseCommand } from './commands/browse.js'
 import { createMediaFn, type MediaFn } from './media-fn.js'
 import { createExtractFn } from './extract-fn.js'
 import { createEnrichFn } from './enrich-fn.js'
@@ -106,6 +107,7 @@ export function createProgram(options: ProgramOptions = {}): Command {  const pr
     ctx,
     mediaFn: async () => await mediaFn(await ctx()),
   })
+  registerBrowseCommand(program, { ctx })
 
   return program
 }

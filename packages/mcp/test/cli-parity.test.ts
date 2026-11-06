@@ -43,6 +43,7 @@ export const CLI_TO_TOOL: Record<string, string[]> = {
   metrics: ['metrics_get'],
   status: ['limits_status'],
   login: ['login_pending'],
+  browse: ['browse_read', 'browse_hosts'],
 }
 
 /** The spec surface, in the spec's own names. */
@@ -60,6 +61,8 @@ const SPEC_TOOLS = [
   'metrics.get',
   'limits.status',
   'login.pending',
+  'browse.read',
+  'browse.hosts',
 ]
 
 /** Flatten the commander command tree into names like `login list`. */

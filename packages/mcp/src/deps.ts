@@ -4,12 +4,16 @@
  * in-memory client over the same tools with fakes.
  */
 import type {
+  BrowseFn,
+  BrowseOptions,
   ExtractFn,
   EnrichFn,
   LimitsConfig,
   LoginConfig,
   MetricsSummary,
   PipelineLogger,
+  ShareConfig,
+  ShareHostEntry,
   Store,
   SweepPlan,
   TriageResult,
@@ -24,6 +28,11 @@ export interface McpContext {
   limits?: LimitsConfig
   /** Which hosts may be logged in to (`[login] allow`). */
   login?: LoginConfig
+  /**
+   * The share allowlist (`[share] hosts`). When absent NOTHING is shared:
+   * browse_read refuses every host, which is the default posture.
+   */
+  share?: ShareConfig
 }
 
 export interface McpDeps {
@@ -36,6 +45,16 @@ export interface McpDeps {
    */
   extractFn(ctx?: McpContext): Promise<ExtractFn>
   enrichFn(): Promise<EnrichFn>
+  /**
+   * The read primitive for browse_read (the browser engines live in the
+   * CLI package). When absent the tool reports that browsing is not
+   * configured instead of opening a browser on its own.
+   */
+  browseFn?(ctx: McpContext): Promise<BrowseFn>
+  /** The guard for browse_read: pacing, daily cap, working hours, breaker. */
+  browseGuard?(ctx: McpContext): Promise<BrowseOptions['guard'] | undefined>
+  /** True when the host has a saved browser profile (browse). */
+  hasProfile?(host: string): Promise<boolean>
   /** Release anything the context factory opened (stdio shutdown). */
   close?(): Promise<void>
 }
@@ -58,6 +77,8 @@ export const TOOL_NAME_MAP: Record<string, string> = {
   metrics_get: 'metrics.get',
   limits_status: 'limits.status',
   login_pending: 'login.pending',
+  browse_read: 'browse.read',
+  browse_hosts: 'browse.hosts',
 }
 
 export type SweepProposal = SweepPlan
