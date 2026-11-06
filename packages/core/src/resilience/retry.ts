@@ -34,9 +34,14 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
 /** A sleep function the tests can replace with an instant resolve. */
 export type Sleep = (ms: number) => Promise<void>
 
+/**
+ * The timer stays referenced on purpose: a sleep is often the only pending
+ * work (a host spacing wait), and an unref'd timer lets Node exit with the
+ * awaiting command unsettled.
+ */
 export const realSleep: Sleep = (ms) =>
   new Promise((resolve) => {
-    setTimeout(resolve, Math.max(0, ms)).unref?.()
+    setTimeout(resolve, Math.max(0, ms))
   })
 
 /** HTTP statuses that are always safe to retry. */
