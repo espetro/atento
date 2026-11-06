@@ -9,11 +9,10 @@
  * Pure decision logic: no config parsing here (that is browser-config.ts)
  * and no browser process. Nothing about a provider or a model.
  */
-
-import { isStealthHost, type BrowserConfig } from './browser-config.js';
+import { isStealthHost, type BrowserConfig } from './browser-config.js'
 
 /** The browser engines the pipeline can route a host to. */
-export type EngineName = BrowserConfig['engine'];
+export type EngineName = BrowserConfig['engine']
 
 /**
  * The engine a host extracts with.
@@ -23,5 +22,5 @@ export type EngineName = BrowserConfig['engine'];
  * one place.
  */
 export function engineForHost(config: BrowserConfig, host: string): EngineName {
-	return isStealthHost(config, host) ? 'patchright' : 'agent-browser';
+  return isStealthHost(config, host) ? 'patchright' : 'agent-browser'
 }

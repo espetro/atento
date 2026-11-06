@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseBrowserConfig } from '../src/config.js'
 import { engineForHost } from '../src/engine.js'
+import { isListedStealthHost } from '../src/browser-config.js'
 
 describe('engineForHost', () => {
   it('defaults to the agent-browser engine', () => {
@@ -42,5 +43,25 @@ stealth_hosts = ["*.usebrioso.com"]
 stealth_hosts = ["app.devin.ai"]
 `)
     expect(engineForHost(browser, 'App.Devin.AI')).toBe('patchright')
+  })
+})
+
+describe('isListedStealthHost', () => {
+  it('ignores the global engine', () => {
+    const browser = parseBrowserConfig(`
+[browser]
+engine = "patchright"
+`)
+    expect(isListedStealthHost(browser, 'example.com')).toBe(false)
+  })
+
+  it('is true for a listed host', () => {
+    const browser = parseBrowserConfig(`
+[browser]
+stealth_hosts = ["app.devin.ai", "*.usebrioso.com"]
+`)
+    expect(isListedStealthHost(browser, 'app.devin.ai')).toBe(true)
+    expect(isListedStealthHost(browser, 'beta.usebrioso.com')).toBe(true)
+    expect(isListedStealthHost(browser, 'example.com')).toBe(false)
   })
 })

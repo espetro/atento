@@ -86,6 +86,17 @@ export function browserFromToml(toml: Record<string, unknown>): BrowserConfig {
  */
 export function isStealthHost(config: BrowserConfig, host: string): boolean {
   if (config.engine === 'patchright') return true
+  return isListedStealthHost(config, host)
+}
+
+/**
+ * True when the host is explicitly listed in `stealth_hosts`, ignoring the
+ * global engine. A listed host is one the owner knows blocks plain
+ * requests, so it always goes through the stealth browser; the global
+ * `engine = "patchright"` only picks the engine for the hosts that need a
+ * browser at all.
+ */
+export function isListedStealthHost(config: BrowserConfig, host: string): boolean {
   const lower = host.toLowerCase()
   return config.stealthHosts.some((pattern) => {
     if (pattern.startsWith('*.')) {

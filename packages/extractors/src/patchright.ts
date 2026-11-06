@@ -71,7 +71,15 @@ export interface PatchrightLauncher {
  */
 export type PatchrightLaunch = (
   userDataDir: string,
-  options: { headless: boolean; executablePath?: string },
+  options: {
+    headless: boolean;
+    executablePath?: string;
+    /**
+     * The viewport to force. `null` means: use the real window size, which
+     * is what the Patchright README recommends for an undetected session.
+     */
+    viewport?: { width: number; height: number } | null;
+  },
 ) => Promise<PatchrightContext>;
 
 export interface PatchrightExtractorOptions {
@@ -109,8 +117,21 @@ export function patchrightProfileDir(url: string, profilesDir?: string): string 
  * package. When the package is not installed the import fails and the
  * extractor reports needsBrowser, never a crash.
  */
+/**
+ * The module specifier, kept in a `string` variable on purpose: the import
+ * is dynamic and optional, so the compiler never resolves the module and
+ * the build and the tests pass when Patchright is not installed.
+ */
+const PATCHRIGHT_MODULE: string = "patchright";
+
+/**
+ * The default launcher: a dynamic import of the optional `patchright`
+ * package. When the package is not installed the import fails and the
+ * extractor reports needsBrowser, never a crash.
+ */
 export const defaultPatchrightLaunch: PatchrightLaunch = async (userDataDir, options) => {
-  const mod = (await import("patchright")) as unknown as {
+  const specifier = PATCHRIGHT_MODULE;
+  const mod = (await import(specifier)) as unknown as {
     chromium?: { launchPersistentContext: PatchrightLauncher["launchPersistentContext"] };
     default?: { chromium?: { launchPersistentContext: PatchrightLauncher["launchPersistentContext"] } };
   };
@@ -119,8 +140,9 @@ export const defaultPatchrightLaunch: PatchrightLaunch = async (userDataDir, opt
   return await chromium.launchPersistentContext(userDataDir, {
     headless: options.headless,
     ...(options.executablePath ? { executablePath: options.executablePath } : {}),
-    // A real window size keeps the viewport out of the fingerprint.
-    viewport: { width: 1280, height: 800 },
+    // A fixed viewport keeps reads reproducible; the login flow passes
+    // `null` so the headed window keeps the user's real size.
+    viewport: options.viewport ?? { width: 1280, height: 800 },
     locale: "en-US",
     args: ["--disable-blink-features=AutomationControlled"],
   });
@@ -212,7 +234,7 @@ export function createPatchrightExtractor(options: PatchrightExtractorOptions = 
         // steps are injected, so tests never sleep.
         if (options.sleep) await options.sleep(dwellMs);
         if (options.scroll) await options.scroll(scrollPx, profileDir);
-        else if (page.scroll) await page.scroll(scrollPx);
+        else await scrollPage(page, scrollPx);
         const html = await page.content();
         let markdown = await htmlToMarkdown(html);
         if (!markdown) {
@@ -257,4 +279,21 @@ export function createPatchrightExtractor(options: PatchrightExtractorOptions = 
 function shortError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.split("\n")[0]!.slice(0, 200);
+}
+
+/**
+ * Scroll the page a little, the way a person reading it would. Uses the
+ * page's own scroll when it has one, else a window scroll through the page
+ * expression. Never throws: a page that cannot scroll is still readable.
+ */
+async function scrollPage(page: PatchrightPage, pixels: number): Promise<void> {
+  try {
+    if (page.scroll) {
+      await page.scroll(pixels);
+      return;
+    }
+    await page.evaluate(`window.scrollBy(0, ${pixels}); ''`);
+  } catch {
+    // A page that refuses to scroll is still worth reading.
+  }
 }

@@ -60,6 +60,7 @@ export function createProgram(options: ProgramOptions = {}): Command {  const pr
       limits: config.limits,
       login: config.login,
       pacing: config.pacing,
+      browserConfig: config.browser,
       store: ctx.store,
     })
   }

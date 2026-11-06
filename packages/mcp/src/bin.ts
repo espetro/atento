@@ -30,6 +30,7 @@ export const deps: McpDeps = {
       limits: config.limits,
       login: config.login,
       pacing: config.pacing,
+      browserConfig: config.browser,
       store: (ctx ?? context).store,
     }),
   enrichFn: () => createEnrichFn(),
