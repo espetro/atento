@@ -9,17 +9,27 @@
  * agree on every host.
  */
 import {
+  emptyHostState,
   hostPolicy,
   isLoginWall,
   isListedStealthHost,
   isStealthHost,
+  limitForHost,
+  minIntervalMs,
+  pacingGate,
+  realSleep,
   type BrowserConfig,
   type LimitsConfig,
   type LoginConfig,
   type PacingConfig,
   type Store,
 } from '@linkinbox/core'
-import { createRouter, type RouterOptions } from '@linkinbox/extractors'
+import {
+  buildRouterDeps,
+  createRouter,
+  type Extractor,
+  type RouterOptions,
+} from '@linkinbox/extractors'
 import type { ExtractFn } from '@linkinbox/core'
 
 /** An empty browser config, used when the caller passes none. */
@@ -62,7 +72,9 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
   const pacing = options.pacing
   const browserConfig = options.browserConfig
   const executablePath = browserConfig?.executablePath
-  const router = createRouter({
+  // A direct handle on the patchright extractor for the escalation retry.
+  // Build it the same way the router does: the injected options win.
+  const routerOptions: RouterOptions = {
     ...options,
     fetch: options.fetchImpl ? adaptFetch(options.fetchImpl) : defaultFetch,
     browser: {
@@ -134,39 +146,188 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
           }
         }
       : undefined,
-  })
+  }
+  const router = createRouter(routerOptions)
+  // The escalation extractor: the caller's injected patchright options if it
+  // built one, else the router's own (both share the same options table).
+  const escalateExtractor: Extractor =
+    options.extractors?.patchright ??
+    buildRouterDeps(routerOptions).extractors['patchright']!
+
+  /**
+   * The normal pacing gate before the escalation retry. The retry is a second
+   * page read on the same host, so it waits like any other read: the walled-
+   * garden pacing profile (working hours, daily cap, breaks, jittered spacing)
+   * when the host is strict, else the host's spacing wait. A throttled wait is
+   * skipped silently: the retry then happens immediately, but it never runs
+   * more than once.
+   */
+  const pacingWait = async (url: string): Promise<void> => {
+    if (!limits || !store) return
+    let host: string
+    try {
+      host = new URL(url).hostname.replace(/^\[(.*)\]$/, '$1').toLowerCase()
+    } catch {
+      return
+    }
+    const state = (await store.getHostState(host)) ?? emptyHostState(host)
+    const hasProfile = (await store.getProfile(host)) !== null
+    const policy = hostPolicy(limits, host, { hasProfile })
+    if (policy.strict && pacing) {
+      const verdict = pacingGate(state, pacing, Date.now(), Math.random)
+      if (verdict.admitted) await store.saveHostState(verdict.state)
+      return
+    }
+    if (state.lastRequestAt !== null) {
+      const waitMs = Math.max(
+        0,
+        state.lastRequestAt +
+          minIntervalMs(limitForHost(limits, host, hasProfile).intervalMs) -
+          Date.now(),
+      )
+      if (waitMs > 0) await realSleep(waitMs)
+    }
+  }
 
   return async (url: string) => {
-    const result = await router.extract(url)
-    const meta = result.meta ?? {}
-    const blockedMeta = meta['blocked'] === true
-    const wall = isLoginWall({
-      url: result.finalUrl ?? url,
-      body: result.html ?? result.markdown,
-      status: result.status,
-      hasProfile: meta['hasProfile'] === true,
-    })
-    return {
-      markdown: result.markdown,
-      title: result.title,
-      // Site metadata (og:type, twitter:card, author, ...): the media stage
-      // detects video pages from it. Booleans and plain values only.
-      meta: stripMeta(meta),
-      needsBrowser: result.needsBrowser === true,
-      extractor: result.route,
-      blocked: blockedMeta || (wall && result.needsBrowser !== true),
-      blockReason: blockedMeta
-        ? typeof meta['reason'] === 'string'
-          ? (meta['reason'] as string)
-          : 'login_wall'
-        : wall
-          ? 'login_wall'
-          : undefined,
-      gone: result.gone,
-      finalUrl: result.finalUrl,
-      status: result.status,
-      html: result.html,
+    const first = await router.extract(url)
+    const firstAdapted = adaptResult(first, url)
+    // Auto-escalation: a bot block (Cloudflare, captcha, HTTP 403/429) or a
+    // login wall on a non-stealth route gets ONE retry through the stealth
+    // engine, with no user input. The retry runs after the normal pacing the
+    // patchright extractor applies (dwell, scroll); it never bypasses it.
+    if (shouldEscalate(first, first.route)) {
+      await pacingWait(url)
+      const patchright = await escalateExtractor.extract(url)
+      // The stealth engine could not run (the package is missing, the
+      // browser is absent, there is no profile): keep the original outcome
+      // instead of reporting a failure the owner cannot act on.
+      if (patchright.meta?.['failed'] === true || patchright.meta?.['missingProfile'] === true) {
+        return firstAdapted
+      }
+      return adaptResult({ route: 'patchright', ...patchright }, url)
     }
+    return firstAdapted
+  }
+}
+
+/**
+ * The markers that mean the host served a bot challenge instead of content.
+ * Deliberately narrow: a retry is only worth it for pages a stealth browser
+ * plausibly passes.
+ */
+const BOT_BLOCK_MARKERS = [
+  'cf-challenge',
+  'cf-browser-verification',
+  'checking your browser',
+  'just a moment',
+  'captcha',
+  'verify you are human',
+  'are you a robot',
+  'unusual activity',
+  'enable javascript and cookies to continue',
+]
+
+/** True when a page body (html or markdown) carries a bot-block marker. */
+function looksBotBlocked(body?: string): boolean {
+  if (!body) return false
+  const lower = body.toLowerCase()
+  return BOT_BLOCK_MARKERS.some((marker) => lower.includes(marker))
+}
+
+/**
+ * Decide whether the extract-fn result must escalate to the patchright
+ * extractor: a bot-block page (by markers or by status 403/429) or a login
+ * wall, coming from a non-stealth route. The stealth route itself never
+ * escalates again, so there is exactly one retry, never a loop.
+ *
+ * The whole attempt chain is scanned: the router falls back from the static
+ * route to the browser route, and the fallback attempt (the one that is
+ * returned) can hide the challenge page the static route saw.
+ */
+function shouldEscalate(
+  result: {
+    route: string
+    attempts: { route: string; result: ExtractResultShape }[]
+    gone?: number
+  },
+  route: string,
+): boolean {
+  if (route === 'patchright') return false
+  if (result.gone !== undefined) return false
+  const attempts = result.attempts.length > 0 ? result.attempts : []
+  return attempts.some((attempt) => {
+    const r = attempt.result
+    if (r.gone !== undefined) return false
+    const blocked = r.meta?.['blocked'] === true
+    if (blocked) return true
+    if (r.status === 403 || r.status === 429) return true
+    if (looksBotBlocked(r.html ?? r.markdown)) return true
+    // A login wall on a page that still carries content.
+    return isLoginWall({
+      url: r.finalUrl ?? '',
+      body: r.html ?? r.markdown,
+      status: r.status,
+      hasProfile: r.meta?.['hasProfile'] === true,
+    })
+  })
+}
+
+/** The subset of an extractor result the escalation check reads. */
+interface ExtractResultShape {
+  markdown?: string
+  meta?: Record<string, unknown>
+  needsBrowser?: boolean
+  gone?: number
+  finalUrl?: string
+  status?: number
+  html?: string
+}
+
+/** Turn a routed extract result into the ExtractFn shape (the old body). */
+function adaptResult(
+  result: {
+    route: string
+    markdown?: string
+    title?: string
+    meta?: Record<string, unknown>
+    needsBrowser?: boolean
+    gone?: number
+    finalUrl?: string
+    status?: number
+    html?: string
+  },
+  url: string,
+): Awaited<ReturnType<ExtractFn>> {
+  const meta = result.meta ?? {}
+  const blockedMeta = meta['blocked'] === true
+  const wall = isLoginWall({
+    url: result.finalUrl ?? url,
+    body: result.html ?? result.markdown,
+    status: result.status,
+    hasProfile: meta['hasProfile'] === true,
+  })
+  const blockReason = blockedMeta
+    ? typeof meta['reason'] === 'string'
+      ? (meta['reason'] as string)
+      : 'login_wall'
+    : wall
+      ? 'login_wall'
+      : undefined
+  return {
+    markdown: result.markdown ?? '',
+    title: result.title,
+    // Site metadata (og:type, twitter:card, author, ...): the media stage
+    // detects video pages from it. Booleans and plain values only.
+    meta: stripMeta(meta),
+    needsBrowser: result.needsBrowser === true,
+    extractor: result.route,
+    blocked: blockedMeta || (wall && result.needsBrowser !== true),
+    blockReason,
+    gone: result.gone,
+    finalUrl: result.finalUrl,
+    status: result.status,
+    html: result.html,
   }
 }
 
