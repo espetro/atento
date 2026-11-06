@@ -2,7 +2,7 @@
  * Patchright extractor tests: fakes only, no Patchright install needed and
  * no network. The launcher, the sleep and the scroll are all injected.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createPatchrightExtractor,
   htmlToMarkdown,
@@ -221,5 +221,61 @@ describe("createPatchrightExtractor", () => {
     });
     await extractor.extract("https://app.devin.ai/x");
     expect(launchCalls[0]?.headless).toBe(false);
+  });
+});
+
+describe("defaultPatchrightLaunch fingerprint", () => {
+  it("uses the Chrome channel first and falls back to the bundled Chromium", async () => {
+    const calls: { userDataDir: string; options: Record<string, unknown> }[] = [];
+    const context: PatchrightContext = {
+      pages: () => [],
+      newPage: async () => fakePage("<p>x</p>", ""),
+      close: async () => undefined,
+    };
+    const launchPersistentContext = async (dir: string, options: Record<string, unknown>) => {
+      calls.push({ userDataDir: dir, options });
+      if (options.channel === "chrome") throw new Error("chrome not installed");
+      return context;
+    };
+    vi.doMock("patchright", () => ({ chromium: { launchPersistentContext } }));
+    vi.resetModules();
+    const { defaultPatchrightLaunch } = await import("../src/patchright.js");
+    const ctx = await defaultPatchrightLaunch("/tmp/p", { headless: true });
+    expect(ctx).toBe(context);
+    expect(calls.length).toBe(2);
+    // First: the installed Chrome (no HeadlessChrome token in the UA).
+    expect(calls[0]!.options.channel).toBe("chrome");
+    // Fallback: the bundled Chromium, no channel and no explicit binary.
+    expect(calls[1]!.options.channel).toBeUndefined();
+    expect(calls[1]!.options.executablePath).toBeUndefined();
+    vi.doUnmock("patchright");
+    vi.resetModules();
+  });
+
+  it("does not use the Chrome channel when an executable path is configured", async () => {
+    const calls: { userDataDir: string; options: Record<string, unknown> }[] = [];
+    const context: PatchrightContext = {
+      pages: () => [],
+      newPage: async () => fakePage("<p>x</p>", ""),
+      close: async () => undefined,
+    };
+    const launchPersistentContext = async (dir: string, options: Record<string, unknown>) => {
+      calls.push({ userDataDir: dir, options });
+      return context;
+    };
+    vi.doMock("patchright", () => ({ chromium: { launchPersistentContext } }));
+    vi.resetModules();
+    const { defaultPatchrightLaunch } = await import("../src/patchright.js");
+    await defaultPatchrightLaunch("/tmp/p", {
+      headless: true,
+      executablePath: "/Applications/BrowserOS.app/Contents/MacOS/browseros",
+    });
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.options.channel).toBeUndefined();
+    expect(calls[0]!.options.executablePath).toBe(
+      "/Applications/BrowserOS.app/Contents/MacOS/browseros",
+    );
+    vi.doUnmock("patchright");
+    vi.resetModules();
   });
 });

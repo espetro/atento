@@ -36,6 +36,30 @@ configured through `[browser] executable_path` or the
 same setting reaches both engines: patchright receives it as its
 `executablePath` launch option, agent-browser as `--executable-path`.
 
+## The headless fingerprint
+
+Headless Chromium announces itself in the user agent: the string carries a
+`HeadlessChrome` token, and the CreepJS page flags that mode. The default
+patchright launch therefore prefers the installed Google Chrome
+(`channel: "chrome"`) when no `executablePath` is configured: the real
+browser in headless mode is the closest thing to a normal Chrome the
+engine can reach. When Chrome is not installed the launch throws and the
+extractor falls back to the bundled Chromium, so extraction still works and
+only the user agent leaks again.
+
+An explicit `executable_path` always wins: with a configured binary the
+launch uses it and no channel is set, because the channel and an explicit
+binary are mutually exclusive in Playwright.
+
+`navigator.webdriver` stays `false` in every mode: that is the artifact
+patchright exists to remove, and the `--disable-blink-features=
+AutomationControlled` flag stays on the command line.
+
+The user-agent claim is not yet verified by a fresh manual run: the smoke
+test record below was taken before the channel change and still shows the
+`HeadlessChrome` token in the headless channel run. Re-run the smoke test
+to confirm what the installed Chrome reports in headless mode.
+
 ## Engine selection
 
 The `[browser]` config table decides which host uses which engine:
@@ -112,11 +136,14 @@ engines.
 - Patchright only patches Chromium. Firefox and WebKit are not supported,
   and the project's own README documents the Playwright tests it still
   fails; treat any "undetectable" claim as temporary.
-- Headless Chromium still announces itself: the user agent keeps the
-  `HeadlessChrome` token even with `channel: "chrome"`, and the CreepJS
-  fingerprint page flags it (see the smoke test below). `navigator.webdriver`
-  is `false`, but the UA is a separate signal that patchright does not
-  patch. The headed login window has a clean UA.
+- Headless Chromium still announces itself in the version of the record
+  below: the user agent kept the `HeadlessChrome` token even with
+  `channel: "chrome"`, and the CreepJS fingerprint page flagged it (see the
+  smoke test below). The default launch now prefers the installed Chrome
+  channel and falls back to the bundled Chromium, but the record predates
+  that change and needs a fresh run. `navigator.webdriver` is `false`, but
+  the UA is a separate signal that patchright does not patch. The headed
+  login window has a clean UA.
 - The stealth engine does not rotate proxies, does not solve captchas and
   does not warm up accounts. A flagged account stays flagged, a captcha
   still parks the link through the login-wall path, and the per-host
@@ -132,7 +159,9 @@ engines.
 
 Manual, run 2026-11-05 against patchright 1.64.2 with its downloaded
 Chromium 156.0.8078.4, from this worktree (`node` with a scratch script, one
-run per mode, results recorded verbatim):
+run per mode, results recorded verbatim). This record predates the default
+`channel: "chrome"` launch, so the headless rows below are the bundled
+Chromium behaviour:
 
 | Mode | Page | `navigator.webdriver` | User agent |
 |---|---|---|---|

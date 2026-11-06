@@ -58,6 +58,8 @@ export interface PatchrightLauncher {
     options: {
       headless?: boolean;
       executablePath?: string;
+      /** The browser channel: "chrome" for the installed Google Chrome. */
+      channel?: string;
       viewport?: { width: number; height: number } | null;
       args?: string[];
       locale?: string;
@@ -137,15 +139,33 @@ export const defaultPatchrightLaunch: PatchrightLaunch = async (userDataDir, opt
   };
   const chromium = mod.chromium ?? mod.default?.chromium;
   if (!chromium) throw new Error("patchright: no chromium browser type");
-  return await chromium.launchPersistentContext(userDataDir, {
-    headless: options.headless,
-    ...(options.executablePath ? { executablePath: options.executablePath } : {}),
-    // A fixed viewport keeps reads reproducible; the login flow passes
-    // `null` so the headed window keeps the user's real size.
-    viewport: options.viewport ?? { width: 1280, height: 800 },
-    locale: "en-US",
-    args: ["--disable-blink-features=AutomationControlled"],
-  });
+  // Headless fingerprint: the bundled Chromium announces itself with a
+  // HeadlessChrome user-agent token even in the real-Chrome channel. With no
+  // explicit binary configured, launch the installed Google Chrome instead
+  // (channel "chrome"), whose headless UA reads like a normal Chrome. When
+  // Chrome is not installed the launch throws and we fall back to the
+  // bundled Chromium: extraction still works, only the UA leaks.
+  const channel = options.executablePath ? undefined : "chrome";
+  try {
+    return await chromium.launchPersistentContext(userDataDir, {
+      headless: options.headless,
+      ...(options.executablePath ? { executablePath: options.executablePath } : {}),
+      ...(channel ? { channel } : {}),
+      // A fixed viewport keeps reads reproducible; the login flow passes
+      // `null` so the headed window keeps the user's real size.
+      viewport: options.viewport ?? { width: 1280, height: 800 },
+      locale: "en-US",
+      args: ["--disable-blink-features=AutomationControlled"],
+    });
+  } catch (error) {
+    if (!channel) throw error;
+    return await chromium.launchPersistentContext(userDataDir, {
+      headless: options.headless,
+      viewport: options.viewport ?? { width: 1280, height: 800 },
+      locale: "en-US",
+      args: ["--disable-blink-features=AutomationControlled"],
+    });
+  }
 };
 
 /**
