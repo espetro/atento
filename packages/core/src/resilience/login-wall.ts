@@ -8,10 +8,14 @@
  * The rules:
  *   - the final URL path looks like a login endpoint
  *   - the page has a password input form and little article text
- *   - the HTTP status is 401 or 403 on a host without a saved profile
+ *   - the HTTP status is 401, or 403 on a host without a saved profile and
+ *     without a bot-block marker in the body (a captcha or challenge 403 is
+ *     a bot block, not a wall)
  *   - a shell page: embedded data: images and almost no real text
  *   - sign-up wall phrases at the top of the page, with no saved profile
  */
+
+import { looksLikeBotBlock } from '../pipeline/park-reason.js'
 
 /** Path segments that mark a login endpoint. */
 const LOGIN_PATH = /(^|\/)(login|signin|sign-in|auth|accounts)(\/|$)/i
@@ -99,7 +103,7 @@ export function isLoginWall(input: LoginWallInput): boolean {
 
   const status = input.status
   if (status === 401) return true
-  if (status === 403 && input.hasProfile !== true) return true
+  if (status === 403 && input.hasProfile !== true && !looksLikeBotBlock(body)) return true
 
   return false
 }

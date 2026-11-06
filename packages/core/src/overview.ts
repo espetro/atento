@@ -10,6 +10,12 @@ import type { Store, LinkFilter, Status } from './store.js'
 import { projectLink, type LinkField } from './ops.js'
 import { hostOfUrl } from './url.js'
 import { LINK_STATES, type LinkStateName } from './fsm/index.js'
+import {
+  emptyParkReasonCounts,
+  PARK_REASONS,
+  parkedReasonOf,
+  type ParkReason,
+} from './pipeline/park-reason.js'
 
 /** How many hosts the overview reports. */
 export const OVERVIEW_TOP_HOSTS = 50
@@ -19,12 +25,24 @@ export interface OverviewHost {
   host: string
   total: number
   byState: Record<LinkStateName, number>
+  /** The parked links of this host, broken down by park reason. */
+  byParkReason: Record<ParkReason, number>
 }
 
-/** The whole overview: a state histogram plus the busiest hosts. */
+/**
+ * The whole overview: a state histogram, a park-reason histogram and the
+ * busiest hosts.
+ */
 export interface PipelineOverview {
   /** How many links sit in each state. Every state is present, even at zero. */
   byState: Record<LinkStateName, number>
+  /**
+   * How many parked links carry each park reason. Every reason is present,
+   * even at zero: `login_wall`, `bot_block`, `js_shell`, `http_error`,
+   * `timeout`, `review_only` and `unknown` (the legacy rows parked before
+   * the classes existed).
+   */
+  byParkReason: Record<ParkReason, number>
   /** The busiest hosts first, capped at `topHosts`. */
   byHost: OverviewHost[]
   /** The number of links the overview covers. */
@@ -64,6 +82,13 @@ export interface PipelineRow {
   state: LinkStateName
   /** Why the link sits in this state, when the state records a reason. */
   reason: string | null
+  /**
+   * The park reason class of a parked link (`login_wall`, `bot_block`,
+   * `js_shell`, `http_error`, `timeout`, `review_only`), or null when the
+   * link is not parked. A legacy row without a stored reason parses as
+   * `unknown`.
+   */
+  parkReason: ParkReason | null
   /** When the link is retried, for deferred links. */
   nextAttemptAt: string | null
   updatedAt: string
@@ -74,6 +99,8 @@ export interface PipelineListOptions {
   state?: LinkStateName
   /** Filter on the host of the url. */
   host?: string
+  /** Filter on the park reason class of the parked links. */
+  parkReason?: ParkReason
   /** Free-text match over the url and the title. */
   q?: string
   limit?: number
@@ -111,6 +138,7 @@ export function toPipelineRow(link: Record<string, unknown>): PipelineRow {
     title: String(link['title'] ?? ''),
     state,
     reason: reasonOfStateData(stateData),
+    parkReason: parkedReasonOf(state, stateData),
     nextAttemptAt,
     updatedAt: typeof updated === 'string' ? updated : '',
   }
@@ -136,6 +164,9 @@ export async function listPipelineLinks(
     const host = options.host.toLowerCase()
     rows = rows.filter((r) => r.host === host)
   }
+  if (options.parkReason !== undefined) {
+    rows = rows.filter((r) => r.parkReason === options.parkReason)
+  }
   if (options.q !== undefined && options.q !== '') {
     const q = options.q.toLowerCase()
     rows = rows.filter(
@@ -149,8 +180,8 @@ export async function listPipelineLinks(
 }
 
 /**
- * The pipeline overview: how many links sit in each state, and the busiest
- * hosts with their per-state breakdown.
+ * The pipeline overview: how many links sit in each state, how many parked
+ * links carry each park reason, and the busiest hosts with their breakdowns.
  */
 export async function pipelineOverview(
   store: Store,
@@ -158,6 +189,7 @@ export async function pipelineOverview(
 ): Promise<PipelineOverview> {
   const links = await store.listLinks({})
   const byState = emptyStateCounts()
+  const byParkReason = emptyParkReasonCounts()
   const hosts = new Map<string, OverviewHost>()
   let total = 0
 
@@ -165,14 +197,23 @@ export async function pipelineOverview(
     const row = toPipelineRow(projectLink(link, PIPELINE_FIELDS))
     total += 1
     byState[row.state] = (byState[row.state] ?? 0) + 1
+    // The park class comes from the row itself, not from the projection.
+    const parkReason = parkedReasonOf(link.state, link.stateData)
+    if (parkReason !== null) byParkReason[parkReason] += 1
     if (row.host === '') continue
     let host = hosts.get(row.host)
     if (!host) {
-      host = { host: row.host, total: 0, byState: emptyStateCounts() }
+      host = {
+        host: row.host,
+        total: 0,
+        byState: emptyStateCounts(),
+        byParkReason: emptyParkReasonCounts(),
+      }
       hosts.set(row.host, host)
     }
     host.total += 1
     host.byState[row.state] = (host.byState[row.state] ?? 0) + 1
+    if (parkReason !== null) host.byParkReason[parkReason] += 1
   }
 
   const topHosts = options.topHosts ?? OVERVIEW_TOP_HOSTS
@@ -180,5 +221,13 @@ export async function pipelineOverview(
     .sort((a, b) => b.total - a.total || a.host.localeCompare(b.host))
     .slice(0, topHosts)
 
-  return { byState, byHost, total }
+  return { byState, byParkReason, byHost, total }
+}
+
+/**
+ * The park reasons that have parked links, in `PARK_REASONS` order. A reason
+ * with no parked links offers nothing to filter on.
+ */
+export function parkReasonsWithLinks(byParkReason: Record<ParkReason, number>): ParkReason[] {
+  return PARK_REASONS.filter((reason) => (byParkReason[reason] ?? 0) > 0)
 }

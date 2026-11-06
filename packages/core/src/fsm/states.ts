@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PARK_REASONS } from '../pipeline/park-reason.js'
 
 /**
  * The linkinbox finite state machine: states.
@@ -32,6 +33,12 @@ export const needsBrowserSchema = z.object({
   host: z.string().default(''),
   /** Why a browser is needed, e.g. `login_wall` or `private_404`. */
   reason: z.string().optional(),
+  /**
+   * The park reason class of the parked link: `login_wall`, `bot_block`,
+   * `js_shell`, `http_error`, `timeout` or `review_only`. Older rows were
+   * parked without one; they parse as `unknown`.
+   */
+  reasonClass: z.enum(PARK_REASONS).default('unknown'),
 })
 
 export const deferredSchema = z.object({
@@ -40,6 +47,11 @@ export const deferredSchema = z.object({
   nextAttemptAt: z.string(),
   attempts: z.number().int().min(0),
   reason: z.string(),
+  /**
+   * The park reason class of the deferral, when it names a blocker. A pure
+   * throttle (spacing, daily cap) carries no class: it parses as `unknown`.
+   */
+  reasonClass: z.enum(PARK_REASONS).default('unknown'),
 })
 
 export const enrichingSchema = z.object({

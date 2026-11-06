@@ -200,9 +200,12 @@ describe('mcp/core parity', () => {
       const viaMcp = callJson(await h.client.callTool({ name: 'links_overview', arguments: {} }))
       expect(viaMcp.data.total).toBe(viaCore.total)
       expect(viaMcp.data.byState).toEqual(viaCore.byState)
+      expect(viaMcp.data.byParkReason).toEqual(viaCore.byParkReason)
       expect(viaMcp.data.byHost).toEqual(viaCore.byHost)
       expect(viaMcp.data.byState.created).toBe(2)
       expect(viaMcp.data.byState.needs_browser).toBe(1)
+      expect(viaMcp.data.byParkReason.login_wall).toBe(1)
+      expect(viaMcp.data.byParkReason.unknown).toBe(0)
     } finally {
       await h.cleanup()
     }

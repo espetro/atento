@@ -72,6 +72,26 @@ export async function reconcileParkedLinks(
 }
 
 /**
+ * Stamp the park reason class on legacy parked rows: rows parked before the
+ * classes existed carry an empty or missing reason, so they parse as
+ * `unknown`. Legacy rows keep the unknown class; a link parked with a reason
+ * keeps it. Returns how many rows were touched. Runs inside the extract
+ * stage's reconcile sweep, so the corpus converges without a migration.
+ */
+export async function normalizeParkReasons(store: Store): Promise<number> {
+  let stamped = 0
+  for (const link of await store.listByStates(['needs_browser'])) {
+    if (link.stateData?.['reasonClass'] !== undefined) continue
+    await store.setStateData(link.id, {
+      ...(link.stateData ?? {}),
+      reasonClass: 'unknown',
+    })
+    stamped += 1
+  }
+  return stamped
+}
+
+/**
  * Discard a parked link through the FSM: `needs_browser` goes back to the
  * queue with RETRY and then to `discarded` with a TRIAGE event. The outcome
  * is the same as a link the skip branch parks while leased (LEASE_EXPIRED
@@ -110,7 +130,7 @@ async function markReviewOnly(
   const host = hostOf(link.url)
   // NEEDS_BROWSER is only legal from the leased states, so a parked link
   // gets its reason rewritten through the store's state payload instead.
-  await store.setStateData(link.id, { host, reason: REVIEW_ONLY_REASON })
+  await store.setStateData(link.id, { host, reason: REVIEW_ONLY_REASON, reasonClass: 'review_only' })
   await store.setExpiry(link.id, null, REVIEW_ONLY_REASON, now)
   return true
 }

@@ -1,5 +1,6 @@
 import type { LinkEvent, LinkEventName } from './events.js'
 import type { LinkState, LinkStateName } from './states.js'
+import type { ParkReason } from '../pipeline/park-reason.js'
 
 /**
  * The transition table: the single source of truth for allowed state
@@ -57,7 +58,14 @@ const TABLE: StateTable = {
   // extracting (leased): extraction finishes, gives up, defers, or dies.
   extracting: {
     EXTRACTED: (_s, e) => ({ state: 'extracted', chars: e.chars }),
-    NEEDS_BROWSER: (_s, e) => ({ state: 'needs_browser', host: e.host ?? '', reason: e.reason }),
+    NEEDS_BROWSER: (_s, e) => ({
+      state: 'needs_browser',
+      host: e.host ?? '',
+      reason: e.reason,
+      // Every park carries its class. An event without one is a legacy
+      // write: the row parses as unknown.
+      reasonClass: (e.reasonClass ?? 'unknown') as ParkReason,
+    }),
     EXTRACT_FAILED: (_s, e) => ({
       state: 'errored',
       stage: 'extract',
@@ -71,6 +79,7 @@ const TABLE: StateTable = {
       nextAttemptAt: e.nextAttemptAt,
       attempts: e.attempts,
       reason: e.reason,
+      reasonClass: (e.reasonClass ?? 'unknown') as ParkReason,
     }),
     LEASE_EXPIRED: () => ({ state: 'created' }),
     DELETE: (_s, _e, at) => ({ state: 'deleted', deletedAt: at.toISOString() }),
@@ -132,6 +141,7 @@ const TABLE: StateTable = {
       nextAttemptAt: e.nextAttemptAt,
       attempts: e.attempts,
       reason: e.reason,
+      reasonClass: (e.reasonClass ?? 'unknown') as ParkReason,
     }),
     LEASE_EXPIRED: () => ({ state: 'extracted', chars: 0 }),
     DELETE: (_s, _e, at) => ({ state: 'deleted', deletedAt: at.toISOString() }),

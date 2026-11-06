@@ -24,6 +24,7 @@ import {
   systemClock,
 } from '../resilience/index.js'
 import { DEFAULT_GUARD_CONFIG, type GuardConfig } from '../resilience/guard.js'
+import { parseParkReason, type ParkReason } from '../pipeline/park-reason.js'
 import type { Stage } from './types.js'
 
 export { DEFAULT_GUARD_CONFIG, LLM_KEY }
@@ -147,6 +148,10 @@ export interface DeferDecision {
  * count reaches maxAttempts the link moves to errored through the FSM:
  * RETRY back to the queue, then EXTRACT_STARTED/ENRICH_STARTED, then the
  * failed event. Returns what happened so the stage can count it.
+ *
+ * The park reason class travels with the deferral: a blocked link carries
+ * the class it was parked with (`bot_block`, `login_wall`, ...), a pure
+ * throttle carries none.
  */
 export async function deferOrError(
   store: Store,
@@ -156,6 +161,7 @@ export async function deferOrError(
   retryAfterMs: number,
   maxAttempts: number,
   now: Date,
+  reasonClass?: ParkReason,
 ): Promise<DeferDecision> {
   const at = now.toISOString()
   const prior = await attemptsOf(store, link.id)
@@ -169,6 +175,7 @@ export async function deferOrError(
     nextAttemptAt: new Date(now.getTime() + Math.max(0, retryAfterMs)).toISOString(),
     attempts,
     reason,
+    reasonClass,
     at,
   })
 

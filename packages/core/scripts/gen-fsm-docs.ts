@@ -30,8 +30,8 @@ function stateFor(name: string): Parameters<typeof transition>[0] {
     case 'created': return { state: 'created' }
     case 'extracting': return { state: 'extracting', startedAt: at, attempt: 1 }
     case 'extracted': return { state: 'extracted', chars: 1 }
-    case 'needs_browser': return { state: 'needs_browser', host: 'x' }
-    case 'deferred': return { state: 'deferred', stage: 'extract', nextAttemptAt: at, attempts: 1, reason: 'r' }
+    case 'needs_browser': return { state: 'needs_browser', host: 'x', reasonClass: 'login_wall' }
+    case 'deferred': return { state: 'deferred', stage: 'extract', nextAttemptAt: at, attempts: 1, reason: 'r', reasonClass: 'login_wall' }
     case 'enriching': return { state: 'enriching', startedAt: at, attempt: 1 }
     case 'inbox': return { state: 'inbox', enriched: true }
     case 'scheduled': return { state: 'scheduled', scheduledFor: null }
@@ -123,9 +123,9 @@ The processing states \`extracting\` and \`enriching\` carry a lease, a \`starte
 | --- | --- |
 | \`EXTRACT_STARTED\` | \`attempt\` |
 | \`EXTRACTED\` | \`chars\` |
-| \`NEEDS_BROWSER\` | \`host\` |
+| \`NEEDS_BROWSER\` | \`host\`, \`reason\`, \`reasonClass\` |
 | \`EXTRACT_FAILED\` | \`error\`, \`retryable\`, \`attempts\` |
-| \`DEFER\` | \`stage\`, \`nextAttemptAt\`, \`attempts\`, \`reason\` |
+| \`DEFER\` | \`stage\`, \`nextAttemptAt\`, \`attempts\`, \`reason\`, \`reasonClass\` |
 | \`ENRICH_STARTED\` | \`attempt\` |
 | \`ENRICHED\` | none |
 | \`ENRICH_FAILED\` | \`error\`, \`retryable\`, \`attempts\` |

@@ -72,7 +72,13 @@ afterAll(async () => {
 
 interface PipelineResponse {
   byState: Record<string, number>
-  byHost: { host: string; total: number; byState: Record<string, number> }[]
+  byParkReason: Record<string, number>
+  byHost: {
+    host: string
+    total: number
+    byState: Record<string, number>
+    byParkReason: Record<string, number>
+  }[]
 }
 
 describe('GET /api/pipeline', () => {
@@ -88,6 +94,26 @@ describe('GET /api/pipeline', () => {
     expect(body.byState.inbox).toBe(0)
   })
 
+  it('returns the park reasons of the parked links', async () => {
+    const res = await createApp(store).request('/api/pipeline')
+    const body = (await res.json()) as PipelineResponse
+    expect(Object.keys(body.byParkReason).sort()).toEqual([
+      'bot_block',
+      'http_error',
+      'js_shell',
+      'login_wall',
+      'review_only',
+      'skipped',
+      'timeout',
+      'unknown',
+    ])
+    // The gated link is parked behind a login wall.
+    expect(body.byParkReason.login_wall).toBe(1)
+    // A throttled link only waits, it is not parked.
+    expect(body.byParkReason.unknown).toBe(0)
+    expect(body.byParkReason.timeout).toBe(0)
+  })
+
   it('returns the busiest hosts with a per-state breakdown', async () => {
     const res = await createApp(store).request('/api/pipeline')
     const body = (await res.json()) as PipelineResponse
@@ -95,12 +121,14 @@ describe('GET /api/pipeline', () => {
       host: 'a.example',
       total: 2,
       byState: expect.objectContaining({ created: 2 }),
+      byParkReason: expect.objectContaining({ login_wall: 0 }),
     })
     const hosts = body.byHost.map((h) => h.host)
     expect(hosts).toContain('gated.example')
     expect(hosts).toContain('slow.example')
     const gated = body.byHost.find((h) => h.host === 'gated.example')
     expect(gated?.byState.needs_browser).toBe(1)
+    expect(gated?.byParkReason.login_wall).toBe(1)
   })
 })
 
