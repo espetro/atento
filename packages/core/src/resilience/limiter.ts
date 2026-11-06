@@ -80,12 +80,41 @@ export interface LimitsConfig {
    * Hosts that are never fetched. Exact host (`gemini.google.com`) or a
    * `*.suffix` wildcard (`*.duckduckgo.com` matches every subdomain too when
    * the bare suffix is listed? No: the bare suffix must be listed itself).
+   *
+   * The match runs against the hostname without the port, so `localhost`
+   * matches `http://localhost:3000/x`. Loopback hosts are skipped by
+   * default anyway (see `isLoopbackHost`).
    */
   skipHosts: string[]
+  /**
+   * Hosts that are never fetched either, but whose links stay VISIBLE: the
+   * extract stage parks them in `needs_browser` with the reason
+   * `review_only`, so the owner reviews them by hand. Same pattern syntax as
+   * `skipHosts`. Ships empty.
+   */
+  reviewHosts: string[]
   /** Per-host overrides keyed by host, e.g. from `[limits.hosts."x.com"]`. */
   hosts: Record<string, Partial<HostLimit>>
   /** When true, the pipeline skips the limiter and the breaker entirely. */
   disabled?: boolean
+}
+
+/**
+ * The `[login]` table: which hosts the pipeline may log in to.
+ *
+ * `allow` holds host patterns with the same syntax as `skip_hosts` (exact
+ * host or `*.suffix`). When it is empty or absent every login-walled host
+ * behaves as before. When it is set, a login-walled host that is neither
+ * allowed nor backed by a saved profile is REVIEW-ONLY: no browser is ever
+ * attempted for it and its links stay visible for the owner to read.
+ */
+export interface LoginConfig {
+  /** Host patterns the pipeline may log in to. Empty means "no restriction". */
+  allow: string[]
+}
+
+export const DEFAULT_LOGIN_CONFIG: LoginConfig = {
+  allow: [],
 }
 
 export const DEFAULT_LIMITS: LimitsConfig = {
@@ -94,6 +123,7 @@ export const DEFAULT_LIMITS: LimitsConfig = {
   llmConcurrency: LLM_LIMIT.concurrency,
   walledGardens: [],
   skipHosts: [],
+  reviewHosts: [],
   hosts: {},
 }
 
@@ -109,6 +139,12 @@ export type HostPolicy = {
   browser: boolean
   /** True when links on this host are never fetched (skip-listed). */
   skipped: boolean
+  /**
+   * True when the host must not be fetched either, but its links stay
+   * visible for the owner to review by hand (`needs_browser`, reason
+   * `review_only`).
+   */
+  reviewOnly: boolean
   /** Why the policy applies (skip-list, config override, canary flag, profile). */
   reason: string | null
 }
@@ -127,36 +163,100 @@ export function hostPolicy(
     hasProfile?: boolean
     trialState?: HostState['trialState']
     loginGated?: boolean
+    /**
+     * The `[login] allow` patterns. When they are set, a login-walled host
+     * that is neither allowed nor backed by a saved profile is review-only.
+     */
+    loginAllow?: string[]
   } = {},
 ): HostPolicy {
-  if (matchesPattern(config.skipHosts, host)) {
-    return { strict: false, browser: false, skipped: true, reason: 'skip_list' }
+  if (matchesPattern(config.skipHosts, host) || isLoopbackHost(host)) {
+    return { strict: false, browser: false, skipped: true, reviewOnly: false, reason: 'skip_list' }
+  }
+  if (matchesPattern(config.reviewHosts, host)) {
+    return { strict: false, browser: false, skipped: false, reviewOnly: true, reason: 'review_only' }
   }
   if (config.walledGardens.includes(host)) {
-    return { strict: true, browser: true, skipped: false, reason: 'config_override' }
-  }
-  if (options.trialState === 'flagged') {
-    return { strict: true, browser: false, skipped: false, reason: 'canary_flagged' }
+    return { strict: true, browser: true, skipped: false, reviewOnly: false, reason: 'config_override' }
   }
   if (options.loginGated === true) {
-    return { strict: true, browser: true, skipped: false, reason: 'login_gated' }
+    // A login-gated host the owner never allowed to log in to is review-only:
+    // no browser is attempted for it, the links stay visible. The login gate
+    // is checked before the canary flag: the flag on such a host IS the
+    // login wall, so the gate is the more specific verdict.
+    if (!loginAllowed(options.loginAllow, host, options.hasProfile === true)) {
+      return { strict: false, browser: false, skipped: false, reviewOnly: true, reason: 'review_only' }
+    }
+    return { strict: true, browser: true, skipped: false, reviewOnly: false, reason: 'login_gated' }
+  }
+  if (options.trialState === 'flagged') {
+    return { strict: true, browser: false, skipped: false, reviewOnly: false, reason: 'canary_flagged' }
   }
   if (options.hasProfile === true) {
-    return { strict: true, browser: true, skipped: false, reason: 'has_profile' }
+    return { strict: true, browser: true, skipped: false, reviewOnly: false, reason: 'has_profile' }
   }
-  return { strict: false, browser: false, skipped: false, reason: null }
+  return { strict: false, browser: false, skipped: false, reviewOnly: false, reason: null }
+}
+
+/**
+ * True when the pipeline may log in to this host.
+ *
+ * An empty allow list means "no restriction": every login-walled host is
+ * allowed, exactly as before the allow list existed. A host with a saved
+ * profile is always allowed (the session exists already).
+ */
+export function loginAllowed(
+  allow: string[] | undefined,
+  host: string,
+  hasProfile = false,
+): boolean {
+  if (!allow || allow.length === 0) return true
+  if (hasProfile) return true
+  return matchesPattern(allow, host)
+}
+
+/**
+ * Normalize a host for pattern matching: lowercase, without the port and
+ * without the brackets the URL API keeps around an IPv6 literal (`[::1]`
+ * becomes `::1`). A config entry may be written either way.
+ */
+export function normalizeHost(host: string): string {
+  const lower = host.trim().toLowerCase()
+  if (lower.startsWith('[') && lower.endsWith(']')) return lower.slice(1, -1)
+  return lower
 }
 
 /** True when the host matches the skip-list entry (exact host or `*.suffix`). */
-export function matchesPattern(patterns: string[], host: string): boolean {
-  const lower = host.toLowerCase()
+export function matchesPattern(patterns: string[] | undefined, host: string): boolean {
+  if (!patterns || patterns.length === 0) return false
+  const lower = normalizeHost(host)
   return patterns.some((pattern) => {
-    if (pattern.startsWith('*.')) {
-      const suffix = pattern.slice(2).toLowerCase()
+    const normalized = normalizeHost(pattern)
+    if (normalized.startsWith('*.')) {
+      const suffix = normalized.slice(2)
       return lower === suffix || lower.endsWith(`.${suffix}`)
     }
-    return lower === pattern.toLowerCase()
+    return lower === normalized
   })
+}
+
+/**
+ * The loopback hosts: `localhost`, `127.0.0.1`, `::1` and any `*.localhost`
+ * name. A pipeline run can never fetch them (they are the user's own
+ * services, and a headless agent-browser has no session for them), so they
+ * are skipped by default.
+ *
+ * This is a built-in rule, not a config entry: it names no third-party site
+ * and it cannot be disabled by accident. The config skip-list still wins for
+ * everything else.
+ */
+const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '::1']
+
+/** True when the host is a loopback address (or a `*.localhost` name). */
+export function isLoopbackHost(host: string): boolean {
+  const lower = normalizeHost(host)
+  if (LOOPBACK_HOSTS.includes(lower)) return true
+  return lower.endsWith('.localhost')
 }
 
 /** The effective limit for a host after config merges. */

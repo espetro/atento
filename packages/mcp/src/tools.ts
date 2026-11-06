@@ -13,6 +13,8 @@ import {
   sweep,
   applySweep,
   metricsSummary,
+  pipelineOverview,
+  listPipelineLinks,
   ingest,
   extract,
   enrich,
@@ -20,7 +22,9 @@ import {
   guardStatuses,
   DEFAULT_LIMITS,
   LLM_KEY,
+  LINK_STATES,
   type LinkField,
+  type LinkStateName,
   type SweepPlan,
   type TriageAction,
   type GuardDeps,
@@ -56,6 +60,7 @@ const LINK_FIELDS: [LinkField, ...LinkField[]] = [
 
 const STATUSES = ['inbox', 'scheduled', 'archived', 'discarded'] as const
 const ACTIONS = ['read_now', 'schedule', 'archive', 'discard'] as const
+const STATES = LINK_STATES as readonly LinkStateName[]
 
 const optionalFields = z.array(z.enum(LINK_FIELDS)).optional()
 const optionalLimit = z.number().int().positive().optional()
@@ -109,6 +114,68 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
           limit: args.limit,
         })
         rows = applyFilter(rows, args.filter)
+        return json({ links: rows })
+      }
+    },
+  )
+
+  server.registerTool(
+    'links_overview',
+    {
+      description:
+        'Pipeline overview (spec name links.overview): how many links sit in ' +
+        'each pipeline state, plus the busiest hosts with their per-state ' +
+        'breakdown. Read-only: it never mutates state. Use it to see where ' +
+        'the whole corpus stands without listing every link.',
+      inputSchema: {
+        topHosts: z.number().int().positive().optional(),
+      },
+    },
+    async (args: { topHosts?: number }) => {
+      const ctx = await deps.ctx()
+      {
+        const overview = await pipelineOverview(ctx.store, { topHosts: args.topHosts })
+        return json({
+          total: overview.total,
+          byState: overview.byState,
+          byHost: overview.byHost,
+        })
+      }
+    },
+  )
+
+  server.registerTool(
+    'links_pipeline',
+    {
+      description:
+        'Pipeline rows (spec name links.pipeline): every link with its FSM ' +
+        'state, the reason it carries and its next retry time. Filters: ' +
+        'state, host, q. Unlike links_list this spans all states, not just ' +
+        'the inbox projection.',
+      inputSchema: {
+        state: z.enum(STATES as [LinkStateName, ...LinkStateName[]]).optional(),
+        host: z.string().optional(),
+        q: z.string().optional(),
+        limit: optionalLimit,
+        offset: z.number().int().min(0).optional(),
+      },
+    },
+    async (args: {
+      state?: LinkStateName
+      host?: string
+      q?: string
+      limit?: number
+      offset?: number
+    }) => {
+      const ctx = await deps.ctx()
+      {
+        const rows = await listPipelineLinks(ctx.store, {
+          state: args.state,
+          host: args.host,
+          q: args.q,
+          limit: args.limit,
+          offset: args.offset,
+        })
         return json({ links: rows })
       }
     },
@@ -234,18 +301,26 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     async (args: { limit?: number }) => {
       const ctx = await deps.ctx()
       {
-        const guard: GuardDeps = guardDepsFromStore(ctx.store)
+        const guard: GuardDeps = guardDepsFromStore(ctx.store, {
+          // Only the keys that are set: an undefined value would replace the
+          // default limits with nothing.
+          config: {
+            ...(ctx.limits ? { limits: ctx.limits } : {}),
+            ...(ctx.login ? { login: ctx.login } : {}),
+          },
+        })
         const outcome = await extract(ctx.store, {
           extract: await deps.extractFn(ctx),
           limit: args.limit,
           guard,
-          maxBatch: DEFAULT_LIMITS.maxBatch,
+          maxBatch: ctx.limits?.maxBatch ?? DEFAULT_LIMITS.maxBatch,
           logger: ctx.logger,
         })
         return json({
           okCount: outcome.okCount,
           errorCount: outcome.errorCount,
           needsBrowserCount: outcome.needsBrowserCount,
+          reviewOnlyCount: outcome.reviewOnlyCount,
           deferredCount: outcome.deferredCount,
           retryAfter: outcome.retryAfter,
         })
@@ -359,7 +434,12 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     async () => {
       const ctx = await deps.ctx()
       {
-        return json(await loadLoginReport(ctx.store))
+        return json(
+          await loadLoginReport(ctx.store, {
+            limits: ctx.limits,
+            loginAllow: ctx.login?.allow,
+          }),
+        )
       }
     },
   )

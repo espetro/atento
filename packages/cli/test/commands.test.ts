@@ -7,7 +7,15 @@ import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
 import { capture, insertLink, tempDb, type TempDb } from './helpers.js'
 import { createContext, type CliContext } from '../src/context.js'
-import { runList, runShow, runTriage, applyFilter, runRetryHeadless } from '../src/commands/links.js'
+import {
+  runList,
+  runShow,
+  runTriage,
+  runOverview,
+  formatOverview,
+  applyFilter,
+  runRetryHeadless,
+} from '../src/commands/links.js'
 import { runLoginClear, runLoginList, profileDirFor } from '../src/commands/login.js'
 import { loadConfig, resolveDbPath, configDir } from '../src/config.js'
 
@@ -106,6 +114,92 @@ describe('cli list', () => {
     } finally {
       await db.cleanup()
     }
+  })
+
+  it('shows state and reason columns with --state', async () => {
+    const db = await tempDb()
+    try {
+      const ctx = await contextFor(db)
+      const { url, hash } = { url: 'https://gated.example/post', hash: 'g1' }
+      await insertLink(db.store, url, {
+        urlHash: hash,
+        state: 'needs_browser',
+        stateData: { host: 'gated.example', reason: 'login_wall' },
+      })
+      const out = await capture(() => runList(ctx, { state: 'needs_browser' }))
+      expect(out.stdout).toContain('state')
+      expect(out.stdout).toContain('reason')
+      expect(out.stdout).toContain('login_wall')
+      expect(out.stdout).toContain('gated.example')
+
+      const json = await capture(() => runList(ctx, { state: 'needs_browser', json: true }))
+      const parsed = JSON.parse(json.stdout) as Record<string, unknown>[]
+      expect(parsed[0]).toHaveProperty('state')
+      expect(parsed[0]).toHaveProperty('stateData')
+    } finally {
+      await db.cleanup()
+    }
+  })
+})
+
+describe('cli overview', () => {
+  it('prints the state counts and the top hosts', async () => {
+    const db = await tempDb()
+    try {
+      const ctx = await contextFor(db)
+      await insertLink(db.store, 'https://a.example/one', { urlHash: 'a1' })
+      await insertLink(db.store, 'https://a.example/two', { urlHash: 'a2' })
+      await insertLink(db.store, 'https://b.example/one', {
+        urlHash: 'b1',
+        state: 'needs_browser',
+        stateData: { host: 'b.example', reason: 'login_wall' },
+      })
+      const out = await capture(() => runOverview(ctx, {}))
+      expect(out.stdout).toContain('3 links')
+      expect(out.stdout).toContain('created')
+      expect(out.stdout).toContain('needs_browser')
+      expect(out.stdout).toContain('a.example')
+      expect(out.stdout).toContain('needs_browser:1')
+    } finally {
+      await db.cleanup()
+    }
+  })
+
+  it('prints json on request', async () => {
+    const db = await tempDb()
+    try {
+      const ctx = await contextFor(db)
+      await insertLink(db.store, 'https://a.example/one', { urlHash: 'a1' })
+      const out = await capture(() => runOverview(ctx, { json: true }))
+      const parsed = JSON.parse(out.stdout) as { total: number; byState: Record<string, number> }
+      expect(parsed.total).toBe(1)
+      expect(parsed.byState.created).toBe(1)
+    } finally {
+      await db.cleanup()
+    }
+  })
+
+  it('formats an empty overview', () => {
+    const text = formatOverview({
+      total: 0,
+      byState: {
+        created: 0,
+        extracting: 0,
+        extracted: 0,
+        needs_browser: 0,
+        deferred: 0,
+        enriching: 0,
+        inbox: 0,
+        scheduled: 0,
+        archived: 0,
+        discarded: 0,
+        errored: 0,
+        deleted: 0,
+      },
+      byHost: [],
+    })
+    expect(text).toContain('0 links')
+    expect(text).toContain('no hosts')
   })
 })
 

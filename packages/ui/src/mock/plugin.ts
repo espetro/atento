@@ -1,6 +1,6 @@
 import type { Connect, Plugin } from 'vite'
 import type { ServerResponse } from 'node:http'
-import { createMockState, listLinks, metrics, sweep, type MockState } from './data'
+import { createMockState, listLinks, metrics, pipelineOverview, sweep, type MockState } from './data'
 
 /**
  * Vite dev/preview middleware implementing the fixed REST contract so the UI
@@ -49,6 +49,9 @@ export function mockApiPlugin(enabled: boolean): Plugin {
     try {
       if (path === '/api/links' && req.method === 'GET') {
         return void send(200, listLinks(state, url.searchParams))
+      }
+      if (path === '/api/pipeline' && req.method === 'GET') {
+        return void send(200, pipelineOverview(state))
       }
       const triage = path.match(/^\/api\/links\/triage$/)
       if (triage && req.method === 'POST') {

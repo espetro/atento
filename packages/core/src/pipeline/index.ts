@@ -1,6 +1,7 @@
 export * from './types.js'
 export * from './ingest.js'
 export * from './extract.js'
+export * from './reconcile.js'
 export * from './enrich.js'
 export * from './resilience.js'
 export * from './resilience-options.js'

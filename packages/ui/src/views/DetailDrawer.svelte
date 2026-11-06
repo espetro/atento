@@ -67,13 +67,16 @@
 
         <section>
           <h3 class="font-medium mb-2">Extracted content</h3>
-          <div class="prose prose-sm max-w-none" data-testid="drawer-markdown">{@html rendered}</div>
+          <div class="markdown-body text-sm max-w-none" data-testid="drawer-markdown">{@html rendered}</div>
         </section>
 
         <section>
           <h3 class="font-medium mb-2">Enrichment</h3>
-          <div class="mockup-code bg-base-200 text-xs p-4" data-testid="drawer-enrichment">
-            <pre><code>{JSON.stringify(query.data.enrichment, null, 2)}</code></pre>
+          <div
+            class="bg-base-200 text-base-content rounded-box p-4 overflow-x-auto"
+            data-testid="drawer-enrichment"
+          >
+            <pre class="text-xs leading-relaxed"><code>{JSON.stringify(query.data.enrichment, null, 2)}</code></pre>
           </div>
           <p class="text-xs text-base-content/60 mt-1">confidence: {query.data.confidence}</p>
         </section>

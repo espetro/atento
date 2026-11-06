@@ -70,3 +70,26 @@ walled_gardens = ["example.com"]
     expect(limits.walledGardens).toEqual(['example.com'])
   })
 })
+
+describe('limits config: review hosts', () => {
+  it('reads review_hosts as exact hosts and *.suffix wildcards', () => {
+    const limits = parseLimitsConfig(`
+[limits]
+review_hosts = ["revolut.com", "*.revolut.com"]
+`)
+    expect(limits.reviewHosts).toEqual(['revolut.com', '*.revolut.com'])
+  })
+
+  it('defaults to an empty review list', () => {
+    const limits = parseLimitsConfig('')
+    expect(limits.reviewHosts).toEqual([])
+  })
+
+  it('ignores non-string entries', () => {
+    const limits = parseLimitsConfig(`
+[limits]
+review_hosts = ["revolut.com", 7]
+`)
+    expect(limits.reviewHosts).toEqual(['revolut.com'])
+  })
+})

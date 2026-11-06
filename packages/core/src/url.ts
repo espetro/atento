@@ -66,3 +66,16 @@ export function normalizeUrl(input: string): NormalizedUrl {
 function sha256(s: string): string {
   return createHash('sha256').update(s, 'utf8').digest('hex')
 }
+
+/**
+ * The host of a url, lowercased and without the port. Returns an empty
+ * string when the url cannot be parsed, so callers can skip the row instead
+ * of grouping everything unparseable under one bucket.
+ */
+export function hostOfUrl(url: string): string {
+  try {
+    return new URL(url).host.toLowerCase()
+  } catch {
+    return ''
+  }
+}

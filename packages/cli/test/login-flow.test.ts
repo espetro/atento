@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
-import { capture, insertLink, tempDb, type TempDb } from './helpers.js'
+import { capture, insertLink, tempDb, unlimitedLimits, type TempDb } from './helpers.js'
 import { createContext, type CliContext } from '../src/context.js'
 import {
   profileDirFor,
@@ -17,6 +17,7 @@ import {
   type LoginPicker,
 } from '../src/commands/login.js'
 import { queryPendingLogins, profileAgeDays } from '../src/pending-logins.js'
+import { emptyHostState } from '@linkinbox/core'
 
 async function contextFor(db: TempDb): Promise<CliContext> {
   return createContext({
@@ -126,6 +127,125 @@ describe('login listing', () => {
     expect(text).toContain('login_wall')
     expect(text).toContain('4')
     expect(text).toContain('12')
+  })
+})
+
+describe('pending logins honour the host policy', () => {
+  /** Make a host known to be login-gated (as the extract stage would). */
+  async function gate(db: TempDb, host: string): Promise<void> {
+    await db.store.saveHostState({
+      ...emptyHostState(host),
+      key: host,
+      trialState: 'flagged',
+      trialReason: 'login_wall',
+      trialAt: Date.now(),
+      loginGated: true,
+    })
+  }
+
+  it('excludes skip-listed and review-only hosts from pending', async () => {
+    const db = await tempDb()
+    try {
+      await parkNeedsBrowser(db, 'https://x.com/a')
+      await parkNeedsBrowser(db, 'https://localhost:3000/b')
+      await parkNeedsBrowser(db, 'https://revolut.com/c')
+      const logins = await queryPendingLogins(db.store, {
+        limits: { ...unlimitedLimits(), disabled: false, reviewHosts: ['revolut.com'] },
+      })
+      expect(logins.pending.map((p) => p.host)).toEqual(['x.com'])
+      // The excluded links are counted, never silently hidden.
+      expect(logins.reviewOnly).toBe(1)
+    } finally {
+      await db.cleanup()
+    }
+  })
+
+  it('excludes a login-gated host the allow list does not cover', async () => {
+    const db = await tempDb()
+    try {
+      await parkNeedsBrowser(db, 'https://x.com/a')
+      await parkNeedsBrowser(db, 'https://app.devin.ai/session/1')
+      await gate(db, 'x.com')
+      await gate(db, 'app.devin.ai')
+      const logins = await queryPendingLogins(db.store, {
+        loginAllow: ['app.devin.ai'],
+      })
+      expect(logins.pending.map((p) => p.host)).toEqual(['app.devin.ai'])
+      // x.com is not pending: it is review-only, and the count says so.
+      expect(logins.reviewOnly).toBe(1)
+    } finally {
+      await db.cleanup()
+    }
+  })
+
+  it('a saved profile counts as allowed even outside the allow list', async () => {
+    const db = await tempDb()
+    try {
+      await parkNeedsBrowser(db, 'https://x.com/a')
+      await gate(db, 'x.com')
+      await db.store.upsertProfile({ host: 'x.com', path: '/tmp/profiles/x.com' })
+      const logins = await queryPendingLogins(db.store, {
+        loginAllow: ['app.devin.ai'],
+      })
+      // The host has a profile, so it is not pending (done, not review-only).
+      expect(logins.pending).toEqual([])
+      expect(logins.done.map((d) => d.host)).toEqual(['x.com'])
+      expect(logins.reviewOnly).toBe(0)
+    } finally {
+      await db.cleanup()
+    }
+  })
+
+  it('an empty policy keeps every host pending as before', async () => {
+    const db = await tempDb()
+    try {
+      await parkNeedsBrowser(db, 'https://x.com/a')
+      await parkNeedsBrowser(db, 'https://revolut.com/c')
+      const logins = await queryPendingLogins(db.store)
+      // Equal link counts: the host name breaks the tie.
+      expect(logins.pending.map((p) => p.host)).toEqual(['revolut.com', 'x.com'])
+      expect(logins.reviewOnly).toBe(0)
+    } finally {
+      await db.cleanup()
+    }
+  })
+
+  it('counts parked links whose host the policy now marks review-only', async () => {
+    const db = await tempDb()
+    try {
+      // Parked with the login_wall reason before revolut.com became
+      // review-only; the next extract run will reconcile the reason.
+      await parkNeedsBrowser(db, 'https://revolut.com/c')
+      const logins = await queryPendingLogins(db.store, {
+        limits: { ...unlimitedLimits(), disabled: false, reviewHosts: ['revolut.com'] },
+      })
+      expect(logins.pending).toEqual([])
+      expect(logins.reviewOnly).toBe(1)
+    } finally {
+      await db.cleanup()
+    }
+  })
+
+  it('the JSON report carries the reviewOnly count', async () => {
+    const db = await tempDb()
+    try {
+      await parkNeedsBrowser(db, 'https://revolut.com/c')
+      await parkNeedsBrowser(db, 'https://revolut.com/d')
+      const ctx = await contextFor(db)
+      ctx.config.limits = {
+        ...unlimitedLimits(),
+        disabled: false,
+        reviewHosts: ['revolut.com'],
+      }
+      const out = await capture(() =>
+        runLoginFlow(ctx, { nonInteractive: true }),
+      )
+      const report = JSON.parse(out.stdout) as { pending: unknown[]; reviewOnly: number }
+      expect(report.pending).toEqual([])
+      expect(report.reviewOnly).toBe(2)
+    } finally {
+      await db.cleanup()
+    }
   })
 })
 

@@ -18,6 +18,8 @@ const context: McpContext = {
   store,
   ttl: config.ttl,
   logger,
+  limits: config.limits,
+  login: config.login,
 }
 
 export const deps: McpDeps = {
@@ -26,6 +28,7 @@ export const deps: McpDeps = {
     createExtractFn({
       profilesDir: config.profilesDir,
       limits: config.limits,
+      login: config.login,
       pacing: config.pacing,
       store: (ctx ?? context).store,
     }),

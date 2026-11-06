@@ -15,7 +15,9 @@ import {
   sweep as planSweep,
   applySweep,
   metricsSummary,
+  pipelineOverview,
   shapeForUi,
+  toPipelineRow,
   UI_SUMMARY_FIELDS,
   UI_DETAIL_FIELDS,
   DEFAULT_TTL_CONFIG,
@@ -25,9 +27,18 @@ import {
   captureToken,
   parseCapture,
   tokensEqual,
+  LINK_STATES,
   type CaptureConfig,
 } from '@linkinbox/core'
-import type { Store, Status, TtlConfig, TriageAction } from '@linkinbox/core'
+import type {
+  Store,
+  Status,
+  TtlConfig,
+  TriageAction,
+  LinkStateName,
+  LinkProjection,
+  LinkField,
+} from '@linkinbox/core'
 
 export const DEFAULT_PORT = 4173
 
@@ -46,6 +57,34 @@ export interface ServerOptions {
 
 const STATUSES: readonly string[] = ['inbox', 'scheduled', 'archived', 'discarded']
 const ACTIONS: readonly string[] = ['read_now', 'schedule', 'archive', 'discard']
+
+/**
+ * The UI summary fields plus the pipeline fields: the FSM state, the reason
+ * it carries and the state payload. The pipeline row is additive, so the
+ * existing callers of /api/links keep working unchanged.
+ */
+const PIPELINE_SUMMARY_FIELDS: LinkField[] = [
+  ...UI_SUMMARY_FIELDS,
+  'state',
+  'stateData',
+  'updatedAt',
+]
+
+/**
+ * Shape one link for the API: the UI summary plus the pipeline fields
+ * (`state`, `reason`, `next_attempt_at`, `host`, `updated_at`). The legacy
+ * summary keys are untouched, so existing clients keep working.
+ */
+function shapePipelineRow(link: LinkProjection): Record<string, unknown> {
+  const row = shapeForUi(link) as Record<string, unknown>
+  const pipeline = toPipelineRow(link)
+  row['state'] = pipeline.state
+  row['reason'] = pipeline.reason
+  row['host'] = pipeline.host
+  row['next_attempt_at'] = pipeline.nextAttemptAt
+  row['updated_at'] = pipeline.updatedAt
+  return row
+}
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -136,9 +175,20 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
     const stale = q['stale'] === '1' || q['stale'] === 'true'
     const limit = q['limit'] !== undefined ? Number(q['limit']) : 50
     const offset = q['offset'] !== undefined ? Number(q['offset']) : 0
+    // The pipeline filters (additive): `state` filters on the FSM
+    // discriminant, `host` on the host of the url.
+    let state: LinkStateName | undefined
+    if (q['state'] !== undefined && q['state'] !== '') {
+      if (!LINK_STATES.includes(q['state'] as LinkStateName)) {
+        return c.json({ error: `invalid state "${q['state']}"` }, 400)
+      }
+      state = q['state'] as LinkStateName
+    }
     const filter = {
       status: status as Status | undefined,
+      state,
       category: q['category'] || undefined,
+      host: q['host'] || undefined,
       staleAsOf: stale ? new Date() : undefined,
     }
     const items = await listLinks(store, {
@@ -146,14 +196,31 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
       q: q['q'] || undefined,
       limit,
       offset,
-      fields: UI_SUMMARY_FIELDS,
+      fields: PIPELINE_SUMMARY_FIELDS,
     })
-    // The free-text match lives in ops (over url/title), so for a q search the
-    // total is the filtered length, not the raw store count.
-    const total = q['q']
-      ? (await listLinks(store, { ...filter, q: q['q'] })).length
-      : await store.countLinks(filter)
-    return c.json({ items: items.map((l) => shapeForUi(l)), total })
+    // The free-text match (and the host filter) live in ops (over url/title),
+    // so for those the total is the filtered length, not the raw store count.
+    // The store count handles the state filter on the FSM discriminant.
+    const storeFilter = {
+      status: (state ?? status) as Status | undefined,
+      byState: state !== undefined,
+      category: filter.category,
+      staleAsOf: filter.staleAsOf,
+    }
+    const total = q['q'] || filter.host
+      ? (await listLinks(store, { ...filter, q: q['q'] || undefined })).length
+      : await store.countLinks(storeFilter)
+    return c.json({ items: items.map(shapePipelineRow), total })
+  })
+
+  // The pipeline overview: every state with its count, plus the busiest
+  // hosts. Read-only: it reads the link rows once.
+  app.get('/api/pipeline', async (c) => {
+    const overview = await pipelineOverview(store)
+    return c.json({
+      byState: overview.byState,
+      byHost: overview.byHost.map((h) => ({ host: h.host, total: h.total, byState: h.byState })),
+    })
   })
 
   app.post('/api/links/triage', async (c) => {
