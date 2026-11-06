@@ -22,6 +22,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { Command } from 'commander'
 import type { CliContext } from '../context.js'
+import { hostPolicy } from '@linkinbox/core'
 import { renderTable } from '../render.js'
 import { runPatchrightLogin, hostUsesPatchright, type PatchrightLoginLaunch, type WaitForEnter } from '../patchright-login.js'
 import {
@@ -58,14 +59,14 @@ export type { LoginReport } from '../pending-logins.js'
 /** Injected browser launcher so tests never spawn a real browser. */
 export type LoginLauncher = (host: string, profilePath: string) => Promise<number>
 
+/** The hosts a picker picked, in the order the user chose them. */
+export type SelectedHosts = { selected: string[]; quit: boolean; walk?: boolean }
+
 /** Injected picker: returns the hosts the user selected, or null to quit. */
 export type LoginPicker = (
   pending: LoginReport['pending'],
   done: LoginReport['done'],
-) => Promise<{ selected: string[]; quit: boolean } | null>
-
-/** The hosts a picker picked, in the order the user chose them. */
-export type SelectedHosts = { selected: string[]; quit: boolean }
+) => Promise<SelectedHosts | null>
 
 export interface LoginFlowDeps {
   loadLogins?: LoadPendingLogins
@@ -81,6 +82,8 @@ export interface LoginFlowDeps {
   nonInteractive?: boolean
   /** Log in to every pending host without asking. */
   all?: boolean
+  /** Injected walk prompt, used when the walk runs (tests). */
+  prompt?: WalkPrompt
 }
 
 function runCommand(command: string, args: string[]): Promise<number> {
@@ -207,6 +210,168 @@ export async function requeueHostLinks(ctx: CliContext, host: string): Promise<n
     if (outcome.ok) requeued += 1
   }
   return requeued
+}
+
+/**
+ * Injected walk prompt (tests): asked before each host. Returns "s" to skip
+ * the host, "q" to stop the walk, anything else (Enter) to proceed.
+ */
+export type WalkPrompt = (host: string, index: number, total: number) => Promise<string>
+
+export interface LoginWalkDeps {
+  loadLogins?: LoadPendingLogins
+  launch?: LoginLauncher
+  patchrightLaunch?: PatchrightLoginLaunch
+  waitForEnter?: WaitForEnter
+  prompt?: WalkPrompt
+}
+
+/** The default walk prompt: a readline question on stdin/stdout. */
+function askWalkPrompt(host: string, index: number, total: number): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  return new Promise<string>((resolve) => {
+    rl.on('close', () => resolve(''))
+    rl.question(`proceed with ${host}? [Enter/s/q] `, (line) => resolve(line.trim().toLowerCase()))
+  }).finally(() => rl.close())
+}
+
+export interface LoginWalkResult {
+  loggedIn: string[]
+  skipped: string[]
+  failed: string[]
+  requeued: number
+  quit: boolean
+}
+
+/**
+ * The login walk: visit every pending host in order (most parked links
+ * first, review-only hosts excluded as always), log in to it, requeue its
+ * parked links, then continue. Enter proceeds, `s` skips a host for the
+ * rest of this run, `q` stops the walk.
+ */
+export async function runLoginWalk(
+  ctx: CliContext,
+  deps: LoginWalkDeps = {},
+  onlyHosts?: string[],
+): Promise<LoginWalkResult> {
+  const load = deps.loadLogins ?? loadPendingLogins
+  const launch = deps.launch
+  const ask = deps.prompt ?? askWalkPrompt
+  const report = buildLoginReport(await load(ctx.store, pendingPolicy(ctx)))
+  const hosts = onlyHosts ?? report.pending.map((p) => p.host)
+  const total = hosts.length
+
+  if (total === 0) {
+    console.log('no pending logins; nothing to walk')
+    return { loggedIn: [], skipped: [], failed: [], requeued: 0, quit: false }
+  }
+
+  const skipped = new Set<string>()
+  const loggedIn: string[] = []
+  const failed: string[] = []
+  let requeued = 0
+  let quit = false
+
+  for (let i = 0; i < total; i++) {
+    const host = hosts[i]!
+    if (skipped.has(host)) continue
+    const entry = report.pending.find((p) => p.host === host)
+    console.log(`${i + 1} of ${total}: ${host} (${entry?.links ?? 0} link${entry?.links === 1 ? '' : 's'})`)
+    const answer = await ask(host, i + 1, total)
+    if (answer === 'q') {
+      quit = true
+      break
+    }
+    if (answer === 's') {
+      skipped.add(host)
+      console.log(`skipped ${host} for this run`)
+      continue
+    }
+    const result = await runLogin(ctx, host, {
+      ...(launch ? { launch } : {}),
+      ...(deps.patchrightLaunch ? { patchrightLaunch: deps.patchrightLaunch } : {}),
+      ...(deps.waitForEnter ? { waitForEnter: deps.waitForEnter } : {}),
+    })
+    if (result.code === -1) {
+      failed.push(host)
+      console.log(`login failed for ${host}; continuing`)
+      continue
+    }
+    loggedIn.push(host)
+    if (result.requeued > 0) {
+      console.log(`requeued ${result.requeued} link${result.requeued === 1 ? '' : 's'} for ${result.host}`)
+    }
+    requeued += result.requeued
+  }
+
+  console.log('')
+  if (quit) {
+    console.log(
+      `stopped after ${loggedIn.length} of ${total} host${total === 1 ? '' : 's'}, requeued ${requeued} link${requeued === 1 ? '' : 's'}`,
+    )
+  } else {
+    const parts = [`logged in to ${loggedIn.length} host${loggedIn.length === 1 ? '' : 's'}, requeued ${requeued} link${requeued === 1 ? '' : 's'}`]
+    if (skipped.size > 0) parts.push(`skipped ${skipped.size} host${skipped.size === 1 ? '' : 's'}`)
+    if (failed.length > 0) parts.push(`failed ${failed.length} host${failed.length === 1 ? '' : 's'}`)
+    console.log(parts.join(', '))
+  }
+  const remaining = buildLoginReport(await load(ctx.store, pendingPolicy(ctx)))
+  console.log(renderLoginReport(remaining))
+  return { loggedIn, skipped: [...skipped], failed, requeued, quit }
+}
+
+export interface ParkedRequeueResult {
+  /** Total links moved back to the created queue. */
+  requeued: number
+  /** Per-host counts, in host-name order. */
+  counts: Record<string, number>
+}
+
+/**
+ * The parked backfill: move every needs_browser link (plus deferred
+ * extract-stage links whose backoff is pending) back to `created` through
+ * the RETRY event, so the next extract run's auto-escalation reprocesses
+ * them. Review-only and skip-listed hosts are never touched.
+ */
+export async function runParkedRequeue(
+  ctx: CliContext,
+  options: { host?: string } = {},
+): Promise<ParkedRequeueResult> {
+  const links = await ctx.store.listByStates(['needs_browser', 'deferred'])
+  const counts: Record<string, number> = {}
+  let requeued = 0
+  for (const link of links) {
+    if (link.state === 'deferred') {
+      const stage = link.stateData?.['stage']
+      if (stage !== 'extract') continue
+    }
+    const host = hostOf(link.url)
+    if (host === '' || host === 'unknown') continue
+    if (options.host !== undefined && host !== options.host.toLowerCase()) continue
+    const state = await ctx.store.getHostState(host)
+    const hasProfile = (await ctx.store.getProfile(host)) !== null
+    const policy = hostPolicy(ctx.config.limits, host, {
+      hasProfile,
+      trialState: state?.trialState ?? 'unknown',
+      loginGated: state?.loginGated ?? false,
+      loginAllow: ctx.config.login?.allow,
+    })
+    if (policy.skipped || policy.reviewOnly) continue
+    const outcome = await ctx.store.applyEvent(link.id, {
+      type: 'RETRY',
+      at: new Date().toISOString(),
+    })
+    if (!outcome.ok) continue
+    requeued += 1
+    counts[host] = (counts[host] ?? 0) + 1
+  }
+  const ordered = Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)))
+  for (const [host, n] of Object.entries(ordered)) {
+    console.log(`${host}: ${n}`)
+  }
+  if (requeued === 0) console.log('nothing to requeue')
+  else console.log(`requeued ${requeued} link${requeued === 1 ? '' : 's'}`)
+  return { requeued, counts: ordered }
 }
 
 /** login list: saved profiles. */
@@ -338,6 +503,16 @@ export async function runLoginFlow(
     console.log('quit; nothing logged in')
     return 0
   }
+  if (choice.walk === true) {
+    await runLoginWalk(ctx, {
+      ...(deps.loadLogins ? { loadLogins: deps.loadLogins } : {}),
+      ...(deps.launch ? { launch: deps.launch } : {}),
+      ...(deps.patchrightLaunch ? { patchrightLaunch: deps.patchrightLaunch } : {}),
+      ...(deps.waitForEnter ? { waitForEnter: deps.waitForEnter } : {}),
+      ...(deps.prompt ? { prompt: deps.prompt } : {}),
+    })
+    return 0
+  }
 
   const browser: LoginLauncher = launch ?? spawnBrowser
 
@@ -367,12 +542,14 @@ export async function runLoginFlow(
 /** Interactive readline picker: comma separated host selection. */
 async function pickHosts(
   pending: LoginReport['pending'],
-): Promise<{ selected: string[]; quit: boolean } | null> {
+): Promise<SelectedHosts | null> {
   pending.forEach((p, i) => {
     console.log(`  ${i + 1}. ${p.host} (${p.links} link${p.links === 1 ? '' : 's'}, ${p.reason})`)
   })
   console.log('')
-  console.log('pick hosts to log in to (e.g. `1` or `1,3`), `s` to skip, `q` to quit:')
+  console.log(
+    'pick hosts to log in to (e.g. `1` or `1,3`), `a` to walk every pending host one by one, `s` to skip, `q` to quit:',
+  )
 
   const rl = createInterface({ input: process.stdin, output: process.stdout })
   try {
@@ -383,6 +560,9 @@ async function pickHosts(
       rl.question('> ', (line) => resolve(line.trim()))
     })
     if (answer.toLowerCase() === 'q') return { selected: [], quit: true }
+    if (answer.toLowerCase() === 'a') {
+      return { selected: pending.map((p) => p.host), quit: false, walk: true }
+    }
     if (answer.toLowerCase() === 's' || answer === '') return { selected: [], quit: false }
     const selected: string[] = []
     for (const part of answer.split(/[\s,]+/)) {
@@ -523,6 +703,36 @@ export function registerLoginCommand(
         }
         const n = await requeueHostLinks(ctx, normalized)
         console.log(`requeued ${n} link(s) for ${normalized}`)
+      } finally {
+        await ctx.close()
+      }
+    })
+}
+
+/**
+ * The `requeue` command. Today only the parked backfill:
+ *   linkinbox requeue --parked [--host <h>]
+ * moves needs_browser links (and pending deferred ones) back to created via
+ * the RETRY path, skipping review-only and skip-listed hosts.
+ */
+export function registerRequeueCommand(
+  program: Command,
+  deps: { ctx: () => Promise<CliContext> },
+): void {
+  program
+    .command('requeue')
+    .description('backfill parked links back into the extraction queue')
+    .option('--parked', 'requeue needs_browser and pending deferred links back to created')
+    .option('--host <host>', 'restrict the backfill to one host')
+    .action(async (opts: { parked?: boolean; host?: string }) => {
+      if (opts.parked !== true) {
+        console.error('nothing to do: pass --parked (e.g. `linkinbox requeue --parked`)')
+        process.exitCode = 1
+        return
+      }
+      const ctx = await deps.ctx()
+      try {
+        await runParkedRequeue(ctx, opts.host !== undefined ? { host: opts.host } : {})
       } finally {
         await ctx.close()
       }
