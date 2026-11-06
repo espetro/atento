@@ -12,6 +12,7 @@ import {
   loginAllowed,
   markFlagged,
   markOpen,
+  limitForHost,
   pacingSignalMs,
   trialStateOf,
   type GuardDeps,
@@ -32,6 +33,7 @@ import {
 } from '../pipeline/park-reason.js'
 import { isMediaLink, type MediaFn, type MediaRun } from '../media.js'
 import { DEFAULT_MAX_ATTEMPTS } from './resilience-options.js'
+import { DEFAULT_PER_HOST, selectFairBatch, hostEligible, hostInSpacingWait } from './batch-select.js'
 
 /** The reason recorded on links parked because their host is skip-listed. */
 export const SKIP_HOST_REASON = 'skip_host'
@@ -174,8 +176,39 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
     ? (await store.listByStates(['created'])).filter(
         (link) => hostOf(link.url) === hostFilter(options.host as string),
       )
-    : await store.listByStates(['created'], options.limit)
-  const batch = queued.slice(0, options.limit ?? maxBatch).slice(0, maxBatch)
+    : await store.listByStates(['created'])
+  // Fair selection: round-robin across hosts so a host with many links cannot
+  // fill every batch, skipping hosts whose persisted limiter state says they
+  // are not contactable right now (spacing wait, rate limit, daily cap,
+  // open breaker). Cheap: the states are already in the store.
+  const nowMs = startedAt.getTime()
+  const limits = guard?.config.limits
+  const allHosts = new Set<string>()
+  for (const link of queued) allHosts.add(hostOf(link.url))
+  // Hard blocks (daily cap, upstream rate limit, open breaker) drop the host
+  // out of the batch entirely: it cannot make progress in this window.
+  const blockedHostsInBatch = new Set<string>()
+  // Hosts inside a spacing wait: they only get a slot when no other host has
+  // a pending link.
+  const waitingHosts = new Set<string>()
+  for (const host of allHosts) {
+    const state = await store.getHostState(host)
+    const limit = limits
+      ? limitForHost(limits, host, (await store.getProfile(host)) !== null)
+      : undefined
+    const verdict = hostEligible(state, limit, nowMs)
+    if (!verdict.eligible) {
+      blockedHostsInBatch.add(host)
+      continue
+    }
+    if (hostInSpacingWait(state, limit, nowMs)) waitingHosts.add(host)
+  }
+  const cap = options.limit ?? maxBatch
+  const batch = selectFairBatch(queued, cap, {
+    perHost: DEFAULT_PER_HOST,
+    blocked: blockedHostsInBatch,
+    waiting: waitingHosts,
+  }).slice(0, maxBatch)
   const run = await store.startRun(STAGES.extract, batch.length, startedAt)
   logger.info('extract run {runId} started with {inputCount} links', {
     runId: run.id,
