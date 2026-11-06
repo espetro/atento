@@ -6,6 +6,7 @@
 
   const items: { key: UrlState['view']; label: string; icon: string }[] = [
     { key: 'inbox', label: 'Inbox', icon: 'M3 12h18M3 6h18M3 18h18' },
+    { key: 'pipeline', label: 'Pipeline', icon: 'M4 5h16v4H4zM4 12h10v3H4zM4 18h6v2H4z' },
     { key: 'sweep', label: 'Sweep', icon: 'M4 4h16v4H4zM4 12h10v8H4z' },
     { key: 'metrics', label: 'Metrics', icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
   ]

@@ -12,7 +12,9 @@ import {
   applySweep,
   getLink,
   listLinks,
+  listPipelineLinks,
   metricsSummary,
+  pipelineOverview,
   sweep,
   triage,
   DEFAULT_TTL_CONFIG,
@@ -180,6 +182,52 @@ describe('mcp/core parity', () => {
       expect(res.data.okCount).toBe(1)
       const link = await h.store.getLink(1)
       expect(link?.action).toBe('read_now')
+    } finally {
+      await h.cleanup()
+    }
+  })
+
+  it('links_overview matches pipelineOverview for the same store', async () => {
+    const h = await createHarness()
+    try {
+      await insertLink(h.store, 'https://example.com/one')
+      await insertLink(h.store, 'https://example.com/two')
+      await insertLink(h.store, 'https://gated.example/one', {
+        state: 'needs_browser',
+        stateData: { host: 'gated.example', reason: 'login_wall' },
+      })
+      const viaCore = await pipelineOverview(h.store)
+      const viaMcp = callJson(await h.client.callTool({ name: 'links_overview', arguments: {} }))
+      expect(viaMcp.data.total).toBe(viaCore.total)
+      expect(viaMcp.data.byState).toEqual(viaCore.byState)
+      expect(viaMcp.data.byHost).toEqual(viaCore.byHost)
+      expect(viaMcp.data.byState.created).toBe(2)
+      expect(viaMcp.data.byState.needs_browser).toBe(1)
+    } finally {
+      await h.cleanup()
+    }
+  })
+
+  it('links_pipeline rows carry the state and reason', async () => {
+    const h = await createHarness()
+    try {
+      await insertLink(h.store, 'https://gated.example/one', {
+        state: 'needs_browser',
+        stateData: { host: 'gated.example', reason: 'login_wall' },
+      })
+      const viaCore = await listPipelineLinks(h.store, { state: 'needs_browser' })
+      const viaMcp = callJson(
+        await h.client.callTool({
+          name: 'links_pipeline',
+          arguments: { state: 'needs_browser' },
+        }),
+      )
+      expect(viaMcp.data.links).toEqual(viaCore)
+      expect(viaMcp.data.links[0]).toMatchObject({
+        host: 'gated.example',
+        state: 'needs_browser',
+        reason: 'login_wall',
+      })
     } finally {
       await h.cleanup()
     }

@@ -224,7 +224,13 @@ export class SqliteStore implements Store {
 
   async countLinks(filter?: LinkFilter): Promise<number> {
     const conds = []
-    if (filter?.status) conds.push(eq(links.status, filter.status))
+    if (filter?.status) {
+      if (filter.byState === true) {
+        conds.push(eq(links.state, filter.status))
+      } else {
+        conds.push(eq(links.status, filter.status))
+      }
+    }
     if (filter?.category) conds.push(eq(links.category, filter.category))
     if (filter?.staleAsOf) {
       conds.push(sql`${links.expiresAt} IS NOT NULL AND ${links.expiresAt} < ${filter.staleAsOf.getTime()}`)

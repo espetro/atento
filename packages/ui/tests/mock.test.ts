@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createMockState, listLinks, sweep } from '../src/mock/data'
+import { createMockState, listLinks, pipelineOverview, sweep } from '../src/mock/data'
+import { PIPELINE_STATES } from '../src/lib/types'
 
 describe('mock data', () => {
   it('creates 128 links with first 100 in inbox', () => {
@@ -36,6 +37,40 @@ describe('mock data', () => {
     const paged = listLinks(state, new URLSearchParams({ limit: '10', offset: '5' }))
     expect(paged.items).toHaveLength(10)
     expect(paged.items[0].id).toBe(all.items[5].id)
+  })
+
+  it('mock links carry pipeline state, reason and host', () => {
+    const state = createMockState()
+    const withState = state.links.filter((l) => l.state !== 'inbox')
+    expect(withState.length).toBeGreaterThan(0)
+    for (const l of state.links) {
+      expect(PIPELINE_STATES).toContain(l.state)
+      expect(l.host).toBeTruthy()
+      expect(typeof l.updated_at).toBe('string')
+      if (l.state === 'needs_browser') expect(l.reason).toBe('login_wall')
+      if (l.state === 'deferred') expect(l.next_attempt_at).toBeTruthy()
+    }
+  })
+
+  it('listLinks filters by pipeline state and host', () => {
+    const state = createMockState()
+    const needsBrowser = listLinks(state, new URLSearchParams({ state: 'needs_browser' }))
+    expect(needsBrowser.total).toBeGreaterThan(0)
+    expect(needsBrowser.items.every((l) => l.state === 'needs_browser')).toBe(true)
+    const byHost = listLinks(state, new URLSearchParams({ host: 'example.com' }))
+    expect(byHost.items.every((l) => l.host === 'example.com')).toBe(true)
+  })
+
+  it('pipelineOverview counts every state and groups hosts', () => {
+    const state = createMockState()
+    const overview = pipelineOverview(state)
+    expect(Object.keys(overview.byState).sort()).toEqual([...PIPELINE_STATES].sort())
+    const sum = Object.values(overview.byState).reduce((a, b) => a + b, 0)
+    expect(sum).toBe(state.links.length)
+    expect(overview.byHost.length).toBeGreaterThan(0)
+    expect(overview.byHost[0].total).toBeGreaterThanOrEqual(
+      overview.byHost[overview.byHost.length - 1].total,
+    )
   })
 
   it('sweep groups expired non-archived links by category', () => {
