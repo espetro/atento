@@ -29,6 +29,7 @@ describe('the park reason classes', () => {
       'http_error',
       'timeout',
       'review_only',
+      'skipped',
       'unknown',
     ])
   })
@@ -164,7 +165,7 @@ describe('parseParkReason', () => {
     expect(parseParkReason(undefined)).toBe('unknown')
     expect(parseParkReason(null)).toBe('unknown')
     expect(parseParkReason(42)).toBe('unknown')
-    expect(parseParkReason('skip_host')).toBe('unknown')
+    expect(parseParkReason('skip_host')).toBe('skipped')
   })
 })
 
@@ -237,6 +238,7 @@ describe('the stored reason class', () => {
       'http_error',
       'timeout',
       'review_only',
+      'skipped',
       'unknown',
     ]
     for (const cls of classes) {

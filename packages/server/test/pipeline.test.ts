@@ -103,6 +103,7 @@ describe('GET /api/pipeline', () => {
       'js_shell',
       'login_wall',
       'review_only',
+      'skipped',
       'timeout',
       'unknown',
     ])

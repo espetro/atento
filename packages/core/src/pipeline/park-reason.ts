@@ -28,6 +28,7 @@ export const PARK_REASONS = [
   'http_error',
   'timeout',
   'review_only',
+  'skipped',
   'unknown',
 ] as const
 
@@ -116,6 +117,7 @@ export function parseParkReason(value: unknown): ParkReason {
   // A stored class parses back to itself (`http_error` and `unknown` are
   // only reachable through this branch).
   if (CLASS_WORDS.has(s)) return s as ParkReason
+  if (s === 'skip_host') return 'skipped'
   if (LOGIN_WALL_WORDS.has(s)) return 'login_wall'
   if (s === 'review_only') return 'review_only'
   if (BOT_BLOCK_WORDS.has(s)) return 'bot_block'
