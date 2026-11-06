@@ -8,6 +8,11 @@ import { cleanBrowserMarkdown } from "./clean.js";
 export interface BrowserExtractorOptions {
   /** agent-browser binary; overridable for tests. */
   command?: string;
+  /**
+   * Chromium binary passed to agent-browser as --executable-path. Unset
+   * means: agent-browser resolves it itself (its env var, then its default).
+   */
+  executablePath?: string;
   /** Base dir for saved login profiles. */
   profilesDir?: string;
   /** Subprocess runner; inject a fake in tests (offline). */
@@ -131,6 +136,7 @@ export function createBrowserExtractor(options: BrowserExtractorOptions = {}): E
         // read it. Both pacing steps are injected, so tests never sleep and
         // never need a browser. agent-browser runs headless by default.
         const base = ["--profile", profileDir];
+        if (options.executablePath) base.push("--executable-path", options.executablePath);
         const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
         const opened = await exec(command, [...base, "open", url], { timeoutMs });
         if (opened.code !== 0) {

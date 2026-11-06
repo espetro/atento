@@ -13,11 +13,15 @@ import {
   pacingFromToml,
   ttlFromToml,
   captureFromToml,
+  shareFromToml,
+  browserFromToml,
+  type BrowserConfig,
   type CaptureConfig,
   type LimitsConfig,
   type LoginConfig,
   type MediaConfig,
   type PacingConfig,
+  type ShareConfig,
   type TomlTable,
   type TtlConfig,
 } from '@linkinbox/core'
@@ -36,6 +40,10 @@ export interface AppConfig {
   media: MediaConfig
   /** Capture endpoint configuration from `[capture]`. */
   capture: CaptureConfig
+  /** The share allowlist from `[share]`: the hosts another agent may read. */
+  share: ShareConfig
+  /** Browser engine configuration from `[browser]`. */
+  browser: BrowserConfig
   /** Directory holding agent-browser login profiles. */
   profilesDir: string
   /** Directory holding config.toml. */
@@ -102,6 +110,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     pacing: pacingFromToml(toml),
     media: mediaFromToml(toml),
     capture: captureFromToml(toml as unknown as Record<string, unknown>),
+    share: shareFromToml(toml as unknown as Record<string, unknown>),
+    browser: browserFromToml(toml as unknown as Record<string, unknown>),
     profilesDir: defaultProfilesDir(env),
     dir,
   }

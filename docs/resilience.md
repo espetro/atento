@@ -140,6 +140,34 @@ host with a saved profile or a login-gated host, a 404 is a private page
 answering an anonymous request: the link moves to `needs_browser` with the
 reason `private_404` (or `private_410`) instead of `errored`.
 
+## Automatic escalation
+
+Before a bot block or a login wall parks a link, the extract-fn adapter
+(`packages/cli/src/extract-fn.ts`) retries the URL once through the stealth
+engine (patchright), with no user input. The trigger is the first, non-stealth
+attempt returning a bot-block page (Cloudflare or captcha markers in the
+content, an HTTP 403 or 429) or a login wall; the whole attempt chain is
+scanned, because the router's fallback from the static route to the browser
+route can hide the challenge page the static route saw.
+
+The retry is not free of the pacing rules: it runs after the normal pacing
+gate for that host (the walled-garden human pacing profile for strict hosts,
+the host's spacing wait otherwise), so a block never buys a second,
+unthrottled fetch. It also never loops: the stealth route itself never
+escalates again, at most one retry happens per extraction.
+
+Outcomes:
+
+- The retry succeeded: its content is returned as the result, tagged with
+  `extractor: "patchright"`.
+- The retry still shows a login wall: the login-wall outcome is returned and
+  the pipeline parks the link as before (`needs_browser`, reason
+  `login_wall`; run `linkinbox login <host>`).
+- The retry is still blocked (captcha, another challenge): the blocked
+  outcome is returned, the circuit breaker opens and the host is flagged.
+- The stealth engine cannot run (patchright not installed, no browser, no
+  profile): the original outcome is returned unchanged, silently.
+
 ## Host policy: skip, review only, login allow
 
 Three host lists decide what the pipeline does with a host. All of them use
@@ -224,7 +252,9 @@ defers the remaining links when the llm breaker is open.
 
 The browser extractor always runs headless and only with the saved profile
 for the host. On a login wall it opens the breaker and the CLI tells the user
-to run `linkinbox login <host>`.
+to run `linkinbox login <host>`. The browser engine per host (agent-browser
+or the patchright stealth engine) is chosen by the `[browser]` config; see
+`docs/stealth.md`.
 
 ## Config
 
@@ -292,6 +322,10 @@ hours_end = 23
 |---|---|---|
 | `allow` | `[]` | The hosts the pipeline may log in to. Empty means no restriction. |
 
+| `[share]` key | Default | Meaning |
+|---|---|---|
+| `hosts` | `[]` | The hosts another agent may READ through a saved profile (`linkinbox browse`, the MCP `browse_read` tool). Empty means nothing is shared. Same pattern syntax as the skip list. The reads spend the host budget above, and nothing is written to the link store. |
+
 | `[pacing]` key | Default | Meaning |
 |---|---|---|
 | `dwell_median_s` | 20 | Median dwell per page; also the spacing baseline. |
@@ -314,6 +348,10 @@ hours_end = 23
   owner to review) and `reconciledCount` (links the sweep moved).
 - `linkinbox status` lists per-host budget remaining, breaker state and
   reopen time; `--json` for machine consumption.
+- `linkinbox browse <url>` reads one page through the saved profile of its
+  host, read-only, for the hosts in `[share] hosts`. MCP tools
+  `browse_read` and `browse_hosts` expose the same surface. The reads go
+  through the same guard, so they spend the same host budget.
 - `linkinbox breaker reset <host>` force-closes the breaker (CLI only).
 - MCP read-only tool `limits_status` (spec name `limits.status`). Breaker
   reset stays CLI-only and is a documented parity exception.

@@ -18,6 +18,8 @@
  *   enrich_run     = enrich.run
  *   metrics_get    = metrics.get
  *   login_pending  = login.pending
+ *   browse_read    = browse.read  (read-only page read through a saved profile)
+ *   browse_hosts   = browse.hosts (which hosts are shareable, and why not)
  *
  * CLI commands with no tool (documented exceptions): login, serve, eval and
  * prune. prune is deliberately CLI-only: it tombstone-deletes and keeps its

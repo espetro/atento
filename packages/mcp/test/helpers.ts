@@ -11,9 +11,11 @@ import { openStore, type SqliteStore } from '@linkinbox/db'
 import {
   createCollectingLogger,
   normalizeUrl,
+  type BrowseFn,
   type EnrichFn,
   type ExtractFn,
   type Link,
+  type ShareConfig,
 } from '@linkinbox/core'
 import { DEFAULT_TTL_CONFIG, type TtlConfig } from '@linkinbox/core'
 import { createMcpServer } from '../src/index.js'
@@ -31,12 +33,16 @@ export async function createHarness(options: {
   extractFn?: ExtractFn
   enrichFn?: EnrichFn
   ttl?: Partial<TtlConfig>
+  /** The share allowlist for the browse tools (default: nothing shared). */
+  share?: ShareConfig
+  /** The injected read primitive for browse_read. */
+  browseFn?: BrowseFn
 } = {}): Promise<TestHarness> {
   const dir = mkdtempSync(join(tmpdir(), 'linkinbox-mcp-'))
   const store = await openStore({ path: join(dir, 'links.db') })
   const logger = createCollectingLogger()
   const ttl: TtlConfig = { ...DEFAULT_TTL_CONFIG, ...options.ttl }
-  const context: McpContext = { store, ttl, logger }
+  const context: McpContext = { store, ttl, logger, share: options.share ?? { hosts: [] } }
 
   const deps: McpDeps = {
     ctx: async () => context,
@@ -48,6 +54,8 @@ export async function createHarness(options: {
       options.enrichFn !== undefined
         ? async () => options.enrichFn!
         : async () => async () => ({ ok: false, error: 'enrichment not configured in test' }),
+    browseFn: options.browseFn !== undefined ? async () => options.browseFn! : undefined,
+    hasProfile: async (host) => (await store.getProfile(host)) !== null,
   }
 
   const server = createMcpServer(deps)

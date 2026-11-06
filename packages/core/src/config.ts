@@ -24,6 +24,15 @@ import {
   DEFAULT_PACING,
   type PacingConfig,
 } from './resilience/human-pacing.js'
+import {
+  browserFromToml,
+  type BrowserConfig,
+} from './browser-config.js'
+import {
+  DEFAULT_SHARE_CONFIG,
+  shareFromToml,
+  type ShareConfig,
+} from './share-config.js'
 
 /**
  * Parse the `[ttl]` table out of raw TOML text. The only TOML the pipeline
@@ -216,7 +225,18 @@ export function parsePacingConfig(tomlText: string): PacingConfig {
   return pacingFromToml(parseToml(tomlText) as TomlTable)
 }
 
+/** Parse the `[share]` table out of raw TOML text. */
+export function parseShareConfig(tomlText: string): ShareConfig {
+  return shareFromToml(parseToml(tomlText) as unknown as Record<string, unknown>)
+}
 
-export { DEFAULT_LIMITS, DEFAULT_LOGIN_CONFIG, ORDINARY_LIMIT, WALLED_GARDEN_LIMIT, DEFAULT_CAPTURE_CONFIG }
+/** Parse the `[browser]` table out of raw TOML text. */
+export function parseBrowserConfig(tomlText: string): BrowserConfig {
+  return browserFromToml(parseToml(tomlText) as TomlTable)
+}
 
-export type { LimitsConfig, LoginConfig, CaptureConfig, PacingConfig }
+
+
+export { DEFAULT_LIMITS, DEFAULT_LOGIN_CONFIG, ORDINARY_LIMIT, WALLED_GARDEN_LIMIT, DEFAULT_CAPTURE_CONFIG, DEFAULT_SHARE_CONFIG }
+
+export type { LimitsConfig, LoginConfig, CaptureConfig, PacingConfig, ShareConfig, BrowserConfig }

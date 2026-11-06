@@ -145,7 +145,9 @@ export function hoursGate(
   if (inWindow) return { open: true, opensInMs: 0 }
   const d = new Date(nowMs)
   const msIntoHour = d.getMinutes() * 60_000 + d.getSeconds() * 1000 + d.getMilliseconds()
-  const hoursUntil = start < end ? start - hour : (start - hour + 24) % 24
+  // The window may open tomorrow: when the start hour is already past, the
+  // wait wraps around the clock, exactly like the overnight branch.
+  const hoursUntil = (start - hour + 24) % 24
   const opensAt = nowMs - msIntoHour + hoursUntil * HOUR_MS
   return { open: false, opensInMs: Math.max(0, opensAt - nowMs) }
 }

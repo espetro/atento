@@ -18,7 +18,7 @@ linkinbox triage <id> --action read_now|schedule|archive|discard
 linkinbox triage --batch --filter 'status:inbox category:job' --action archive
 linkinbox sweep [--apply]           dry-run proposal of expired items, grouped by category
 linkinbox prune [--apply]           hard-delete past delete_after_days (confirmation prompt)
-linkinbox login <host>              agent-browser headed login, profile saved for reuse
+linkinbox login <host>              headed browser login with the host's engine, profile saved for reuse
 linkinbox login list                saved browser profiles
 linkinbox login clear <host>        delete a saved profile
 linkinbox metrics [--last 7d]       per-stage counts, durations, tokens, cost
@@ -39,7 +39,18 @@ default_days = 30
 by_category = { job = 45, event = 7 }
 archive_after_days = 90
 delete_after_days = 365
+
+[browser]
+# Which browser engine a host extracts (and logs in) with.
+engine = "agent-browser"              # or "patchright"
+# Hosts that always use the stealth engine.
+stealth_hosts = ["app.devin.ai", "*.usebrioso.com"]
+# Chromium binary for either engine.
+executable_path = "/Applications/BrowserOS.app/Contents/MacOS/browseros"
 ```
+
+The `[browser]` table and the stealth engine are documented in
+`docs/stealth.md`.
 
 Environment overrides:
 

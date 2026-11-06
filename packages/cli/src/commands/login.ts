@@ -23,6 +23,7 @@ import { createInterface } from 'node:readline'
 import type { Command } from 'commander'
 import type { CliContext } from '../context.js'
 import { renderTable } from '../render.js'
+import { runPatchrightLogin, hostUsesPatchright, type PatchrightLoginLaunch, type WaitForEnter } from '../patchright-login.js'
 import {
   buildLoginReport,
   loadPendingLogins,
@@ -45,6 +46,11 @@ export interface LoginResult {
   profilePath: string
   /** Exit code of the spawned browser (-1 when it could not start). */
   code: number
+  /**
+   * How many parked links of the host were requeued for the next extract
+   * run. Zero when nothing was parked.
+   */
+  requeued: number
 }
 
 export type { LoginReport } from '../pending-logins.js'
@@ -64,6 +70,10 @@ export type SelectedHosts = { selected: string[]; quit: boolean }
 export interface LoginFlowDeps {
   loadLogins?: LoadPendingLogins
   launch?: LoginLauncher
+  /** Injected patchright launcher for stealth hosts (tests). */
+  patchrightLaunch?: PatchrightLoginLaunch
+  /** Injected "wait for Enter" prompt for the patchright flow (tests). */
+  waitForEnter?: WaitForEnter
   pick?: LoginPicker
   /** Injected stdin/stdout TTY check (tests). Defaults to process streams. */
   isInteractive?: () => boolean
@@ -93,11 +103,26 @@ function waitForEnter(prompt: string): Promise<void> {
 export async function runLogin(
   ctx: CliContext,
   host: string,
-  options: { url?: string; command?: string; launch?: LoginLauncher } = {},
+  options: {
+    url?: string
+    command?: string
+    launch?: LoginLauncher
+    /** Injected patchright launcher (tests). */
+    patchrightLaunch?: PatchrightLoginLaunch
+    /** Injected "wait for Enter" prompt (tests). */
+    waitForEnter?: WaitForEnter
+  } = {},
 ): Promise<LoginResult> {
   const normalizedHost = normalizeHost(host)
   const profilePath = profileDirFor(ctx.config.profilesDir, normalizedHost)
   const url = options.url ?? `https://${normalizedHost}/`
+
+  // The engine follows the config: a host the pipeline extracts with
+  // patchright logs in through the same engine, so the saved session is the
+  // one the extractor reuses.
+  if (hostUsesPatchright(ctx.config.browser, normalizedHost)) {
+    return await runPatchrightLoginFlow(ctx, normalizedHost, url, options)
+  }
 
   const command = options.command ?? AGENT_BROWSER
   const launch: LoginLauncher =
@@ -120,12 +145,50 @@ export async function runLogin(
   if (code === -1) {
     console.error(`could not start the login browser; is agent-browser installed?`)
     process.exitCode = 1
-    return { host: normalizedHost, profilePath, code }
+    return { host: normalizedHost, profilePath, code, requeued: 0 }
   }
 
   const profile = await ctx.store.upsertProfile({ host: normalizedHost, path: profilePath })
   console.log(`saved profile for ${profile.host} at ${profile.path}`)
-  return { host: profile.host, profilePath: profile.path, code }
+  return {
+    host: profile.host,
+    profilePath: profile.path,
+    code,
+    requeued: await requeueHostLinks(ctx, profile.host),
+  }
+}
+
+/**
+ * The patchright login path: a headed persistent context, wait for Enter,
+ * close cleanly so the cookies persist, then save the profile row exactly
+ * like the agent-browser flow does. Returns code -1 when the browser could
+ * not start, so callers treat it like the agent-browser failure path.
+ */
+async function runPatchrightLoginFlow(
+  ctx: CliContext,
+  host: string,
+  url: string,
+  options: { patchrightLaunch?: PatchrightLoginLaunch; waitForEnter?: WaitForEnter } = {},
+): Promise<LoginResult> {
+  const result = await runPatchrightLogin(host, {
+    profilesDir: ctx.config.profilesDir,
+    url,
+    executablePath: ctx.config.browser.executablePath,
+    ...(options.patchrightLaunch ? { launch: options.patchrightLaunch } : {}),
+    ...(options.waitForEnter ? { waitForEnter: options.waitForEnter } : {}),
+  })
+  if (!result.ok) {
+    process.exitCode = 1
+    return { host, profilePath: result.profilePath, code: -1, requeued: 0 }
+  }
+  const profile = await ctx.store.upsertProfile({ host, path: result.profilePath })
+  console.log(`saved profile for ${profile.host} at ${profile.path}`)
+  return {
+    host: profile.host,
+    profilePath: profile.path,
+    code: 0,
+    requeued: await requeueHostLinks(ctx, profile.host),
+  }
 }
 
 /**
@@ -281,12 +344,17 @@ export async function runLoginFlow(
   let logged = 0
   let requeued = 0
   for (const host of choice.selected) {
-    const result = await runLogin(ctx, host, { launch: browser })
+    const result = await runLogin(ctx, host, {
+      launch: browser,
+      ...(deps.patchrightLaunch ? { patchrightLaunch: deps.patchrightLaunch } : {}),
+      ...(deps.waitForEnter ? { waitForEnter: deps.waitForEnter } : {}),
+    })
     if (result.code === -1) continue
     logged += 1
-    const n = await requeueHostLinks(ctx, result.host)
-    if (n > 0) console.log(`requeued ${n} link${n === 1 ? '' : 's'} for ${result.host}`)
-    requeued += n
+    if (result.requeued > 0) {
+      console.log(`requeued ${result.requeued} link${result.requeued === 1 ? '' : 's'} for ${result.host}`)
+    }
+    requeued += result.requeued
   }
 
   const remaining = buildLoginReport(await load(ctx.store, pendingPolicy(ctx)))
