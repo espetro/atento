@@ -55,6 +55,12 @@ export type ExtractFn = (url: string) => Promise<{
   status?: number
   /** The raw HTML, for login-wall detection. */
   html?: string
+  /**
+   * Why the extraction produced no content, when it is known: the fetch
+   * failed, the command timed out. The stage maps it to a park reason
+   * (a timeout, a bot block, a JS shell).
+   */
+  error?: string
 }>
 
 /** Stage names, used as the `stage` column in `runs` and `metrics`. */

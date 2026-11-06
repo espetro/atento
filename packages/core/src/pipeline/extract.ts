@@ -24,7 +24,12 @@ import {
   hostOf,
   releaseDueDeferred,
 } from './resilience.js'
-import { reconcileParkedLinks } from './reconcile.js'
+import { reconcileParkedLinks, normalizeParkReasons } from './reconcile.js'
+import {
+  classifyParkOutcome,
+  parseParkReason,
+  type ParkReason,
+} from '../pipeline/park-reason.js'
 import { isMediaLink, type MediaFn, type MediaRun } from '../media.js'
 import { DEFAULT_MAX_ATTEMPTS } from './resilience-options.js'
 
@@ -149,6 +154,9 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
         now: startedAt,
       })
     : { discarded: 0, reviewOnly: 0 }
+  // Legacy rows parked before the reason classes existed get the explicit
+  // `unknown` stamp, so the overview counts them in the right bucket.
+  const stamped = await normalizeParkReasons(store)
   if (reconcile.discarded > 0 || reconcile.reviewOnly > 0) {
     await store.addMetric({
       timestamp: startedAt,
@@ -312,6 +320,7 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
         : `canary_flagged:${(await store.getHostState(host))?.trialReason ?? 'blocked'}`
       const decision = await deferOrError(
         store, link, 'extract', flagReason, 60 * 60 * 1000, maxAttempts, now(),
+        parseParkReason(flagReason),
       )
       logger.info('{host} is flagged ({reason}): {url} deferred', {
         host,
@@ -382,6 +391,7 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
         }
         const decision = await deferOrError(
           store, link, 'extract', result.reason, result.retryAfterMs, maxAttempts, now(),
+          parseParkReason(result.reason),
         )
         if (decision.errored) {
           errorCount += 1
@@ -417,6 +427,7 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
         finalUrl?: string
         status?: number
         html?: string
+        error?: string
       }
 
       // A 404/410 is only "gone" for an ordinary open host. A flagged host,
@@ -483,12 +494,23 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
         bumpDeferral(host)
         blockedHosts.add(host)
         const reason = `blocked:${raw.blockReason ?? LOGIN_WALL_REASON}`
+        // The park class of the block: a captcha or a challenge is a bot
+        // block, a login wall is a login wall.
+        const parkReason = classifyParkOutcome({
+          markdown: raw.markdown,
+          html: raw.html,
+          status: raw.status,
+          blocked: true,
+          blockReason: raw.blockReason,
+        })
         const waitMs = await openBreakerForHost(guard, host, now().getTime())
         retryAfter = Math.max(retryAfter, waitMs)
         await flagHost(store, host, now().getTime(), raw.blockReason ?? LOGIN_WALL_REASON, true)
         canaryTrials[host] = 'flagged'
         canaryReasons.set(host, raw.blockReason ?? LOGIN_WALL_REASON)
-        const decision = await deferOrError(store, link, 'extract', reason, waitMs, maxAttempts, now())
+        const decision = await deferOrError(
+          store, link, 'extract', reason, waitMs, maxAttempts, now(), parkReason,
+        )
         logger.warn('extraction blocked on {host} (link {linkId}): run `linkinbox login {host}`', {
           host,
           linkId: link.id,
@@ -554,11 +576,25 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
       if (needsBrowser) {
         needsBrowserCount += 1
         bump(needsBrowserByExtractor, extractor)
+        // The park class: a page with no readable content is a JS shell, a
+        // failed fetch is a timeout, an error status is an http error, a
+        // challenge page is a bot block. The login wall above already
+        // classified itself.
+        const parkReason = classifyParkOutcome({
+          markdown,
+          html: raw.html,
+          status: raw.status,
+          error: raw.error,
+        })
         await store.setExtractedContent(link.id, markdown, true, now())
         await store.applyEvent(link.id, {
           type: 'NEEDS_BROWSER',
           host,
-          reason: wall ?? undefined,
+          // The reason string names the class, so the plain reason column
+          // is readable too. An unknown class carries no reason: the row
+          // parses as unknown.
+          reason: parkReason === 'unknown' ? undefined : parkReason,
+          reasonClass: parkReason,
           at: now().toISOString(),
         })
         logger.warn('extraction needs a browser for {url} (link {linkId}, extractor {extractor})', {
@@ -859,7 +895,7 @@ async function openHost(store: Store, host: string, now: number): Promise<void> 
 
 /**
  * Park a link behind a login wall: the link moves to `needs_browser` with
- * the reason `login_wall` in its state data.
+ * the reason `login_wall` in its state data and the class `login_wall`.
  */
 async function recordLoginWall(
   store: Store,
@@ -873,6 +909,7 @@ async function recordLoginWall(
     type: 'NEEDS_BROWSER',
     host,
     reason,
+    reasonClass: 'login_wall',
     at: now.toISOString(),
   })
   if (!outcome.ok) {
@@ -886,8 +923,9 @@ async function recordLoginWall(
 
 /**
  * Park a review-only link: the link moves to `needs_browser` with the reason
- * `review_only` in its state data, so the owner sees it and reads it by
- * hand. Nothing is fetched and no browser is attempted.
+ * `review_only` in its state data and the class `review_only`, so the owner
+ * sees it and reads it by hand. Nothing is fetched and no browser is
+ * attempted.
  */
 async function parkReviewOnly(
   store: Store,
@@ -900,6 +938,7 @@ async function parkReviewOnly(
     type: 'NEEDS_BROWSER',
     host,
     reason: REVIEW_ONLY_REASON,
+    reasonClass: 'review_only',
     at: now.toISOString(),
   })
   if (!outcome.ok) return

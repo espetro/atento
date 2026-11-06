@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PARK_REASONS } from '../pipeline/park-reason.js'
 
 /**
  * The linkinbox finite state machine: events.
@@ -43,6 +44,8 @@ export const needsBrowserEvent = baseEvent.extend({
   host: z.string().optional(),
   /** Why a browser is needed, e.g. `login_wall` or `private_404`. */
   reason: z.string().optional(),
+  /** The park reason class decided by the extract stage. */
+  reasonClass: z.enum(PARK_REASONS).optional(),
 })
 export const extractFailedEvent = baseEvent.extend({
   type: z.literal('EXTRACT_FAILED'),
@@ -56,6 +59,8 @@ export const deferEvent = baseEvent.extend({
   nextAttemptAt: iso,
   attempts: z.number().int().min(0),
   reason: z.string(),
+  /** The park reason class, when the deferral parks the link. */
+  reasonClass: z.enum(PARK_REASONS).optional(),
 })
 export const enrichStartedEvent = baseEvent.extend({
   type: z.literal('ENRICH_STARTED'),
