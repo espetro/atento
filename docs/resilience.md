@@ -292,6 +292,10 @@ hours_end = 23
 |---|---|---|
 | `allow` | `[]` | The hosts the pipeline may log in to. Empty means no restriction. |
 
+| `[share]` key | Default | Meaning |
+|---|---|---|
+| `hosts` | `[]` | The hosts another agent may READ through a saved profile (`linkinbox browse`, the MCP `browse_read` tool). Empty means nothing is shared. Same pattern syntax as the skip list. The reads spend the host budget above, and nothing is written to the link store. |
+
 | `[pacing]` key | Default | Meaning |
 |---|---|---|
 | `dwell_median_s` | 20 | Median dwell per page; also the spacing baseline. |
@@ -314,6 +318,10 @@ hours_end = 23
   owner to review) and `reconciledCount` (links the sweep moved).
 - `linkinbox status` lists per-host budget remaining, breaker state and
   reopen time; `--json` for machine consumption.
+- `linkinbox browse <url>` reads one page through the saved profile of its
+  host, read-only, for the hosts in `[share] hosts`. MCP tools
+  `browse_read` and `browse_hosts` expose the same surface. The reads go
+  through the same guard, so they spend the same host budget.
 - `linkinbox breaker reset <host>` force-closes the breaker (CLI only).
 - MCP read-only tool `limits_status` (spec name `limits.status`). Breaker
   reset stays CLI-only and is a documented parity exception.

@@ -133,3 +133,17 @@ Cleaning dispatches on hostname:
 - `www.instagram.com`: the left-nav words, the trailing footer with the language list and the duplicate caption echo are dropped; author, caption, hashtags and comment/like counts are kept.
 
 Passthrough rule: cleaning is pure and never throws. Any other hostname is returned unchanged, and when a site's anchor is not found in the page the input is returned unchanged. It never returns empty output for non-empty input, and it never removes real content to hit a size target.
+
+## Sharing the saved sessions with other agents
+
+The saved profiles are usable from outside the pipeline: `linkinbox browse <url>` in the terminal, and the MCP tools `browse_read` and `browse_hosts` on the linkinbox MCP server, read one page through the saved profile of its host and return markdown. The full contract for agents, including the refusals and the pacing rules, lives in the `linkinbox-browser` skill at `~/.agents/skills/linkinbox-browser/SKILL.md`.
+
+### The trust model
+
+Three facts carry the whole design, and each one is enforced in code, not in a comment:
+
+1. **The profile cookies never leave the machine.** Nothing on the browse surface reads, exports or logs the profile directory. The engines run it locally; the only output is the page markdown. The store records just the profile path, as with `login`.
+2. **The hosts allowlist gates everything.** Only hosts listed in `[share] hosts` in `~/.linkinbox/config.toml` may be read, matched with the same exact-or-`*.suffix` patterns as the skip list. The list ships EMPTY, so a fresh install shares nothing and every browse call is refused with `not_shared` until the owner opts in host by host. A listed host also needs a saved profile from `linkinbox login`; a read without one is refused with `no_profile`.
+3. **The surface is read-only.** The exposed primitive is `read(url)`. No click, type, form, hover or navigation API exists on the browse path: the reader drives the browser with exactly the commands a page load needs (open, dwell, scroll a human step, read, close). The broader agent-browser toolset is deliberately not reachable from it.
+
+A browse is also paced exactly like a pipeline read: the shared guard applies the human pacing profile, the per-host daily cap (default 40 per rolling day), the working-hours window and the circuit breaker, so an outside agent cannot spend the account's budget faster than the pipeline would. Nothing a browse reads is written to the link store; the only persisted state is the host budget in `host_state`, shared with extraction on purpose. When a host is done being shared, removing it from `[share] hosts` closes the door; `linkinbox login clear <host>` deletes the profile itself.
