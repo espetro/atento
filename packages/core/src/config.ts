@@ -236,11 +236,6 @@ export function parseBrowserConfig(tomlText: string): BrowserConfig {
 }
 
 
-/** Parse the `[browser]` table out of raw TOML text. */
-export function parseBrowserConfig(tomlText: string): BrowserConfig {
-  return browserFromToml(parseToml(tomlText) as TomlTable)
-}
-
 
 export { DEFAULT_LIMITS, DEFAULT_LOGIN_CONFIG, ORDINARY_LIMIT, WALLED_GARDEN_LIMIT, DEFAULT_CAPTURE_CONFIG, DEFAULT_SHARE_CONFIG }
 
