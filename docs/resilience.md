@@ -203,6 +203,32 @@ gets the reason `review_only`. The sweep is idempotent: running it twice
 changes nothing. When it changed something it writes one `reconciled` metric
 row with the `discarded` and `review_only` counts.
 
+### The login walk
+
+`linkinbox login --all` walks the pending-login hosts one by one and is what
+a bare `linkinbox login` in a TTY offers too (answer `a` at the picker). For
+each host it prints `n of m: <host> (<k> links)` in pending order (most
+parked links first; review-only and skip-listed hosts are excluded exactly as
+in the pending list), runs that host's engine login flow (agent-browser, or
+patchright for the stealth hosts, chosen by the `[browser]` config), requeues
+the host's parked links through the RETRY path, and continues to the next
+host. At the prompt, Enter proceeds, `s` skips the host for the rest of the
+run, and `q` stops the walk. One summary line is printed at the end, followed
+by the remaining pending list. The launcher and the prompt are injected in
+tests, so the walk itself never touches a browser or the network.
+
+### The parked requeue backfill
+
+`linkinbox requeue --parked [--host <host>]` is a backfill for parked links:
+every `needs_browser` link (and every deferred link whose extract-stage
+backoff is still pending) moves back to the `created` queue through the
+existing RETRY event, so the next extract run's auto-escalation reprocesses
+them with the stealth engine. Hosts the policy protects are skipped: the
+skip list, the review list, loopback hosts and login-gated hosts the
+`[login] allow` list does not cover. With `--host` the backfill is restricted
+to one host. It prints one count per host and a total; it never fetches
+anything itself.
+
 ### The pending login list
 
 `linkinbox login` (and the MCP tool `login_pending`) lists the hosts that
