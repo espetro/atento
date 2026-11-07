@@ -20,20 +20,9 @@ import { existsSync, rmSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import type { Command } from 'commander'
 import type { CliContext } from '../context.js'
-import { hostPolicy } from '@linkinbox/app'
+import { hostPolicy, type PatchrightLaunch } from '@linkinbox/app'
+import { browserProfileDir } from '@linkinbox/core'
 import { renderTable } from '../render.js'
-import {
-  browserAdapterConfig,
-  browserProfileDir,
-  migrateBrowserProfiles,
-  normalizeBrowserConfig,
-  remapLegacyProfilePath,
-  resolveBrowserAdapter,
-  type BrowserConfig,
-  type SessionLoginPort,
-} from '@linkinbox/core'
-import { createAgentBrowserAdapter, createBrowserRegistry, createPatchrightAdapter } from '@linkinbox/browser'
-import type { PatchrightLoginLaunch, WaitForEnter } from '../patchright-login.js'
 import {
   buildLoginReport,
   loadPendingLogins,
@@ -77,11 +66,14 @@ export type LoginPicker = (
   done: LoginReport['done'],
 ) => Promise<SelectedHosts | null>
 
+/** The injected "wait for Enter" prompt, so tests never block on stdin. */
+export type WaitForEnter = (prompt: string) => Promise<void>
+
 export interface LoginFlowDeps {
   loadLogins?: LoadPendingLogins
   launch?: LoginLauncher
   /** Injected patchright launcher for stealth hosts (tests). */
-  patchrightLaunch?: PatchrightLoginLaunch
+  patchrightLaunch?: PatchrightLaunch
   /** Injected "wait for Enter" prompt for the patchright flow (tests). */
   waitForEnter?: WaitForEnter
   pick?: LoginPicker
@@ -106,8 +98,10 @@ function waitForEnter(prompt: string): Promise<void> {
  *
  * M1: the engine is no longer an if/else — the `[browser]` registry
  * resolves the login adapter for the host (host mapping -> login
- * default), and the adapter's SessionLoginPort runs the flow. Test seams
- * (`launch`, `patchrightLaunch`, `waitForEnter`) map onto the ports.
+ * default), and the adapter's SessionLoginPort runs the flow. The use
+ * case itself lives in the app layer (`app.loginInteractive`); this
+ * wrapper maps the CLI's seams (`launch`, `patchrightLaunch`,
+ * `waitForEnter`) onto it and renders the outcome.
  */
 export async function runLogin(
   ctx: CliContext,
@@ -117,132 +111,31 @@ export async function runLogin(
     command?: string
     launch?: LoginLauncher
     /** Injected patchright launcher (tests). */
-    patchrightLaunch?: PatchrightLoginLaunch
+    patchrightLaunch?: PatchrightLaunch
     /** Injected "wait for Enter" prompt (tests). */
     waitForEnter?: WaitForEnter
   } = {},
 ): Promise<LoginResult> {
-  const normalizedHost = normalizeHost(host)
-  const browser = normalizeBrowserConfig(ctx.config.browser)
-  await migrateStoredBrowserProfiles(ctx, browser)
-  const adapterId = resolveBrowserAdapter(browser, 'login', normalizedHost)
-  const profilePath = profileDirFor(ctx.config.profilesDir, normalizedHost, adapterId)
-
-  const port = loginPortFor(ctx, normalizedHost, adapterId, browser, options)
-  if (!port) {
-    console.error(`adapter "${adapterId}" has no login port; it cannot capture a session`)
-    process.exitCode = 1
-    return { host: normalizedHost, profilePath, code: -1, requeued: 0 }
-  }
-
-  const result = await port.login(
-    normalizedHost,
-    { host: normalizedHost, adapterId, path: profilePath },
-    { waitForUser: options.waitForEnter ?? waitForEnter },
-    options.url,
-  )
-
-  if (!result.ok) {
-    if (result.detail) console.error(result.detail)
-    process.exitCode = 1
-    return { host: normalizedHost, profilePath, code: -1, requeued: 0 }
-  }
-
-  const profile = await ctx.store.upsertProfile({ host: normalizedHost, path: profilePath })
-  console.log(`saved profile for ${profile.host} at ${profile.path}`)
-  return {
-    host: profile.host,
-    profilePath: profile.path,
-    code: 0,
-    requeued: await requeueHostLinks(ctx, profile.host),
-  }
-}
-
-/**
- * The SessionLoginPort for one host's resolved login adapter. Test seams
- * wrap the built-in ports; cdp-attach and external adapters come straight
- * from the registry.
- */
-function loginPortFor(
-  ctx: CliContext,
-  host: string,
-  adapterId: string,
-  browser: BrowserConfig,
-  options: {
-    command?: string
-    launch?: LoginLauncher
-    patchrightLaunch?: PatchrightLoginLaunch
-  },
-): SessionLoginPort | undefined {
-  const adapterConfig = browserAdapterConfig(browser, adapterId)
-  const executablePath =
-    (typeof adapterConfig?.options['executablePath'] === 'string'
-      ? (adapterConfig.options['executablePath'] as string)
-      : undefined) ?? browser.executablePath
-
-  if (adapterConfig?.kind === 'agent-browser') {
-    if (options.launch) {
-      // The legacy launcher seam: it owns the whole headed flow and
-      // resolves the exit code (-1 = could not start).
-      const launch = options.launch
-      return {
-        id: adapterId,
-        async login(_host, profile) {
-          const code = await launch(host, profile.path)
-          return { ok: code !== -1, ...(code !== 0 ? { detail: `exit code ${code}` } : {}) }
-        },
-        async verify() {
-          return false
-        },
-      }
-    }
-    return createAgentBrowserAdapter({
-      id: adapterId,
-      profilesDir: ctx.config.profilesDir,
-      ...(options.command ? { command: options.command } : {}),
-      ...(executablePath ? { executablePath } : {}),
-    }).login
-  }
-
-  if (adapterConfig?.kind === 'patchright') {
-    return createPatchrightAdapter({
-      id: adapterId,
-      profilesDir: ctx.config.profilesDir,
-      ...(options.patchrightLaunch ? { launch: options.patchrightLaunch } : {}),
-      ...(executablePath ? { executablePath } : {}),
-    }).login
-  }
-
-  // cdp-attach (login is a no-op + verify) and external plugins resolve
-  // through the registry like every other adapter.
-  const registry = createBrowserRegistry(browser, {
-    profilesDir: ctx.config.profilesDir,
+  const prompt = options.waitForEnter ?? waitForEnter
+  const result = await ctx.app.loginInteractive({
+    host,
+    ui: { waitForUser: (message) => prompt(message) },
+    ...(options.url !== undefined ? { url: options.url } : {}),
+    ...(options.command !== undefined ? { command: options.command } : {}),
+    ...(options.launch !== undefined ? { launch: options.launch } : {}),
+    ...(options.patchrightLaunch !== undefined
+      ? { patchrightLaunch: options.patchrightLaunch }
+      : {}),
   })
-  return registry.loginFor(host)
-}
 
-/**
- * The one-time profile migration plus the stored-path rewrite, run before
- * a login so the session lands where the extractors will look for it.
- */
-async function migrateStoredBrowserProfiles(ctx: CliContext, browser: BrowserConfig): Promise<void> {
-  try {
-    migrateBrowserProfiles(ctx.config.profilesDir, browser, (m) =>
-      ctx.logger.info(m),
-    )
-    for (const profile of await ctx.store.listProfiles()) {
-      const next = remapLegacyProfilePath(ctx.config.profilesDir, browser, profile.path)
-      if (next === undefined || next === profile.path) continue
-      // Rewrite whenever the migrated target exists: the legacy source
-      // (<profiles>/<host>) remains as the parent dir, so its existence
-      // proves nothing.
-      if (existsSync(next)) {
-        await ctx.store.upsertProfile({ host: profile.host, path: next })
-      }
-    }
-  } catch {
-    // Best effort: a migration failure must never block a login.
+  if (result.code !== 0) {
+    if (result.detail !== undefined) console.error(result.detail)
+    process.exitCode = 1
+    return result
   }
+
+  console.log(`saved profile for ${result.host} at ${result.profilePath}`)
+  return result
 }
 
 /**
@@ -272,7 +165,7 @@ export type WalkPrompt = (host: string, index: number, total: number) => Promise
 export interface LoginWalkDeps {
   loadLogins?: LoadPendingLogins
   launch?: LoginLauncher
-  patchrightLaunch?: PatchrightLoginLaunch
+  patchrightLaunch?: PatchrightLaunch
   waitForEnter?: WaitForEnter
   prompt?: WalkPrompt
 }

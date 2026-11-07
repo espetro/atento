@@ -19,7 +19,12 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 import { openStore } from '@linkinbox/db'
 import { importFile, type ImportResult } from '@linkinbox/importers'
-import { createBrowserRegistry } from '@linkinbox/browser'
+import {
+  createAgentBrowserAdapter,
+  createBrowserRegistry,
+  createPatchrightAdapter,
+} from '@linkinbox/browser'
+import type { PatchrightLaunch } from '@linkinbox/extractors'
 import {
   applyPrune,
   applySweep,
@@ -56,9 +61,13 @@ import {
   triage,
   linkHistory,
   LLM_KEY,
+  browserAdapterConfig,
+  browserProfileDir,
+  hostOfUrl,
   migrateBrowserProfiles,
   noopLogger,
   remapLegacyProfilePath,
+  resolveBrowserAdapter,
   DEFAULT_SERVER_CONFIG,
   type AsrFn,
   type BrowseFn,
@@ -101,6 +110,8 @@ import {
   type RetryHeadlessResult,
   type Run,
   type ServerConfig,
+  type SessionLoginPort,
+  type SessionLoginUi,
   type ShareConfig,
   type ShareHostEntry,
   type Store,
@@ -384,6 +395,46 @@ export interface BrowserAdaptersInfo {
   escalate: string[]
 }
 
+/** Options for the interactive login use case (`loginInteractive`). */
+export interface InteractiveLoginOptions {
+  /** Host to log in to; a bare host or URL, normalized before use. */
+  host: string
+  /** Landing URL override; adapters that cannot honour it may ignore it. */
+  url?: string
+  /**
+   * The prompt seam: while the headed browser is open the adapter calls
+   * `ui.waitForUser` and the CALLER decides how to wait (the CLI reads
+   * stdin; the app never does IO prompting itself).
+   */
+  ui: SessionLoginUi
+  /** agent-browser command override for the resolved login port. */
+  command?: string
+  /**
+   * Legacy whole-flow launcher seam (tests, and the CLI's interactive
+   * walk): it owns the headed flow for the resolved agent-browser
+   * adapter and resolves an exit code (-1 = could not start).
+   */
+  launch?: (host: string, profilePath: string) => Promise<number>
+  /** Patchright launcher seam forwarded to the patchright adapter (tests). */
+  patchrightLaunch?: PatchrightLaunch
+}
+
+/** Outcome of `loginInteractive`. */
+export interface InteractiveLoginResult {
+  host: string
+  profilePath: string
+  /** 0 on success, -1 on failure (no login port, or the port refused). */
+  code: number
+  /** How many of the host's parked links were requeued for the next extract run. */
+  requeued: number
+  /** Failure detail for the driving adapter to print; unset on success. */
+  detail?: string
+}
+
+// Re-exported so driving adapters can type the login seams without
+// reaching into the adapter packages themselves.
+export type { PatchrightLaunch } from '@linkinbox/extractors'
+
 /**
  * Read-only config summary for the settings UI (`GET /api/config`). Only
  * booleans and names leave the process — token VALUES never do.
@@ -551,6 +602,14 @@ export interface LinkinboxOps {
   // ---- login / browse / capture ----------------------------------------
   /** The pending-logins report (read-only). */
   loginPending(policy?: PendingLoginPolicy): Promise<LoginReport>
+  /**
+   * Interactive browser login for one host: resolve the `[browser]` login
+   * adapter, run its SessionLoginPort headed against the host's profile
+   * directory (`<profilesDir>/<host>/<adapterId>`), store the profile and
+   * requeue the host's parked links. `ui` is the caller's prompt seam —
+   * the app never reads stdin itself.
+   */
+  loginInteractive(options: InteractiveLoginOptions): Promise<InteractiveLoginResult>
   /** Read one page through the host's saved profile (read-only). */
   browseRead(url: string, options?: Partial<BrowseOptions> & { share?: ShareConfig }): Promise<BrowseResult>
   /** Which saved profiles are shareable, and why not. */
@@ -567,6 +626,11 @@ export interface Linkinbox extends LinkinboxOps {
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+/** Bare host for a login target: strip scheme/path, lowercase. */
+function normalizeLoginHost(host: string): string {
+  return host.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '').toLowerCase()
 }
 
 /** Content type for an artifact file name, by extension. */
@@ -673,15 +737,12 @@ export function createLinkinboxOps(
   let profilesMigrated = false
 
   /**
-   * One-time browser profile migration (M1): move legacy
-   * <profiles>/<host> and <profiles>/<host>/patchright directories into
-   * the per-adapter <profiles>/<host>/<adapterId> layout and rewrite the
-   * stored profile paths to match. Idempotent; runs before the first
-   * browser-touching adapter is built.
+   * The one-time profile migration plus the stored-path rewrite, uncached.
+   * `loginInteractive` runs it on every call (exactly what the CLI did
+   * before the use case moved here); the lazy adapter builders run it
+   * once via ensureBrowserProfiles.
    */
-  async function ensureBrowserProfiles(): Promise<void> {
-    if (profilesMigrated || cfg.profilesDir === '') return
-    profilesMigrated = true
+  async function migrateStoredProfiles(): Promise<void> {
     try {
       migrateBrowserProfiles(cfg.profilesDir, cfg.browser, (m) => logger.info(m))
       for (const profile of await store.listProfiles()) {
@@ -695,8 +756,97 @@ export function createLinkinboxOps(
         }
       }
     } catch {
-      // Migration is best effort: a failure here must never block a run.
+      // Migration is best effort: a failure here must never block a login.
     }
+  }
+
+  /**
+   * One-time browser profile migration (M1): move legacy
+   * <profiles>/<host> and <profiles>/<host>/patchright directories into
+   * the per-adapter <profiles>/<host>/<adapterId> layout and rewrite the
+   * stored profile paths to match. Idempotent; runs before the first
+   * browser-touching adapter is built.
+   */
+  async function ensureBrowserProfiles(): Promise<void> {
+    if (profilesMigrated || cfg.profilesDir === '') return
+    profilesMigrated = true
+    await migrateStoredProfiles()
+  }
+
+  /**
+   * The SessionLoginPort for one host's resolved login adapter — the same
+   * resolution the CLI ran inline before the use case moved here. Test
+   * seams wrap the built-in ports; cdp-attach and external adapters come
+   * straight from the registry.
+   */
+  function loginPortFor(
+    host: string,
+    adapterId: string,
+    options: InteractiveLoginOptions,
+  ): SessionLoginPort | undefined {
+    const adapterConfig = browserAdapterConfig(cfg.browser, adapterId)
+    const executablePath =
+      (typeof adapterConfig?.options['executablePath'] === 'string'
+        ? (adapterConfig.options['executablePath'] as string)
+        : undefined) ?? cfg.browser.executablePath
+
+    if (adapterConfig?.kind === 'agent-browser') {
+      const launch = options.launch
+      if (launch) {
+        // The legacy launcher seam: it owns the whole headed flow and
+        // resolves the exit code (-1 = could not start).
+        return {
+          id: adapterId,
+          async login(_host, profile) {
+            const code = await launch(host, profile.path)
+            return { ok: code !== -1, ...(code !== 0 ? { detail: `exit code ${code}` } : {}) }
+          },
+          async verify() {
+            return false
+          },
+        }
+      }
+      return createAgentBrowserAdapter({
+        id: adapterId,
+        profilesDir: cfg.profilesDir,
+        ...(options.command ? { command: options.command } : {}),
+        ...(executablePath ? { executablePath } : {}),
+      }).login
+    }
+
+    if (adapterConfig?.kind === 'patchright') {
+      return createPatchrightAdapter({
+        id: adapterId,
+        profilesDir: cfg.profilesDir,
+        ...(options.patchrightLaunch ? { launch: options.patchrightLaunch } : {}),
+        ...(executablePath ? { executablePath } : {}),
+      }).login
+    }
+
+    // cdp-attach (login is a no-op + verify) and external plugins resolve
+    // through the registry like every other adapter.
+    const registry = createBrowserRegistry(cfg.browser, {
+      profilesDir: cfg.profilesDir,
+    })
+    return registry.loginFor(host)
+  }
+
+  /**
+   * Requeue a host's parked links: needs_browser -> created via the RETRY
+   * event, so the next extract run picks them up with the saved profile.
+   */
+  async function requeueParkedLinks(host: string): Promise<number> {
+    const links = await store.listByStates(['needs_browser'])
+    let requeued = 0
+    for (const link of links) {
+      if (hostOfUrl(link.url) !== host) continue
+      const outcome = await store.applyEvent(link.id, {
+        type: 'RETRY',
+        at: new Date().toISOString(),
+      })
+      if (outcome.ok) requeued += 1
+    }
+    return requeued
   }
 
   /** The createExtractFn options shared by the memoized and forced fns. */
@@ -1244,6 +1394,48 @@ export function createLinkinboxOps(
 
     loginPending(policy) {
       return loadLoginReport(store, policy)
+    },
+
+    async loginInteractive(options) {
+      const host = normalizeLoginHost(options.host)
+      await migrateStoredProfiles()
+      const adapterId = resolveBrowserAdapter(cfg.browser, 'login', host)
+      const profilePath = browserProfileDir(cfg.profilesDir, host, adapterId)
+
+      const port = loginPortFor(host, adapterId, options)
+      if (!port) {
+        return {
+          host,
+          profilePath,
+          code: -1,
+          requeued: 0,
+          detail: `adapter "${adapterId}" has no login port; it cannot capture a session`,
+        }
+      }
+
+      const result = await port.login(
+        host,
+        { host, adapterId, path: profilePath },
+        options.ui,
+        options.url,
+      )
+      if (!result.ok) {
+        return {
+          host,
+          profilePath,
+          code: -1,
+          requeued: 0,
+          ...(result.detail !== undefined ? { detail: result.detail } : {}),
+        }
+      }
+
+      const profile = await store.upsertProfile({ host, path: profilePath })
+      return {
+        host: profile.host,
+        profilePath: profile.path,
+        code: 0,
+        requeued: await requeueParkedLinks(profile.host),
+      }
     },
 
     async browseRead(url, options = {}) {

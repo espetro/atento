@@ -3,27 +3,35 @@
  * for Enter, close cleanly so the cookies persist, save the profile row and
  * requeue the host's parked links.
  *
- * Fakes only: the launcher, the prompt and the store are injected, so
- * nothing opens a browser and nothing touches the network.
+ * The flow itself lives in the app layer's `loginInteractive` use case and
+ * the patchright adapter's SessionLoginPort; these tests drive it through
+ * `runLogin` with an injected launcher. Fakes only: the launcher, the
+ * prompt and the store are injected, so nothing opens a browser and
+ * nothing touches the network.
  */
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
 import { capture, insertLink, tempDb, type TempDb } from './helpers.js'
 import { createContext, type CliContext } from '../src/context.js'
-import { runLogin, requeueHostLinks } from '../src/commands/login.js'
-import { runPatchrightLogin } from '../src/patchright-login.js'
+import { runLogin } from '../src/commands/login.js'
+import { loadConfig } from '../src/config.js'
 import { parseBrowserConfig } from '@linkinbox/core'
 import type { PatchrightContext, PatchrightPage } from '@linkinbox/extractors'
 
 async function contextFor(db: TempDb, browser?: string): Promise<CliContext> {
-  const ctx = await createContext({
-    env: { LINKINBOX_DB: db.path },
+  const env = { LINKINBOX_DB: db.path }
+  // The browser config must be in place when the app is built: the use
+  // cases resolve it once at construction, so a post-hoc ctx.config
+  // mutation would never reach them.
+  const config = loadConfig(env)
+  if (browser !== undefined) config.browser = parseBrowserConfig(browser)
+  return createContext({
+    env,
     store: db.store,
     quiet: true,
     logPath: join(db.dir, 'log.jsonl'),
+    config,
   })
-  if (browser !== undefined) ctx.config.browser = parseBrowserConfig(browser)
-  return ctx
 }
 
 /** Park a link in needs_browser the way the extract stage does. */
@@ -82,71 +90,6 @@ function fakeBrowser(): FakeBrowser {
   }
   return state
 }
-
-describe('runPatchrightLogin', () => {
-  it('opens a headed persistent context, waits for Enter and closes cleanly', async () => {
-    const browser = fakeBrowser()
-    const prompts: string[] = []
-    const result = await runPatchrightLogin('app.devin.ai', {
-      profilesDir: '/tmp/profiles',
-      launch: browser.launch,
-      waitForEnter: async (prompt) => {
-        prompts.push(prompt)
-      },
-      log: () => undefined,
-    })
-    expect(result.ok).toBe(true)
-    expect(result.profilePath).toBe('/tmp/profiles/app.devin.ai/patchright')
-    // Headed: the user has to see the window to log in.
-    expect(browser.calls[0]?.headless).toBe(false)
-    expect(browser.calls[0]?.dir).toBe('/tmp/profiles/app.devin.ai/patchright')
-    expect(browser.visited).toEqual(['https://app.devin.ai/'])
-    expect(prompts[0]).toContain('app.devin.ai')
-    // The context is closed, so the session is flushed to the profile.
-    expect(browser.closed).toBe(1)
-  })
-
-  it('navigates to a custom login url instead of the host root', async () => {
-    const browser = fakeBrowser()
-    const result = await runPatchrightLogin('app.devin.ai', {
-      profilesDir: '/tmp/profiles',
-      url: 'https://app.devin.ai/login?next=/settings',
-      launch: browser.launch,
-      waitForEnter: async () => undefined,
-      log: () => undefined,
-    })
-    expect(result.ok).toBe(true)
-    expect(browser.visited).toEqual(['https://app.devin.ai/login?next=/settings'])
-  })
-
-  it('passes the executable path to the launcher', async () => {
-    const browser = fakeBrowser()
-    await runPatchrightLogin('app.devin.ai', {
-      profilesDir: '/tmp/profiles',
-      executablePath: '/Applications/BrowserOS.app/Contents/MacOS/browseros',
-      launch: browser.launch,
-      waitForEnter: async () => undefined,
-      log: () => undefined,
-    })
-    expect(browser.calls[0]?.executablePath).toBe(
-      '/Applications/BrowserOS.app/Contents/MacOS/browseros',
-    )
-  })
-
-  it('never throws when the browser cannot start', async () => {
-    const messages: string[] = []
-    const result = await runPatchrightLogin('app.devin.ai', {
-      profilesDir: '/tmp/profiles',
-      launch: async () => {
-        throw new Error("Executable doesn't exist")
-      },
-      waitForEnter: async () => undefined,
-      log: (m) => messages.push(m),
-    })
-    expect(result.ok).toBe(false)
-    expect(messages.join('\n')).toContain("Executable doesn't exist")
-  })
-})
 
 describe('login with the patchright engine', () => {
   it('uses the patchright engine for a host in stealth_hosts', async () => {
