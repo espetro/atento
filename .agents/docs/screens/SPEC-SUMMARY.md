@@ -51,10 +51,12 @@ Implemented on `feat/m4b`. Notable resolutions/deviations:
 - Styling decision changed at implementation time: **daisyUI 5 retained as
   base + semantic classes**; Bits UI and Tailwind v4 dropped. Recorded in
   `screen-INDEX.txt` / `rubric.txt` / `references/tokens.md`.
-- `GET /api/browsers`, `GET /api/pair/code`, `POST /api/pair` added as thin
-  read/mint endpoints; settings ships read-only + pairing flow.
-- `state_data.frameable` now recorded by the extractor; Live tab honest
-  fallback retained.
+- `GET /api/browsers`, `GET /api/runs`, `GET /api/config` added as thin
+  read endpoints; `GET /api/pair/code` + `POST /api/pair` pre-existed and
+  are now consumed by settings. `POST /api/links/restore` added in fix
+  round 1 as the FSM-legal undo path.
+- `state_data.frameable` is still NOT recorded by the extractor (only the
+  mock fabricates it); Live tab keeps the honest snapshot fallback.
 - Schedule date picker NOT built: `TriageBody` has no `scheduledFor`; the
   `s` shortcut archives-to-schedule via the existing `schedule` action
   semantics only. Flagged for a follow-up API field.
@@ -63,8 +65,9 @@ Implemented on `feat/m4b`. Notable resolutions/deviations:
 ## Known gaps carried into M4 (not resolved by docs)
 
 - ~~`GET /api/browsers`~~ — shipped in M4b
-- ~~`POST /api/pairing`~~ — shipped as `GET /api/pair/code` + `POST /api/pair`;
-  pairing-status read still absent (settings shows minted code only)
+- ~~`POST /api/pairing`~~ — pre-existing as `GET /api/pair/code` +
+  `POST /api/pair`; pairing-status read still absent (settings shows
+  minted code only)
 - `scheduledFor` on triage/schedule actions — still absent; date picker deferred
 - config-read endpoint for settings sections
 - `state_data.frameable` writer + artifact writer (snapshot.png)

@@ -81,8 +81,10 @@ API surface the specs consume (all exist unless marked [gap])
                                          Last-Event-ID / ?since= resume
   GET  /api/metrics?last=                 per-stage + daily token/cost buckets
   GET  /api/browsers                     adapter kinds/caps/health (added M4b)
-  GET  /api/pair/code                     mint one-time pairing code (added M4b)
-  POST /api/pair                          redeem pairing code (added M4b)
+  GET  /api/pair/code                     mint one-time pairing code (pre-existing)
+  POST /api/pair                          redeem pairing code (pre-existing)
+  POST /api/links/restore                 restore parked links to inbox (added M4b
+                                         fix-round: the FSM-legal undo path)
 
 keyboard contract (all views, when no input/dialog is focused)
   j / k        move selection in the link list
@@ -94,13 +96,24 @@ keyboard contract (all views, when no input/dialog is focused)
   ?            show the keymap overlay
 
 implementation notes (M4b)
-  - state_data.frameable shipped: extractor records it; Live tab iframes
-    only when true, else snapshot + "Open in browser" (no proxy).
+  - state_data.frameable is NOT yet recorded by the extractor — only the
+    mock fabricates it. The Live tab still falls back to snapshot +
+    "Open in browser" everywhere until the extractor ships the field
+    (kept in known gaps below).
   - Snapshot artifact convention: snapshot.png via
     /api/links/{id}/artifacts/snapshot.png; honest empty state when absent.
   - Saved filters: localStorage v1 keyed by collection (no server persistence).
   - `schedule` triage action still takes no date (TriageBody = { ids, action });
     the spec'd date picker was NOT built — needs a scheduledFor API field.
+  - Undo for archive/discard goes through POST /api/links/restore (RESTORE
+    event), never a fake read_now triage — TRIAGE on parked links is an
+    ILLEGAL_TRANSITION. The UI checks the restored count before toasting.
+  - needs-login bulk actions ("archive all"/"discard all" per host) fetch
+    the host's links then POST /api/links/triage; "Check sessions" has no
+    verify endpoint — it runs a pipeline pass and points at
+    `linkinbox login list` (honest fallback per spec).
+  - Ingest paste/file input is validated by valibot schemas through
+    formisch fields (URL count ≤ 500, non-empty, file type/size).
   - Settings is read-only except pairing-code mint/copy; schedule section
     explains cron/launchd ownership and shows "next run unknown".
 
