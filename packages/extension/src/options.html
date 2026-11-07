@@ -4,27 +4,60 @@
     <meta charset="utf-8" />
     <title>linkinbox capture</title>
     <style>
-      body { font: 14px system-ui, sans-serif; max-width: 28rem; margin: 2rem auto; padding: 0 1rem; }
+      body { font: 14px system-ui, sans-serif; max-width: 30rem; margin: 2rem auto; padding: 0 1rem; }
       label { display: block; margin: 1rem 0 0.25rem; }
       input { width: 100%; box-sizing: border-box; padding: 0.4rem; }
-      button { margin-top: 1rem; padding: 0.4rem 1rem; }
+      button { margin-top: 0.5rem; padding: 0.4rem 1rem; }
       p { line-height: 1.5; }
+      fieldset { border: 1px solid #ccc; border-radius: 4px; margin-top: 1.5rem; }
+      legend { padding: 0 0.4rem; font-weight: 600; }
+      .dead { color: #a40000; font-size: 0.85rem; }
+      code { background: #f0f0f0; padding: 0 0.25rem; }
     </style>
   </head>
   <body>
     <h1>linkinbox capture</h1>
-    <label for="endpoint">Server URL</label>
-    <input id="endpoint" type="url" placeholder="http://127.0.0.1:4173/capture" />
-    <label for="token">Capture token</label>
-    <input id="token" type="password" placeholder="LINKINBOX_CAPTURE_TOKEN value" />
-    <label for="source">Source identity</label>
-    <input id="source" type="text" placeholder="extension@browseros" />
-    <button id="save">Save</button>
+
+    <fieldset>
+      <legend>Pairing</legend>
+      <p>
+        The quickest setup: open the linkinbox web UI on the server machine,
+        copy the one-time pairing code it shows, and paste it here. The
+        server URL and both tokens are filled in for you. Manual entry
+        below still works.
+      </p>
+      <label for="pairCode">One-time pairing code</label>
+      <input id="pairCode" type="text" placeholder="ABCDEFGH" autocomplete="off" />
+      <button id="pair">Pair</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Server</legend>
+      <label for="serverUrl">Server URL</label>
+      <input id="serverUrl" type="url" placeholder="http://127.0.0.1:4173" />
+      <label for="token">Capture token</label>
+      <input id="token" type="password" placeholder="LINKINBOX_CAPTURE_TOKEN value" />
+      <label for="apiToken">API token (optional)</label>
+      <input id="apiToken" type="password" placeholder="LINKINBOX_SERVER_TOKEN value — only needed for a non-loopback server" />
+      <label for="source">Source identity</label>
+      <input id="source" type="text" placeholder="extension@browseros" />
+      <button id="save">Save</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Outbox</legend>
+      <p id="outboxStats">Loading…</p>
+      <div id="deadList"></div>
+      <button id="clearDead" hidden>Discard failed items</button>
+    </fieldset>
+
     <p id="status" role="status"></p>
     <p>
       The server must list this extension's origin in
       <code>allowed_origins</code> in <code>~/.linkinbox/config.toml</code>,
-      otherwise the browser blocks the request as CORS.
+      otherwise the browser blocks the request as CORS. Bulk captures are
+      available from the toolbar icon's right-click menu: all tabs, this
+      window's tabs, highlighted tabs, or all bookmarks.
     </p>
     <p id="origin"></p>
     <script src="options.js"></script>
