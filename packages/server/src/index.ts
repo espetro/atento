@@ -7,9 +7,18 @@
 import { Hono } from 'hono'
 import { serve, type ServerType } from '@hono/node-server'
 import { existsSync, readFileSync } from 'node:fs'
-import { extname, join, resolve, sep } from 'node:path'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, extname, join, resolve, sep } from 'node:path'
 import {
   createLinkinboxOps,
+  isCollectionName,
+  serializeCollection,
+  tsvWithCursor,
+  COLLECTION_NAMES,
+  DEFAULT_COLLECTION_FIELDS,
+  type CollectionExportFormat,
+  type CollectionName,
   type LinkinboxOps,
 } from '@linkinbox/app'
 import {
@@ -168,6 +177,201 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
       },
       result.outcome === 'created' ? 201 : 200,
     )
+  })
+
+  // ---- bulk ingest ------------------------------------------------------
+  //
+  // One use case behind every content type, same as the CLI and MCP:
+  //   multipart/form-data  -> a file upload, ingested like ingest_file
+  //   text/plain           -> long-form text, ingested like ingest_text
+  //   application/json     -> { kind: 'urls' | 'remote' | 'file' | 'text', ... }
+  // The response is always the job summary — never the links.
+
+  app.post('/api/ingest', async (c) => {
+    const contentType = c.req.header('content-type') ?? ''
+    try {
+      if (contentType.includes('multipart/form-data')) {
+        const body = await c.req.parseBody()
+        const file = body['file']
+        if (!(file instanceof File)) {
+          return c.json({ error: 'multipart body must carry a "file" part' }, 400)
+        }
+        const dir = await mkdtemp(join(tmpdir(), 'linkinbox-ingest-'))
+        try {
+          const name = file.name === '' ? 'upload' : basename(file.name)
+          // A crafted multipart filename must never escape the temp dir.
+          const safe = name === '.' || name === '..' || name.includes('/') || name.includes('\\')
+            ? 'upload'
+            : name
+          const path = join(dir, safe)
+          await writeFile(path, Buffer.from(await file.arrayBuffer()))
+          const summary = await ops.ingest({ kind: 'file', path })
+          return c.json(summary, summary.status === 'busy' ? 409 : 200)
+        } finally {
+          await rm(dir, { recursive: true, force: true }).catch(() => {})
+        }
+      }
+      if (contentType.includes('text/plain')) {
+        const text = await c.req.text()
+        const summary = await ops.ingest({ kind: 'text', text })
+        return c.json(summary, summary.status === 'busy' ? 409 : 200)
+      }
+      const body = (await c.req.json().catch(() => null)) as
+        | { kind?: string; path?: string; text?: string; urls?: unknown; url?: string; note?: string; tags?: unknown }
+        | null
+      if (!body || typeof body.kind !== 'string') {
+        return c.json(
+          { error: 'json body must be { kind: "urls"|"remote"|"file"|"text", ... }' },
+          400,
+        )
+      }
+      switch (body.kind) {
+        case 'urls': {
+          if (!Array.isArray(body.urls) || !body.urls.every((u) => typeof u === 'string')) {
+            return c.json({ error: 'urls must be an array of strings' }, 400)
+          }
+          const summary = await ops.ingest({
+            kind: 'urls',
+            urls: body.urls,
+            ...(typeof body.note === 'string' ? { note: body.note } : {}),
+            ...(Array.isArray(body.tags) && body.tags.every((t) => typeof t === 'string')
+              ? { tags: body.tags as string[] }
+              : {}),
+          })
+          return c.json(summary, summary.status === 'busy' ? 409 : 200)
+        }
+        case 'remote': {
+          if (typeof body.url !== 'string') return c.json({ error: 'url must be a string' }, 400)
+          const summary = await ops.ingest({ kind: 'remote', url: body.url })
+          return c.json(summary, summary.status === 'busy' ? 409 : 200)
+        }
+        case 'file': {
+          if (typeof body.path !== 'string') return c.json({ error: 'path must be a string' }, 400)
+          const summary = await ops.ingest({ kind: 'file', path: body.path })
+          return c.json(summary, summary.status === 'busy' ? 409 : 200)
+        }
+        case 'text': {
+          if (typeof body.text !== 'string') return c.json({ error: 'text must be a string' }, 400)
+          const summary = await ops.ingest({ kind: 'text', text: body.text })
+          return c.json(summary, summary.status === 'busy' ? 409 : 200)
+        }
+        default:
+          return c.json({ error: `unknown ingest kind "${body.kind}"` }, 400)
+      }
+    } catch (err) {
+      const message = errMsg(err)
+      // Input problems (missing file, bad url, too many urls, fetch failure)
+      // are client errors, not server faults.
+      if (
+        message.includes('at most') ||
+        message.includes('could not fetch') ||
+        message.includes('fetch of') ||
+        message.includes('exceeds')
+      ) {
+        return c.json({ error: message }, 400)
+      }
+      throw err
+    }
+  })
+
+  app.get('/api/ingest/:jobId', async (c) => {
+    const job = await ops.ingestStatus(c.req.param('jobId'))
+    if (!job) return c.json({ error: 'not found' }, 404)
+    return c.json({ job })
+  })
+
+  // ---- collections -------------------------------------------------------
+  //
+  // Token-efficient output for agents: summary counts, paginated reads with
+  // a fields projection and tsv/jsonl streaming, plus file exports. The
+  // `since` parameter is the link_events cursor returned by earlier reads.
+
+  app.get('/api/collections/summary', async (c) => {
+    return c.json(await ops.collectionsSummary())
+  })
+
+  app.get('/api/collections/:name', async (c) => {
+    const name = c.req.param('name')
+    if (!isCollectionName(name)) {
+      return c.json({ error: `unknown collection "${name}"; expected one of: ${COLLECTION_NAMES.join(', ')}` }, 400)
+    }
+    const q = c.req.query()
+    const rawSince = q['since'] ?? q['cursor']
+    const since = rawSince !== undefined ? Number(rawSince) : undefined
+    if (since !== undefined && (!Number.isInteger(since) || since < 0)) {
+      return c.json({ error: 'since/cursor must be a non-negative integer cursor' }, 400)
+    }
+    const format = q['format'] ?? 'json'
+    const fields =
+      q['fields'] !== undefined && q['fields'] !== ''
+        ? q['fields'].split(',').map((f) => f.trim()).filter(Boolean)
+        : undefined
+    const limit = q['limit'] !== undefined ? Number(q['limit']) : undefined
+    const offset = q['offset'] !== undefined ? Number(q['offset']) : undefined
+
+    // Export-style formats stream EVERY matching row (no inline cap) — the
+    // same data collection_export writes to a file.
+    if (format === 'jsonl' || format === 'md') {
+      const scan = await ops.collectionScan(name as CollectionName, {
+        ...(since !== undefined ? { since } : {}),
+        ...(fields !== undefined ? { fields } : {}),
+      })
+      const body = serializeCollection(scan.rows, fields ?? DEFAULT_COLLECTION_FIELDS, format)
+      return new Response(body, {
+        headers: {
+          'content-type': format === 'jsonl' ? 'application/x-ndjson; charset=utf-8' : 'text/markdown; charset=utf-8',
+          'x-linkinbox-cursor': String(scan.cursor),
+        },
+      })
+    }
+    if (format !== 'json' && format !== 'tsv') {
+      return c.json({ error: `unknown format "${format}"; expected json, tsv, jsonl or md` }, 400)
+    }
+    const result = await ops.collectionRead(name as CollectionName, {
+      ...(since !== undefined ? { since } : {}),
+      ...(fields !== undefined ? { fields } : {}),
+      ...(limit !== undefined ? { limit } : {}),
+      ...(offset !== undefined ? { offset } : {}),
+    })
+    if (format === 'tsv') {
+      // TSV carries its cursor as a trailing `# cursor:` line — the same
+      // convention the CLI and MCP surfaces use.
+      const body = tsvWithCursor(
+        result.rows,
+        fields ?? DEFAULT_COLLECTION_FIELDS,
+        result.cursor,
+      )
+      return new Response(body, {
+        headers: {
+          'content-type': 'text/tab-separated-values; charset=utf-8',
+          'x-linkinbox-cursor': String(result.cursor),
+        },
+      })
+    }
+    return c.json(result)
+  })
+
+  app.post('/api/collections/export', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as
+      | { name?: unknown; since?: unknown; fields?: unknown; format?: unknown }
+      | null
+    if (!body || typeof body.name !== 'string' || !isCollectionName(body.name)) {
+      return c.json({ error: `name must be one of: ${COLLECTION_NAMES.join(', ')}` }, 400)
+    }
+    const format = body.format ?? 'jsonl'
+    if (format !== 'jsonl' && format !== 'md' && format !== 'tsv') {
+      return c.json({ error: 'format must be jsonl, md or tsv' }, 400)
+    }
+    const fields =
+      Array.isArray(body.fields) && body.fields.every((f) => typeof f === 'string')
+        ? (body.fields as string[])
+        : undefined
+    const result = await ops.collectionExport(body.name as CollectionName, {
+      ...(typeof body.since === 'number' ? { since: body.since } : {}),
+      ...(fields !== undefined ? { fields } : {}),
+      format: format as CollectionExportFormat,
+    })
+    return c.json(result)
   })
 
   app.get('/api/links', async (c) => {

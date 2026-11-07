@@ -7,10 +7,12 @@
 import { z } from 'zod/mini'
 import {
   createLinkinboxOps,
+  COLLECTION_NAMES,
   hostOf,
   LINK_STATES,
   LLM_KEY,
   DEFAULT_LIMITS,
+  type CollectionName,
   type LinkField,
   type LinkStateName,
   type LinkinboxOps,
@@ -306,6 +308,111 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
   )
 
   server.registerTool(
+    'ingest_file',
+    {
+      description:
+        'Bulk-ingest links from a local file (spec name ingest.file): markdown, ' +
+        'json, url list (.txt), Safari reading list (.plist) or html bookmarks. ' +
+        'Costs zero tokens for the payload — the preferred ingest when the ' +
+        'agent runs on the same machine as the linkinbox store. Returns only ' +
+        'the job summary { jobId, accepted, duplicates, rejected, status }, ' +
+        'never the links themselves.',
+      inputSchema: {
+        path: z.string().check(z.minLength(1)),
+      },
+    },
+    async (args: { path: string }) => {
+      const ctx = await deps.ctx()
+      return json(await opsFor(ctx).ingest({ kind: 'file', path: args.path }, { logger: ctx.logger }))
+    },
+  )
+
+  server.registerTool(
+    'ingest_text',
+    {
+      description:
+        'Bulk-ingest links found in long-form text (spec name ingest.text): ' +
+        'notes, chat dumps, pasted pages. URLs are pulled out with the ' +
+        'markdown and url-list importers. Returns only the job summary.',
+      inputSchema: {
+        text: z.string().check(z.minLength(1)),
+      },
+    },
+    async (args: { text: string }) => {
+      const ctx = await deps.ctx()
+      return json(await opsFor(ctx).ingest({ kind: 'text', text: args.text }, { logger: ctx.logger }))
+    },
+  )
+
+  server.registerTool(
+    'ingest_urls',
+    {
+      description:
+        'Bulk-ingest an explicit URL array (spec name ingest.urls), capped at ' +
+        '500 urls per call — larger lists belong in a file via ingest_file. ' +
+        'Optional note and tags are attached to every link. Returns only the ' +
+        'job summary.',
+      inputSchema: {
+        urls: z.array(z.string().check(z.minLength(1))).check(z.minLength(1), z.maxLength(500)),
+        note: z.optional(z.string()),
+        tags: z.optional(z.array(z.string())),
+      },
+    },
+    async (args: { urls: string[]; note?: string; tags?: string[] }) => {
+      const ctx = await deps.ctx()
+      return json(
+        await opsFor(ctx).ingest(
+          {
+            kind: 'urls',
+            urls: args.urls,
+            ...(args.note !== undefined ? { note: args.note } : {}),
+            ...(args.tags !== undefined ? { tags: args.tags } : {}),
+          },
+          { logger: ctx.logger },
+        ),
+      )
+    },
+  )
+
+  server.registerTool(
+    'ingest_remote',
+    {
+      description:
+        'Bulk-ingest links from a remote file (spec name ingest.remote): a ' +
+        'gist or raw URL is fetched, then parsed with the importer its ' +
+        'extension selects (json, markdown, url list, plist). Returns only ' +
+        'the job summary.',
+      inputSchema: {
+        url: z.url(),
+      },
+    },
+    async (args: { url: string }) => {
+      const ctx = await deps.ctx()
+      return json(await opsFor(ctx).ingest({ kind: 'remote', url: args.url }, { logger: ctx.logger }))
+    },
+  )
+
+  server.registerTool(
+    'ingest_status',
+    {
+      description:
+        'Progress of one ingest job (spec name ingest.status): status, ' +
+        'total/done/cursor and the last error. Use it for large jobs; small ' +
+        'jobs are already done when ingest_* returns.',
+      inputSchema: {
+        jobId: z.string().check(z.minLength(1)),
+      },
+    },
+    async (args: { jobId: string }) => {
+      const ctx = await deps.ctx()
+      {
+        const status = await opsFor(ctx).ingestStatus(args.jobId)
+        return json({ job: status })
+      }
+    },
+  )
+
+  server.registerTool(
     'extract_run',
     {
       description: 'Run extraction on inbox links lacking content (spec name extract.run).',
@@ -368,6 +475,124 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
           tokensOut: outcome.tokensOut,
           costUsd: outcome.costUsd,
         })
+      }
+    },
+  )
+
+const COLLECTION_FIELD_NAMES = [
+  'id', 'url', 'url_hash', 'title', 'source', 'added_at', 'note', 'tags',
+  'category', 'priority', 'action', 'confidence', 'read_minutes', 'status',
+  'state', 'reason', 'needs_browser', 'expires_at', 'expiry_reason',
+  'why_it_matters', 'summary', 'created_at', 'updated_at',
+] as const
+
+const collectionNameSchema = z.enum(COLLECTION_NAMES as unknown as [CollectionName, ...CollectionName[]])
+const collectionFieldsSchema = z.optional(z.array(z.enum(COLLECTION_FIELD_NAMES)))
+const sinceSchema = z.optional(z.number().check(z.int(), z.minimum(0)))
+
+  server.registerTool(
+    'collections_summary',
+    {
+      description:
+        'Counts per pipeline collection plus the per-host breakdown of ' +
+        'needs_login (spec name collections.summary). This is the tool a ' +
+        'harness calls after a run: one line per host that still needs a ' +
+        'login. Read-only.',
+      inputSchema: {},
+    },
+    async () => {
+      const ctx = await deps.ctx()
+      return json(await opsFor(ctx).collectionsSummary())
+    },
+  )
+
+  server.registerTool(
+    'collection_read',
+    {
+      description:
+        'Read one collection inline (spec name collections.read): paginated ' +
+        '(<=50 rows by default), fields projection, format=json|tsv. Pass ' +
+        'since=<cursor> from a previous read or export to get only the ' +
+        'delta; the JSON response carries `cursor`, and TSV ends with a ' +
+        '`# cursor: <n>` trailer line — store it for the next read. ' +
+        'Collections: ' +
+        COLLECTION_NAMES.join(', ') + '.',
+      inputSchema: {
+        name: collectionNameSchema,
+        since: sinceSchema,
+        fields: collectionFieldsSchema,
+        format: z.optional(z.enum(['json', 'tsv'])),
+        limit: z.optional(z.number().check(z.int(), z.positive())),
+        offset: z.optional(z.number().check(z.int(), z.minimum(0))),
+      },
+    },
+    async (args: {
+      name: CollectionName
+      since?: number
+      fields?: string[]
+      format?: 'json' | 'tsv'
+      limit?: number
+      offset?: number
+    }) => {
+      const ctx = await deps.ctx()
+      {
+        const result = await opsFor(ctx).collectionRead(args.name, {
+          ...(args.since !== undefined ? { since: args.since } : {}),
+          ...(args.fields !== undefined ? { fields: args.fields } : {}),
+          ...(args.limit !== undefined ? { limit: args.limit } : {}),
+          ...(args.offset !== undefined ? { offset: args.offset } : {}),
+        })
+        if (args.format === 'tsv') {
+          // TSV is the token-cheap form: emit it as the raw text payload.
+          // The cursor rides a trailing `# cursor: <n>` line — the same
+          // convention the CLI and HTTP surfaces use — so delta reads work
+          // in this format too.
+          const { tsvWithCursor } = await import('@linkinbox/app')
+          const fields = args.fields ?? ['id', 'url', 'title', 'category', 'priority', 'summary']
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: tsvWithCursor(result.rows, fields, result.cursor),
+              },
+            ],
+          }
+        }
+        return json(result)
+      }
+    },
+  )
+
+  server.registerTool(
+    'collection_export',
+    {
+      description:
+        'Export one collection to a file (spec name collections.export): ' +
+        'writes ~/.linkinbox/exports/<name>-<cursor>.<ext> and returns ' +
+        '{ path, uri, count, bytes } where uri is a linkinbox:// resource ' +
+        'link to read lazily. Use it instead of collection_read for large ' +
+        'result sets.',
+      inputSchema: {
+        name: collectionNameSchema,
+        since: sinceSchema,
+        fields: collectionFieldsSchema,
+        format: z.optional(z.enum(['jsonl', 'md', 'tsv'])),
+      },
+    },
+    async (args: {
+      name: CollectionName
+      since?: number
+      fields?: string[]
+      format?: 'jsonl' | 'md' | 'tsv'
+    }) => {
+      const ctx = await deps.ctx()
+      {
+        const result = await opsFor(ctx).collectionExport(args.name, {
+          ...(args.since !== undefined ? { since: args.since } : {}),
+          ...(args.fields !== undefined ? { fields: args.fields } : {}),
+          ...(args.format !== undefined ? { format: args.format } : {}),
+        })
+        return json(result)
       }
     },
   )

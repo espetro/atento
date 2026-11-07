@@ -14,6 +14,8 @@ import { registerReportingCommands } from './commands/metrics.js'
 import { registerResilienceCommands } from './commands/resilience.js'
 import { registerMediaCommand } from './commands/media.js'
 import { registerBrowseCommand } from './commands/browse.js'
+import { registerIngestCommands } from './commands/ingest.js'
+import { registerCollectionsCommands } from './commands/collections.js'
 import { loadConfig } from './config.js'
 import type { EnrichFn, ExtractFn, TtlConfig } from '@linkinbox/app'
 import type { MediaFn } from './media-fn.js'
@@ -67,6 +69,8 @@ export function createProgram(options: ProgramOptions = {}): Command {  const pr
     mediaFn: async () => await mediaFn(await ctx()),
   })
   registerBrowseCommand(program, { ctx })
+  registerIngestCommands(program, { ctx })
+  registerCollectionsCommands(program, { ctx })
 
   return program
 }

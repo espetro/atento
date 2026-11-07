@@ -1,8 +1,8 @@
 import { extname } from 'node:path'
 import type { RawLink } from '@linkinbox/core'
-import { importMarkdown, MARKDOWN_SOURCE } from './markdown.js'
-import { importJson, JSON_SOURCE } from './json.js'
-import { importUrlList, URL_LIST_SOURCE } from './url-list.js'
+import { importMarkdown, parseMarkdown, MARKDOWN_SOURCE } from './markdown.js'
+import { importJson, parseJsonLinks, JSON_SOURCE } from './json.js'
+import { importUrlList, parseUrlList, URL_LIST_SOURCE } from './url-list.js'
 import {
   importSafariReadingList,
   SAFARI_SOURCE,
@@ -53,5 +53,14 @@ function markdownImporterFallback(): Importer {
   return { name: MARKDOWN_SOURCE, matches: () => true, import: importMarkdown }
 }
 
-export { MARKDOWN_SOURCE, JSON_SOURCE, URL_LIST_SOURCE, SAFARI_SOURCE, DEFAULT_BOOKMARKS_PATH }
+export {
+  MARKDOWN_SOURCE,
+  JSON_SOURCE,
+  URL_LIST_SOURCE,
+  SAFARI_SOURCE,
+  DEFAULT_BOOKMARKS_PATH,
+  parseMarkdown,
+  parseJsonLinks,
+  parseUrlList,
+}
 export type { ImportResult, Importer, RawLink }

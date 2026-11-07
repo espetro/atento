@@ -91,6 +91,20 @@ export interface Store {
   /** Append-only event history for one link, oldest first. */
   getHistory(linkId: number): Promise<LinkHistoryEntry[]>
 
+  /**
+   * High-water mark of `link_events.id` — the monotonic cursor the
+   * collections delta reads hand out. 0 when the table is empty.
+   */
+  linkEventCursor(): Promise<number>
+
+  /**
+   * Delta read for collections: every link with at least one `link_events`
+   * row whose id is greater than `since`, deduplicated and ordered by link
+   * id. Links that never transitioned (and so have no events) do not
+   * appear — the cursor is the event log, by design.
+   */
+  listChangedLinks(since: number, limit?: number): Promise<Link[]>
+
   /** Count of links per state name (state histogram). */
   countByState(): Promise<Record<LinkStateName, number>>
 

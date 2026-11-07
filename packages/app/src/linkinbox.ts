@@ -15,6 +15,7 @@
  * interfaces land in M1 without reshaping this module.
  */
 import { mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { openStore } from '@linkinbox/db'
 import { importFile, type ImportResult } from '@linkinbox/importers'
@@ -32,6 +33,7 @@ import {
   DEFAULT_SHARE_CONFIG,
   DEFAULT_TTL_CONFIG,
   enrich,
+  enrichUntilEmpty,
   extract,
   extractUntilEmpty,
   guardDepsFromStore,
@@ -58,6 +60,7 @@ import {
   type BrowseOptions,
   type BrowseResult,
   type BrowserConfig,
+  type BusyRun,
   type Capture,
   type CaptureConfig,
   type CaptureIngestResult,
@@ -99,10 +102,31 @@ import {
   type UntilEmptyResult,
 } from '@linkinbox/core'
 import { loadLoginReport, type LoginReport, type PendingLoginPolicy } from './pending-logins.js'
+import {
+  ingestStatusOf,
+  runIngestInput,
+  type IngestInput,
+  type IngestJobSummary,
+  type IngestStatus,
+} from './ingest-input.js'
+import {
+  collectionExport,
+  collectionRead,
+  collectionScan,
+  collectionsSummary,
+  type CollectionExportOptions,
+  type CollectionExportResult,
+  type CollectionName,
+  type CollectionReadOptions,
+  type CollectionReadResult,
+  type CollectionScanResult,
+  type CollectionsSummary,
+} from './collections.js'
 import { createExtractFn } from './adapters/extract-fn.js'
 import { createEnrichFn } from './adapters/enrich-fn.js'
 import { createMediaFn, type MediaFn as AdapterMediaFn } from './adapters/media-fn.js'
 import { createBrowseFn } from './adapters/browse-fn.js'
+import { randomUUID } from 'node:crypto'
 import type { AppConfig } from './config.js'
 
 /**
@@ -124,6 +148,8 @@ export interface LinkinboxConfig {
   /** Config dir; the ingest spool lives at <dir>/spool. */
   dir?: string
   dbPath?: string
+  /** Configured ingest sources (paths or URLs) that `run` ingests each pass. */
+  sources?: string[]
 }
 
 /** Dependencies the ops factory cannot derive from config. */
@@ -190,6 +216,70 @@ export interface EnrichStageOptions {
   now?: () => Date
 }
 
+/** Options for the enrich `--until-empty` variant. */
+export interface EnrichUntilEmptyStageOptions extends EnrichStageOptions {
+  maxIterations?: number
+  sleep?: (ms: number) => Promise<void>
+  onBatch?: UntilEmptyOptions['onBatch']
+}
+
+/** Per-stage totals of one `run` pass, flattened for adapters. */
+export interface RunStageSummary {
+  batches: number
+  /** Total links the stage saw across all batches. */
+  input: number
+  ok: number
+  errors: number
+  deferred: number
+  needsBrowser: number
+  hitCap: boolean
+  /** Set when another run held this stage's lock; the stage did no work. */
+  busy?: BusyRun
+}
+
+/** Options for the `run` use case: one full pipeline pass. */
+export interface RunOptions {
+  /** Extra local files to ingest this pass (alongside `[sources]`). */
+  files?: string[]
+  /** Cap per stage batch, forwarded to extract/enrich. */
+  limit?: number
+  maxIterations?: number
+  /** Injected sleep for the drain loops (tests/CLI pass a no-op). */
+  sleep?: (ms: number) => Promise<void>
+  onBatch?: UntilEmptyOptions['onBatch']
+  extract?: ExtractFn
+  enrich?: EnrichFn
+  media?: MediaFn | null
+  guard?: GuardDeps | null
+  logger?: PipelineLogger
+  now?: () => Date
+}
+
+/** What `run` returns: cursors bracketing the pass plus per-stage totals. */
+export interface RunResult {
+  /** Unique id for this pass (`run-<uuid>`), for logs and harness records. */
+  runId: string
+  /** link_events cursor before the pass started. */
+  cursorBefore: number
+  /** link_events cursor after the pass finished (the next `since`). */
+  cursorAfter: number
+  summary: {
+    /** One job summary per ingested source/file (payloads never echoed). */
+    ingest: { jobs: IngestJobSummary[] }
+    extract: RunStageSummary
+    enrich: RunStageSummary
+    /** Links the sweep archived this pass. */
+    swept: number
+    /**
+     * True when the pass finished but left work only the user can do:
+     * needs_login, blocked or errored links remain. Maps to exit code 2.
+     */
+    needsAction: boolean
+    /** The collections view after the pass — what a harness reads next. */
+    collections: CollectionsSummary
+  }
+}
+
 /** Options for the ingest-files use case. */
 export interface IngestFilesOptions {
   limit?: number
@@ -217,8 +307,10 @@ export interface LinkinboxOps {
   readonly store: Store
   readonly config: Required<Omit<LinkinboxConfig, 'dbPath'>> & { dbPath?: string }
   readonly logger: PipelineLogger
-  /** The durable-ingest spool root, when the config dir is known. */
-  readonly spoolDir?: string
+  /** The durable-ingest spool root. */
+  readonly spoolDir: string
+  /** The collection export root: <config dir>/exports (or next to the db). */
+  readonly exportsDir: string
 
   // ---- adapter functions (lazy, memoized, config-wired) -------------
   extractFn(): Promise<ExtractFn>
@@ -244,11 +336,47 @@ export interface LinkinboxOps {
   ingestFiles(files: string[], options?: IngestFilesOptions): Promise<IngestFilesResult>
   /** Ingest pre-parsed raw links. */
   ingestRaws(raws: RawLink[], options?: { limit?: number; logger?: PipelineLogger; now?: () => Date; spoolDir?: string }): Promise<IngestResult>
+  /**
+   * The M2 bulk-ingest use case shared by CLI, MCP and the HTTP API. Every
+   * input kind resolves to RawLinks spooled through ingest_jobs; the result
+   * is a job summary only — link payloads are never echoed back.
+   */
+  ingest(input: IngestInput, options?: { logger?: PipelineLogger; now?: () => Date }): Promise<IngestJobSummary>
+  /** Progress for one ingest job (null when the id is unknown). */
+  ingestStatus(jobId: string): Promise<IngestStatus | null>
+
+  // ---- collections (token-efficient output) ------------------------------
+  /** Counts per collection plus the needs_login per-host breakdown. */
+  collectionsSummary(): Promise<CollectionsSummary>
+  /** Inline paginated read of one collection; `since` is a link_events cursor. */
+  collectionRead(name: CollectionName, options?: CollectionReadOptions): Promise<CollectionReadResult>
+  /**
+   * Full scan of one collection (or its delta): every matching row, no
+   * pagination cap. Backs the streaming HTTP formats (jsonl/md).
+   */
+  collectionScan(
+    name: CollectionName,
+    options?: { since?: number; fields?: readonly string[] },
+  ): Promise<CollectionScanResult>
+  /** Write one collection (or its delta) to an export file; returns a handle. */
+  collectionExport(
+    name: CollectionName,
+    options?: Omit<CollectionExportOptions, 'exportsDir'>,
+  ): Promise<CollectionExportResult>
 
   // ---- pipeline stages -------------------------------------------------
   extract(options?: ExtractStageOptions): Promise<ExtractResult>
   extractUntilEmpty(options?: ExtractUntilEmptyOptions): Promise<UntilEmptyResult>
   enrich(options?: EnrichStageOptions): Promise<EnrichResult>
+  enrichUntilEmpty(options?: EnrichUntilEmptyStageOptions): Promise<UntilEmptyResult>
+
+  /**
+   * One full pipeline pass (M2): ingest the configured `[sources]` plus any
+   * `files` argument, extract until empty, enrich until empty, then sweep.
+   * Returns cursors bracketing the pass and a per-stage summary; `busy`
+   * marks whichever stage lock another run held.
+   */
+  run(options?: RunOptions): Promise<RunResult>
 
   // ---- link operations --------------------------------------------------
   list(options?: ListLinksOptions): Promise<LinkProjection[]>
@@ -298,6 +426,7 @@ interface ResolvedConfig {
   profilesDir: string
   dir: string
   dbPath?: string
+  sources: string[]
 }
 
 function resolveConfig(config: LinkinboxConfig): ResolvedConfig {
@@ -312,6 +441,7 @@ function resolveConfig(config: LinkinboxConfig): ResolvedConfig {
     browser: config.browser ?? DEFAULT_BROWSER_CONFIG,
     profilesDir: config.profilesDir ?? '',
     dir: config.dir ?? '',
+    sources: config.sources ?? [],
     ...(config.dbPath !== undefined ? { dbPath: config.dbPath } : {}),
   }
 }
@@ -338,7 +468,21 @@ export function createLinkinboxOps(
   const store = deps.store
   const env = deps.env ?? process.env
   const logger = deps.logger ?? noopLogger
-  const spoolDir = deps.spoolDir ?? (cfg.dir !== '' ? join(cfg.dir, 'spool') : undefined)
+  // The ingest spool always resolves: <config dir>/spool, else next to the
+  // db, else the OS temp dir — bulk ingest is durable on every adapter.
+  const spoolDir =
+    deps.spoolDir ??
+    (cfg.dir !== ''
+      ? join(cfg.dir, 'spool')
+      : cfg.dbPath !== undefined
+        ? join(dirname(cfg.dbPath), 'spool')
+        : join(tmpdir(), 'linkinbox-spool'))
+  const exportsDir =
+    cfg.dir !== ''
+      ? join(cfg.dir, 'exports')
+      : cfg.dbPath !== undefined
+        ? join(dirname(cfg.dbPath), 'exports')
+        : join(tmpdir(), 'linkinbox-exports')
 
   // Lazily built, memoized adapter functions.
   let extractFnPromise: Promise<ExtractFn> | undefined
@@ -350,7 +494,8 @@ export function createLinkinboxOps(
     store,
     config: cfg,
     logger,
-    ...(spoolDir !== undefined ? { spoolDir } : {}),
+    spoolDir,
+    exportsDir,
     llmKey: LLM_KEY,
 
     extractFn() {
@@ -466,6 +611,35 @@ export function createLinkinboxOps(
       })
     },
 
+    ingest(input, options = {}) {
+      return runIngestInput(store, input, {
+        spoolDir,
+        logger: options.logger ?? logger,
+        ...(options.now ? { now: options.now } : {}),
+      })
+    },
+
+    async ingestStatus(jobId) {
+      const job = await store.getIngestJob(jobId)
+      return job === null ? null : ingestStatusOf(job)
+    },
+
+    collectionsSummary() {
+      return collectionsSummary(store)
+    },
+
+    collectionRead(name, options = {}) {
+      return collectionRead(store, name, options)
+    },
+
+    collectionScan(name, options = {}) {
+      return collectionScan(store, name, options)
+    },
+
+    collectionExport(name, options = {}) {
+      return collectionExport(store, name, { ...options, exportsDir })
+    },
+
     async extract(options = {}) {
       const fn = options.extract ?? (await ops.extractFn())
       const guard = options.guard === null ? undefined : (options.guard ?? ops.stageGuard())
@@ -519,6 +693,116 @@ export function createLinkinboxOps(
         logger: options.logger ?? logger,
         ...(options.now ? { now: options.now } : {}),
       })
+    },
+
+    async enrichUntilEmpty(options = {}) {
+      const fn = options.enrich ?? (await ops.enrichFn())
+      const guard = options.guard === null ? undefined : (options.guard ?? ops.stageGuard())
+      return enrichUntilEmpty(store, {
+        enrich: fn,
+        limit: options.limit,
+        guard,
+        maxBatch: options.maxBatch ?? cfg.limits.maxBatch,
+        ttl: options.ttl ?? cfg.ttl,
+        ...(options.maxAttempts !== undefined ? { maxAttempts: options.maxAttempts } : {}),
+        ...(options.leaseMs !== undefined ? { leaseMs: options.leaseMs } : {}),
+        ...(options.maxIterations !== undefined ? { maxIterations: options.maxIterations } : {}),
+        ...(options.sleep ? { sleep: options.sleep } : {}),
+        ...(options.onBatch ? { onBatch: options.onBatch } : {}),
+        logger: options.logger ?? logger,
+        ...(options.now ? { now: options.now } : {}),
+      })
+    },
+
+    async run(options = {}) {
+      const runId = `run-${randomUUID()}`
+      const runLogger = options.logger ?? logger
+      const cursorBefore = await store.linkEventCursor()
+
+      // 1. Ingest: configured [sources] plus any file arguments. Each goes
+      //    through the durable spool; a busy ingest lock stops the pass's
+      //    ingest half but never blocks the pipeline stages.
+      const jobs: IngestJobSummary[] = []
+      // Crash resume first: jobs a previous run left in the spool finish
+      // before this pass ingests anything new.
+      await ops.resumeIngest({ logger: runLogger })
+      const sources = [...cfg.sources, ...(options.files ?? [])]
+      for (const source of sources) {
+        const input: IngestInput = /^https?:\/\//i.test(source)
+          ? { kind: 'remote', url: source }
+          : { kind: 'file', path: source }
+        const summary = await ops.ingest(input, { logger: runLogger })
+        jobs.push(summary)
+        if (summary.busy) break
+      }
+
+      // 2./3. Drain extract then enrich. Each stage keeps its own lock, so
+      //    a busy extract does not stop enrich from running. `guard` is
+      //    forwarded untouched: undefined means the config guard, null
+      //    means unguarded.
+      const extractResult = await ops.extractUntilEmpty({
+        ...(options.extract ? { extract: options.extract } : {}),
+        ...(options.limit !== undefined ? { limit: options.limit } : {}),
+        ...(options.media !== undefined ? { media: options.media } : {}),
+        ...(options.guard !== undefined ? { guard: options.guard } : {}),
+        ...(options.maxIterations !== undefined ? { maxIterations: options.maxIterations } : {}),
+        ...(options.sleep ? { sleep: options.sleep } : {}),
+        ...(options.onBatch ? { onBatch: options.onBatch } : {}),
+        logger: runLogger,
+        ...(options.now ? { now: options.now } : {}),
+      })
+      const enrichResult = await ops.enrichUntilEmpty({
+        ...(options.enrich ? { enrich: options.enrich } : {}),
+        ...(options.limit !== undefined ? { limit: options.limit } : {}),
+        ...(options.guard !== undefined ? { guard: options.guard } : {}),
+        ...(options.maxIterations !== undefined ? { maxIterations: options.maxIterations } : {}),
+        ...(options.sleep ? { sleep: options.sleep } : {}),
+        ...(options.onBatch ? { onBatch: options.onBatch } : {}),
+        logger: runLogger,
+        ...(options.now ? { now: options.now } : {}),
+      })
+
+      // 4. Sweep stale links into the archive.
+      const plan = await ops.sweepPlan(cfg.ttl, options.now ? { now: options.now() } : {})
+      const swept = await ops.applySweepPlan(plan, options.now?.() ?? new Date())
+
+      const stageSummary = (r: UntilEmptyResult): RunStageSummary => ({
+        batches: r.batches.length,
+        input: r.batches.reduce((n, b) => n + b.inputCount, 0),
+        ok: r.totals.ok,
+        errors: r.totals.errors,
+        deferred: r.totals.deferred,
+        needsBrowser: r.totals.needsBrowser,
+        hitCap: r.hitCap,
+        ...(r.busy ? { busy: r.busy } : {}),
+      })
+
+      const collections = await ops.collectionsSummary()
+      const needsAction =
+        collections.collections.needs_login +
+          collections.collections.blocked +
+          collections.collections.errored >
+        0
+      const cursorAfter = await store.linkEventCursor()
+
+      runLogger.info('run {runId} finished: cursor {cursorBefore} -> {cursorAfter}', {
+        runId,
+        cursorBefore,
+        cursorAfter,
+      })
+      return {
+        runId,
+        cursorBefore,
+        cursorAfter,
+        summary: {
+          ingest: { jobs },
+          extract: stageSummary(extractResult),
+          enrich: stageSummary(enrichResult),
+          swept,
+          needsAction,
+          collections,
+        },
+      }
     },
 
     list(options) {

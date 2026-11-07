@@ -48,6 +48,11 @@ export interface AppConfig {
   profilesDir: string
   /** Directory holding config.toml. */
   dir: string
+  /**
+   * Configured ingest sources from `[sources] paths = [...]` in config.toml:
+   * local file paths and/or http(s) URLs that `app.run` ingests each pass.
+   */
+  sources: string[]
 }
 
 export const DEFAULT_CONFIG_DIR = join(homedir(), '.linkinbox')
@@ -114,5 +119,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     browser: browserFromToml(toml as unknown as Record<string, unknown>),
     profilesDir: defaultProfilesDir(env),
     dir,
+    sources: sourcesFromToml(toml),
   }
+}
+
+/**
+ * `[sources] paths = [...]` — each entry is a local path (expanded for `~`)
+ * or an http(s) URL; `app.run` routes them to ingest file/remote jobs.
+ */
+export function sourcesFromToml(toml: TomlTable): string[] {
+  const sources = toml['sources']
+  if (!sources || typeof sources !== 'object' || Array.isArray(sources)) return []
+  const paths = (sources as TomlTable)['paths']
+  if (!Array.isArray(paths)) return []
+  return paths.filter((p): p is string => typeof p === 'string' && p.trim() !== '')
+    .map((p) => (p.startsWith('~/') || p === '~' ? expandHome(p) : p))
 }

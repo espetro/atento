@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
-import { eq, inArray, and, gte, lte, sql } from 'drizzle-orm'
+import { eq, inArray, and, gt, gte, lte, sql } from 'drizzle-orm'
 import {
   SCHEMA_VERSION,
   links,
@@ -579,6 +579,38 @@ export class SqliteStore implements Store {
       }))
   }
 
+  /** High-water mark of link_events.id — the collections delta cursor. */
+  async linkEventCursor(): Promise<number> {
+    const row = this.db
+      .select({ m: sql<number | null>`max(${linkEvents.id})` })
+      .from(linkEvents)
+      .get()
+    return Number(row?.m ?? 0)
+  }
+
+  /**
+   * Delta read: links with at least one link_events row newer than `since`.
+   * The event id is the cursor, so "changed" means "transitioned (or was
+   * ingested, which writes an INGESTED marker row) after the cursor".
+   */
+  async listChangedLinks(since: number, limit?: number): Promise<Link[]> {
+    const changed = this.db
+      .select({ linkId: linkEvents.linkId })
+      .from(linkEvents)
+      .where(gt(linkEvents.id, since))
+      .groupBy(linkEvents.linkId)
+      .all()
+    if (changed.length === 0) return []
+    const ids = changed.map((r) => r.linkId)
+    const q = this.db
+      .select()
+      .from(links)
+      .where(inArray(links.id, ids))
+      .orderBy(sql`${links.id} ASC`)
+    const rows = limit !== undefined ? q.limit(limit).all() : q.all()
+    return rows.map(fromRow)
+  }
+
   /** State histogram: how many links sit in each state. */
   async countByState(): Promise<Record<LinkStateName, number>> {
     const rows = this.db
@@ -867,6 +899,21 @@ export class SqliteStore implements Store {
             items.push({ linkId: link.id, url, ok: true, duplicate: true })
           } else {
             inserted += 1
+            // An INGESTED marker row makes the new link visible to the
+            // collections delta cursor (link_events.id) before its first
+            // FSM transition. It is an audit row, not a transition: the
+            // state stays `created` on both sides.
+            this.db
+              .insert(linkEvents)
+              .values({
+                linkId: link.id,
+                fromState: 'created',
+                toState: 'created',
+                event: 'INGESTED',
+                data: { at: now.toISOString(), source: raw.source, jobId },
+                at: now,
+              })
+              .run()
             items.push({ linkId: link.id, url, ok: true, duplicate: false })
           }
         } catch (err) {
