@@ -139,12 +139,24 @@ async function loadEvalModule(runnerPath?: string): Promise<EvalModule> {
   return null
 }
 
-/** serve: hands over to @linkinbox/server, which serves api and ui on one port. */
+export interface ServeOptions {
+  /**
+   * Bind hostname. Default `LINKINBOX_HOST` from the env, then 127.0.0.1.
+   * Loopback binds serve the api/ui without auth; any other bind requires
+   * the `[server] token_env` bearer token on /api/*, /mcp and /openapi.json.
+   */
+  hostname?: string
+  /** Env for LINKINBOX_HOST/PORT and the server token lookup. Default process.env. */
+  env?: NodeJS.ProcessEnv
+}
+
+/** serve: hands over to @linkinbox/server, which serves api, mcp and ui on one port. */
 export async function runServe(
   ctx: CliContext,
   port?: number,
   /** Test hook: receives the started server handle. */
   onStart?: (server: { port: number; close(): Promise<void> }) => void,
+  options: ServeOptions = {},
 ): Promise<boolean> {
   let mod: { startServer?: (opts: unknown) => Promise<unknown> } | null = null
   try {
@@ -158,16 +170,41 @@ export async function runServe(
     console.log('server not available: @linkinbox/server is not installed')
     return false
   }
-  const envPort = Number(process.env['LINKINBOX_PORT'] ?? '')
+  const env = options.env ?? process.env
+  const envPort = Number(env['LINKINBOX_PORT'] ?? '')
   const effective = port ?? (Number.isFinite(envPort) && envPort > 0 ? envPort : 4173)
-  console.log(`serving on http://localhost:${effective}`)
+  const hostname = options.hostname ?? env['LINKINBOX_HOST'] ?? '127.0.0.1'
+
+  // Mount /mcp (streamable HTTP) when @linkinbox/mcp is installed and the
+  // context carries a live app — the extract/enrich/browse adapters the
+  // tools call. Optional like the server package itself.
+  let mcpFetch: ((request: Request) => Promise<Response>) | undefined
+  try {
+    const mcp = await import('@linkinbox/mcp')
+    const app = ctx.app as CliContext['app'] | undefined
+    if (
+      app !== undefined &&
+      typeof mcp.createMcpHttpHandler === 'function' &&
+      typeof mcp.createMcpDeps === 'function'
+    ) {
+      const handler = mcp.createMcpHttpHandler(mcp.createMcpDeps(app, ctx.logger))
+      mcpFetch = (request) => handler.fetch(request)
+    }
+  } catch {
+    // @linkinbox/mcp not installed: serve the api/ui without /mcp.
+  }
+
+  console.log(`serving on http://${hostname}:${effective}`)
   const started = (await mod.startServer({
     port: effective,
     store: ctx.store,
     ops: ctx.app,
     config: ctx.config,
-    hostname: '127.0.0.1',
+    hostname,
     capture: ctx.config.capture,
+    server: ctx.config.server,
+    env,
+    ...(mcpFetch !== undefined ? { mcpFetch } : {}),
   })) as { port: number; close(): Promise<void> }
   onStart?.(started)
   return true

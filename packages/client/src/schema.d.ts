@@ -248,7 +248,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Server-sent events: link state transitions (id = link_events.id), run start/finish (id = run:<runs.id>) and ingest job progress (id = ingest:<jobId>). Resume with Last-Event-ID or ?since=. */
+        /** Server-sent events: link state transitions, run start/finish and ingest job progress. Every frame id is evt:{l,r,i} — the composite resume cursor for all three families; reconnect with Last-Event-ID or ?since= to replay without gaps. */
         get: operations["getApiEvents"];
         put?: never;
         post?: never;

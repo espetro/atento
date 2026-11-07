@@ -90,4 +90,33 @@ describe('GET /openapi.json', () => {
     expect(schema.type).toBe('object')
     expect(schema.properties.id.type).toBe('number')
   })
+
+  it('declares the bearer security scheme on protected operations', async () => {
+    const res = await createApp(store).request('/openapi.json')
+    const spec = (await res.json()) as {
+      components: { securitySchemes?: Record<string, { type?: string; scheme?: string }> }
+      paths: Record<string, Record<string, { security?: unknown[] }>>
+    }
+    expect(spec.components.securitySchemes?.['bearerAuth']).toMatchObject({
+      type: 'http',
+      scheme: 'bearer',
+    })
+    for (const [path, methods] of Object.entries(spec.paths)) {
+      for (const [method, op] of Object.entries(methods)) {
+        expect(op.security, `${method.toUpperCase()} ${path}`).toEqual([{ bearerAuth: [] }])
+      }
+    }
+  })
+
+  it('documents /mcp when the MCP handler is mounted', async () => {
+    const app = createApp(store, { mcpFetch: async () => new Response('ok') })
+    const res = await app.request('/openapi.json')
+    const spec = (await res.json()) as {
+      paths: Record<string, Record<string, { security?: unknown[] }>>
+    }
+    const mcp = spec.paths['/mcp']
+    expect(mcp).toBeTruthy()
+    expect(Object.keys(mcp!)).toEqual(expect.arrayContaining(['get', 'post', 'delete']))
+    expect(mcp!['post']!.security).toEqual([{ bearerAuth: [] }])
+  })
 })

@@ -111,7 +111,8 @@ import {
   type UntilEmptyOptions,
   type UntilEmptyResult,
 } from '@linkinbox/core'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
 import { loadLoginReport, type LoginReport, type PendingLoginPolicy } from './pending-logins.js'
 import {
   ingestStatusOf,
@@ -998,8 +999,8 @@ export function createLinkinboxOps(
       const path = resolve(dir, name)
       if (!path.startsWith(dir + sep)) return null
       try {
-        if (!statSync(path).isFile()) return null
-        return { name, contentType: artifactContentType(name), body: readFileSync(path) }
+        if (!(await stat(path)).isFile()) return null
+        return { name, contentType: artifactContentType(name), body: await readFile(path) }
       } catch {
         return null
       }

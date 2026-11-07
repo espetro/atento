@@ -39,6 +39,7 @@ export type {
 } from './tools/index.js'
 export {
   TOOL_NAME_MAP,
+  createMcpDeps,
   type McpContext,
   type McpDeps,
 } from './deps.js'

@@ -16,7 +16,7 @@
  *    /capture keeps its own token check; static ui assets stay open (they
  *    carry no data).
  */
-import { Hono, type MiddlewareHandler } from 'hono'
+import { Hono, type Context, type MiddlewareHandler } from 'hono'
 import { serve, type ServerType } from '@hono/node-server'
 import { describeRoute, openAPIRouteHandler } from 'hono-openapi'
 import { existsSync, readFileSync } from 'node:fs'
@@ -781,7 +781,8 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
         content: { 'application/json': { schema: resolverOf(LinkPatchBody) } },
       },
       responses: {
-        200: { description: 'Updated link', content: jsonContent(LinkRow) },
+        // Same UI detail projection as GET /api/links/:id.
+        200: { description: 'Updated link', content: jsonContent(LinkResponse) },
         ...errorResponses,
       },
     }),
@@ -809,9 +810,11 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
         }
         patch.tags = body.tags as string[] | null
       }
-      const link = await ops.patchLink(Number(c.req.param('id')), patch)
-      if (!link) return c.json({ error: 'not found' }, 404)
-      return c.json(link)
+      const patched = await ops.patchLink(Number(c.req.param('id')), patch)
+      if (!patched) return c.json({ error: 'not found' }, 404)
+      // Return the same UI detail projection as GET /api/links/:id.
+      const link = await ops.get(patched.id, UI_DETAIL_FIELDS)
+      return c.json(link !== null ? shapeForUi(link, { keepEnrichment: true }) : patched)
     },
   )
 
@@ -961,9 +964,10 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
     describeRoute({
       tags: ['events'],
       summary:
-        'Server-sent events: link state transitions (id = link_events.id), ' +
-        'run start/finish (id = run:<runs.id>) and ingest job progress ' +
-        '(id = ingest:<jobId>). Resume with Last-Event-ID or ?since=.',
+        'Server-sent events: link state transitions, run start/finish and ' +
+        'ingest job progress. Every frame id is evt:{l,r,i} — the composite ' +
+        'resume cursor for all three families; reconnect with Last-Event-ID ' +
+        'or ?since= to replay without gaps.',
       parameters: [
         {
           name: 'since',
@@ -1091,27 +1095,59 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
 
   if (opts.mcpFetch) {
     const mcpFetch = opts.mcpFetch
-    app.all(
-      '/mcp',
-      describeRoute({
-        tags: ['mcp'],
-        summary:
-          'MCP streamable-HTTP endpoint (JSON-RPC). GET/DELETE session ' +
-          'operations are also accepted; see the MCP spec.',
-        responses: {
-          200: { description: 'JSON-RPC response (JSON or SSE)' },
-          ...errorResponses,
-        },
-      }),
-      (c) => mcpFetch(c.req.raw),
-    )
+    // Registered per-method (not app.all): hono-openapi only documents
+    // concrete methods, so an ALL route would be invisible in the spec.
+    // GET/POST/DELETE are the streamable-HTTP surface.
+    const mcpSpec = describeRoute({
+      tags: ['mcp'],
+      summary:
+        'MCP streamable-HTTP endpoint (JSON-RPC). GET/DELETE session ' +
+        'operations are also accepted; see the MCP spec.',
+      responses: {
+        200: { description: 'JSON-RPC response (JSON or SSE)' },
+        ...errorResponses,
+      },
+    })
+    const mcpHandler = (c: Context) => mcpFetch(c.req.raw)
+    app.on(['GET', 'POST', 'DELETE'], '/mcp', mcpSpec, mcpHandler)
   }
 
   // ---- OpenAPI document -----------------------------------------------------
   //
   // Served last so generateSpecs sees every registered route. On
   // non-loopback binds the bearer middleware above protects it too.
-  app.get('/openapi.json', openAPIRouteHandler(app))
+  // Every documented operation sits behind the same HTTP bearer scheme
+  // (/capture uses its own token, still `Authorization: Bearer`); loopback
+  // binds serve it openly, which the scheme description notes.
+  app.get(
+    '/openapi.json',
+    openAPIRouteHandler(app, {
+      documentation: {
+        components: {
+          securitySchemes: {
+            bearerAuth: {
+              type: 'http',
+              scheme: 'bearer',
+              description:
+                'Bearer token. Required on non-loopback binds: the token ' +
+                'comes from `[server] token_env` (default ' +
+                'LINKINBOX_SERVER_TOKEN); /capture uses the capture token env.',
+            },
+          },
+        },
+      },
+      // hono-openapi keys defaultOptions by uppercase method; every
+      // documented route requires the bearer scheme on non-loopback binds.
+      defaultOptions: {
+        GET: { security: [{ bearerAuth: [] }] },
+        POST: { security: [{ bearerAuth: [] }] },
+        PATCH: { security: [{ bearerAuth: [] }] },
+        PUT: { security: [{ bearerAuth: [] }] },
+        DELETE: { security: [{ bearerAuth: [] }] },
+        ALL: { security: [{ bearerAuth: [] }] },
+      },
+    }),
+  )
 
   return app
 }

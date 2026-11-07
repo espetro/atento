@@ -34,10 +34,12 @@
     "@linkinbox/db": "workspace:*",
     "@linkinbox/extractors": "workspace:*",
     "@linkinbox/media": "workspace:*",
+    "@linkinbox/mcp": "workspace:*",
     "@linkinbox/server": "workspace:*",
     "commander": "^15.0.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
     "@types/node": "^24.10.1",
     "typescript": "^5.9.0",
     "vitest": "^3.0.0"

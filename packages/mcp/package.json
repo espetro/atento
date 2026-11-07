@@ -28,12 +28,10 @@
     "@linkinbox/core": "workspace:*",
     "@linkinbox/db": "workspace:*",
     "@modelcontextprotocol/hono": "2.0.2",
-    "@modelcontextprotocol/sdk": "^1.32.2",
     "@modelcontextprotocol/server": "2.4.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@linkinbox/cli": "workspace:*",
     "@modelcontextprotocol/client": "2.4.0",
     "@types/node": "^24.19.2",
     "typescript": "^5.9.3",
