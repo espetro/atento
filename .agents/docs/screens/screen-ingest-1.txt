@@ -1,0 +1,100 @@
+screen: ingest-1
+name: Ingest dialog
+route: dialog over any view — ?dialog=ingest (also ⊕ ingest in the rail)
+file: packages/ui/src/views/IngestDialog.svelte (proposed)
+
+Adds links to the pipeline. Three input kinds matching POST /api/ingest:
+file upload (multipart), pasted text (text/plain or JSON kind:'text'),
+and a URL list (JSON kind:'urls', ≤500 urls). The response contract is
+fixed: a JOB SUMMARY `{jobId, accepted, duplicates, rejected, status,
+warnings}` — never link arrays. The dialog must never imply it received
+links back; progress comes from GET /api/ingest/{jobId} and SSE
+`ingest` events.
+
+```DIALOG (Bits UI Dialog, ~560px)```
+
+┌──────────────────────────────────────────────────────────────┐
+│  Ingest links                                             ✕  │
+│──────────────────────────────────────────────────────────────│
+│  (•) Paste URLs / text    ( ) Upload file                    │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │ https://example.com/a                                  │  │
+│  │ https://example.com/b                                  │  │
+│  │ https://news.ycombinator.com/item?id=…                  │  │
+│  │                                                        │  │
+│  └────────────────────────────────────────────────────────┘  │
+│  one URL per line · markdown `- [t](url)` also works · ≤500  │
+│                                                              │
+│  note (optional)  [________________________________]         │
+│  tags (optional)  [ai, eng]                                  │
+│                                                              │
+│                              [ Cancel ]  [ Ingest ]          │
+└──────────────────────────────────────────────────────────────┘
+
+FILE MODE: drop zone + [choose file] (accept .md,.txt,.html,.json,.csv)
+SUBMITTED → progress state (same dialog, content swaps):
+
+┌──────────────────────────────────────────────────────────────┐
+│  Ingesting…                                              ✕   │
+│──────────────────────────────────────────────────────────────│
+│  job a1b2c3 · markdown export                                │
+│  ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░  34 / 50                             │
+│  accepted 34 · duplicates 2 · rejected 1                     │
+│  warnings: line 12: not a url                                │
+│                                                              │
+│              [ Done ]  (or auto-close on status=done)        │
+└──────────────────────────────────────────────────────────────┘
+```
+
+## Elements
+
+| Element | State | Description |
+|---------|-------|-------------|
+| Mode tabs | required | "Paste URLs / text" vs "Upload file"; file mode also accepts drag-drop onto the dialog body |
+| Textarea | conditional | Paste mode; one URL per line, bare list, or stash-style markdown (`- [title](url)`); client-side count badge "N urls detected" updates live; hard stop at 500 with inline error (INGEST_URLS_MAX) |
+| File dropzone | conditional | Upload mode; shows chosen filename + size; client rejects obviously wrong types with a hint, server is the authority |
+| note field | action | Optional string forwarded as `note` on kind:'urls'/'text' inputs |
+| tags field | action | Optional comma-separated tags forwarded as `tags` |
+| Ingest button | required | Disabled while submitting or when 0 urls detected; label shows count ("Ingest 34 links") |
+| Cancel | action | Closes dialog; an in-flight job is NOT cancelled (jobs are durable — closing only detaches the view) |
+| Progress view | conditional | After 200/409: jobId, source label, progress bar from `done`/`total`, live accepted/duplicates/rejected counters, warnings list (scrollable, max ~5 visible + "+N more") |
+| Busy state | conditional | On HTTP 409 / `status:'busy'`: "another ingest is running (job X, pid N)" + "view job" link — never an error toast |
+| Done state | conditional | `status:'done'`: summary line + "view in pending collection" link (`?view=triage&collection=pending`) + auto-close after ~4s or on Done |
+| Failed state | conditional | `status:'failed'`: `error` string verbatim + retry button (re-POSTs the same input; jobs are idempotent on url_hash so retry is safe) |
+| Job link | action | "view job" opens a small job detail popover: status timeline from GET /api/ingest/{jobId} (createdAt/updatedAt/finishedAt, cursor, runId) |
+
+## Behavior
+
+- Submit mapping (must match server exactly):
+  - Paste mode with only URLs → `POST /api/ingest` JSON
+    `{kind:'urls', urls[], note?, tags?}`.
+  - Paste mode with markdown/text → `{kind:'text', text}` (server runs
+    parseIngestText: markdown links + bare url lines, deduped).
+  - File mode → `multipart/form-data` with a `file` part (server picks
+    the importer by extension/content).
+  - Remote URL fetch (`kind:'remote'`) is CLI/MCP surface — NOT offered
+    in the dialog v1 (SSRF-shaped input; keep the UI to local content).
+- Response handling: 200 → progress view polling GET /api/ingest/{jobId}
+  every ~1s AND subscribing to SSE `ingest` events for the same jobId
+  (SSE is primary; polling is the fallback when EventSource is down).
+  409 → busy view (the summary body still parses: status 'busy' +
+  `busy:{runId,pid}`). 400/413 → inline error under the submit button,
+  dialog stays open with input preserved.
+- The dialog NEVER displays ingested links. After done, the only
+  affordance is navigation to the pending/enriched collection — the
+  pipeline decides where links land.
+- Duplicate semantics are surfaced honestly: `duplicates` counts items
+  that collapsed onto known url_hashes — show "N already known" as a
+  neutral stat, not a warning.
+- Warnings render verbatim (they are importer/parser strings like
+  "line 12: not a url"); cap display, never truncate silently — "+N
+  more" expands.
+- Keyboard: `Esc` closes (even mid-job — job continues server-side);
+  `Cmd/Ctrl+Enter` submits; focus lands in the textarea on open.
+- Accessibility: dialog is modal (Bits UI), focus trapped, labelled;
+  progress bar has `role="progressbar"` with aria-valuenow=done/total;
+  file dropzone is a real `<input type=file>` fallback for keyboard/AT.
+- Demo mode: works identically against the seeded LINKINBOX_HOME —
+  ingested demo links land in `pending` and flow through the seeded
+  pipeline on the next run.

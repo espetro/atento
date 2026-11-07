@@ -1,0 +1,104 @@
+RUBRIC — linkinbox M4 design gate
+=================================
+
+Scope: every UI change merged under M4 is graded against this rubric
+before it counts as done. It complements (does not replace) the UILOOP
+hard gates: 0 console errors/warnings, 0 axe critical/serious, 3
+viewports (375×812, 768×1024, 1440×900), e2e green. A screen can pass
+UILOOP and still fail this rubric — this rubric grades whether the UI
+is TRUE to the product and the spec.
+
+Grade each criterion Pass / Partial / Fail with one line of evidence
+(file:line, screenshot, or test name). A Fail on any "gate" criterion
+blocks merge; Partial requires a written reason in the PR.
+
+---------------------------------------------------------------
+A. SPEC FIDELITY (gate)
+---------------------------------------------------------------
+A1. The screen matches its screen-*.txt spec: same regions, same
+    element inventory, same states (loading/empty/error/conditional
+    variants all implemented, not just the happy path).
+A2. URL state contract holds: every spec'd param (?collection, ?q,
+    ?state, ?category, ?host, ?stale, ?selected, ?tab, ?view,
+    ?dialog) round-trips through URLSearchParams; back/forward works;
+    a copied URL reproduces the view.
+A3. Keyboard contract: j/k, /, a/s/d, r, o, 1–4, ? behave as spec'd
+    and are inert inside inputs/dialogs. .kbd hints visible.
+A4. Copy honesty: strings match spec intent — park reasons verbatim
+    (humanized label + raw value), ingest shows job summary semantics
+    (never implies links were returned), exit codes 0/2/1/3 named
+    explicitly.
+
+---------------------------------------------------------------
+B. API CONTRACT (gate)
+---------------------------------------------------------------
+B1. Only documented endpoints/payloads are used; generated client
+    types (packages/client) — no hand-rolled fetch shapes.
+B2. Pagination respected: limit/offset pages, collections ≤200 cap,
+    "load more" reflects server `total`/`hasMore`.
+B3. SSE handled correctly: single EventSource, Last-Event-ID resume,
+    composite evt:{l,r,i} cursors, reconnect state surfaced subtly.
+B4. Optimistic mutations roll back on error; busy/409/illegal-state
+    responses render the server's reason, not a generic toast.
+B5. No fabricated data: sections without a backing endpoint render
+    the spec'd "CLI/hint" fallback, never invented values.
+
+---------------------------------------------------------------
+C. DESIGN SYSTEM (gate)
+---------------------------------------------------------------
+C1. Semantic classes only (.btn/.chip/.chip-state-*/.pane/.list-row/
+    .kbd + tokens). Zero daisyUI classes, zero raw palette utilities.
+C2. Tokens honored: off-light ground, one accent, state colors only
+    via .chip-state-*, hairline borders on static surfaces, single
+    shadow recipe on floating layers (references/tokens.md).
+C3. Type mix: bold display titles + light body per tokens.md; ≤2
+    weights per region.
+C4. Bits UI primitives used for dialog/popover/tabs — no bespoke
+    modal/focus-trap implementations.
+
+---------------------------------------------------------------
+D. STATES & EDGE CASES (gate)
+---------------------------------------------------------------
+D1. Every conditional element in the spec's Elements table has a
+    real implementation: skeletons, empty states, error states,
+    busy states, degraded states (no snapshot, not frameable, SSE
+    down, 401).
+D2. Degradation is honest: Live tab falls back to snapshot + "Open
+    in browser" when frameable is absent/false; NO header-stripping
+    proxy anywhere; iframe sandboxed.
+D3. Attention collections explain remediation (per-collection
+    banner copy); needs_login shows exact `linkinbox login <host>`
+    commands; review collection states it is manual-by-design.
+D4. Long-content safety: URLs/titles/reasons truncate with tooltip;
+    markdown renders sanitized; artifact 404s don't error the tab.
+
+---------------------------------------------------------------
+E. RESPONSIVE & A11Y (gate — overlaps UILOOP, graded on quality)
+---------------------------------------------------------------
+E1. Three-column → icon rail → sheet collapse works at all three
+    UILOOP viewports with no horizontal scroll.
+E2. Focus order sane; dialogs trap focus; counts/status announced;
+    state never color-only; kbd hints reachable.
+E3. prefers-reduced-motion respected; virtualized or paged lists
+    keep DOM bounded at 1k+ links.
+
+---------------------------------------------------------------
+F. LIVE DATA (warning, not gate)
+---------------------------------------------------------------
+F1. SSE-driven updates actually patch rows/counts without reload.
+F2. Run status distinguishes running/done/failed/busy incl.
+    stale-heartbeat display.
+F3. Demo mode (seeded LINKINBOX_HOME) exercises every screen without
+    real pipeline runs.
+
+---------------------------------------------------------------
+Scoring
+---------------------------------------------------------------
+- Any gate Fail → change does not pass the M4 gate.
+- All gates Pass, warnings clean → pass.
+- Warnings present → pass with notes; warnings must be resolved or
+  ticketed before M4 exit.
+
+Reviewers grade from: the diff, the matching screen-*.txt, this
+rubric, and (for visual claims) screenshots at the three UILOOP
+viewports stored under .agents/docs/screens/refs/ or the PR.

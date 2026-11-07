@@ -1,0 +1,117 @@
+screen: run-1
+name: Run status
+route: /?view=run
+file: packages/ui/src/views/RunStatus.svelte (proposed)
+
+What happened the last time the pipeline ran, and a button to run it
+again. Two data sources: POST /api/run returns a RunResult
+(`runId`, `cursorBefore`/`cursorAfter`, per-stage summaries, ingest job
+summaries, `needsAction`, post-run collections) and the run journal
+(GET /api/runs/{id} + SSE `run` events) gives per-stage rows with
+status/pid/timestamps/counters/tokens/cost.
+
+Exit-code semantics are a first-class UI concept (from
+packages/cli/src/commands/pipeline.ts):
+
+| code | meaning                    | UI treatment                                  |
+|------|----------------------------|-----------------------------------------------|
+| 0    | done — nothing needs you   | green "all clear" banner                      |
+| 2    | finished, needs-you        | amber banner + per-collection counts + CTA to attention view |
+| 1    | failure                    | red banner + stage that failed + error detail |
+| 3    | busy — another run holds a lock | neutral "already running" state + holder info (runId, pid, stage) |
+
+```DESKTOP```
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  Pipeline run                                              [ Run now ]   │
+│                                                                          │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │ ✓ Last run finished — 2 links need you                            │  │
+│  │   needs_login 2 · errored 1 · blocked 0                          │  │
+│  │   [ Review what needs you → ]                                     │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  RUN run-9f3c… · cursor 1284 → 1319        started 14:02 · 38s · exit 2  │
+│                                                                          │
+│  STAGE      STATUS    IN → OK   ERR  DEFER  NB   DURATION   TOKENS  COST │
+│  ingest     done      3 jobs    87 accepted · 4 dup · 1 rej      —    —   │
+│  extract    done      84 → 79    2 deferred · 3 need browser   12.4s  —   │
+│  enrich     done      79 → 77    1 error · 1 deferred          24.1s  $0.02│
+│  sweep      done      2 archived                                      —    │
+│                                                                          │
+│  NEEDS ACTION                                                             │
+│  needs_login  github.com ×2  →  linkinbox login github.com  [copy]      │
+│  errored      enrich stage ×1  [ open link ]                             │
+│                                                                          │
+│  ── JOURNAL ──────────────────────────────────────────────────────────    │
+│  #412 extract done 14:02:11 84/84 0 err 12.4s                            │
+│  #413 enrich  done 14:02:35 77/79 1 err 24.1s 1.2k/840 tok $0.02        │
+│  #414 sweep   done 14:02:36 2 archived                                   │
+└──────────────────────────────────────────────────────────────────────────┘
+
+LIVE RUN (POST /api/run in flight, fed by SSE):
+┌──────────────────────────────────────────────────────────────────────────┐
+│  ⟳ Run in progress — run-9f3c…                                           │
+│  ingest ▓▓▓▓▓▓▓▓░░ pending   extract ○ queued   enrich ○   sweep ○      │
+│  cursor 1284 → … (live)                                                  │
+└──────────────────────────────────────────────────────────────────────────┘
+
+BUSY (exit 3 equivalent):
+┌──────────────────────────────────────────────────────────────────────────┐
+│  ⏸ Another run is in progress                                            │
+│  run-81ab holds the extract lock (pid 5123, started 13:58)               │
+│  [ Watch it ]  — subscribes to SSE; this view flips to live when it ends │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+## Elements
+
+| Element | State | Description |
+|---------|-------|-------------|
+| Run now button | required | POST /api/run; disabled while a run is active (SSE `run` status=running) or when busy; label becomes "Running…" with stage name during the pass |
+| Verdict banner | required | One of the four exit-code treatments above; derived from RunResult (`needsAction` → 2) or the busy/failed responses; includes counts per attention collection when needsAction |
+| Run header line | required | runId (truncated, copyable), `cursorBefore → cursorAfter` (the link_events delta this pass covered — same numbers the CLI prints), started/finished/duration |
+| Stage table | required | Rows: ingest (job count + accepted/duplicates/rejected totals), extract, enrich, sweep. Columns: status chip, input→ok, errors, deferred, needs_browser, duration, tokens in/out, cost. Missing values render `—`, never 0 |
+| Needs-action panel | conditional | Only when needsAction or attention collections non-empty: per-collection counts + the exact remediation (host → `linkinbox login <host>` with copy button; errored count → link to filtered list) |
+| Journal list | required | Recent run-journal rows from SSE `run` events + GET /api/runs/{id} on demand: `#id stage status time counters duration tokens cost`; newest first, ~20 shown, "show all" expands; clicking a row fetches the full journal row |
+| Live progress | conditional | While a run is active: per-stage stepper (ingest → extract → enrich → sweep) with the current stage highlighted; ingest jobs show done/total; extract/enrich show batch counters when available |
+| Busy panel | conditional | 409/busy result: holder runId + pid + stage + startedAt; "Watch it" just keeps the SSE subscription — the view transitions itself when the run finishes |
+| Failure detail | conditional | Exit-1 treatment: the failing stage row expands inline with `errorCount` and a link to the errored collection; raw error strings from journal rows are shown verbatim in a mono block |
+| Metrics link | action | Footer link to metrics view (GET /api/metrics — stage p50/p95, tokens, daily cost); metrics is its own surface, not duplicated here |
+| Cursor explainer | ambient | `?` tooltip on the cursor range: "link_events ids covered by this pass; use as `since` for delta reads" |
+
+## Behavior
+
+- On mount: show the MOST RECENT completed run. Source of truth:
+  the run journal (SSE `run` events carry finished runs; GET
+  /api/runs/{id} fetches detail). If no run exists yet → empty state
+  "No runs yet — [Run now] or `linkinbox run`".
+- Run now: POST /api/run is synchronous-ish but long; the UI must not
+  block — fire the request, immediately enter live-progress mode fed by
+  SSE `run`/`ingest` events, and reconcile with the RunResult body when
+  the POST resolves. A dropped POST connection does NOT mean the run
+  stopped (the journal is durable); the live view keeps tracking via SSE.
+- Exit-code mapping is UI-derived, not a wire field: `needsAction` → 2;
+  thrown error/5xx → 1; `busy` in any stage summary or HTTP 409 → 3;
+  otherwise 0. The banner always states the code ("exit 2") so CLI and
+  UI vocabularies match.
+- Stage rows come from RunResult.summary (ingest.jobs aggregated,
+  extract/enrich RunStageSummary {input,ok,errors,deferred,
+  needsBrowser}, swept, collections). The journal adds per-run-row
+  granularity (each stage attempt is its own runs row with pid,
+  heartbeat, tokens, cost).
+- needsAction panel reuses the attention view's remediation copy —
+  keep the strings in one place (shared module) so CLI hint, run view
+  and attention banner never diverge.
+- SSE `run` events: `status` transitions running → done/failed; the
+  payload includes heartbeatAt — render "last heartbeat Xm ago" on
+  running rows so a dead run is distinguishable from a slow one
+  (stale-heartbeat threshold ~2× expected interval, display only).
+- Journal pagination: server listRuns is cursor-based; v1 shows the
+  latest ~20 events accumulated from the SSE stream plus explicit
+  fetches — no infinite scroll in v1.
+- Empty/error states: API down → the whole view degrades to "server
+  unreachable" with the bind address hint (loopback vs token — the UI
+  knows its own base URL; on 401 show "this server requires a token"
+  with the token_env name from config, never ask for the token in a
+  password field [decision needed — see SPEC-SUMMARY]).
