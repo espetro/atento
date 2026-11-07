@@ -44,10 +44,28 @@ and repeated here.
 - `rubric.txt` — M4 design-gate rubric (spec fidelity / API contract /
   design system / states / responsive+a11y / live data).
 
+## M4b implementation status (post-gate)
+
+Implemented on `feat/m4b`. Notable resolutions/deviations:
+
+- Styling decision changed at implementation time: **daisyUI 5 retained as
+  base + semantic classes**; Bits UI and Tailwind v4 dropped. Recorded in
+  `screen-INDEX.txt` / `rubric.txt` / `references/tokens.md`.
+- `GET /api/browsers`, `GET /api/pair/code`, `POST /api/pair` added as thin
+  read/mint endpoints; settings ships read-only + pairing flow.
+- `state_data.frameable` now recorded by the extractor; Live tab honest
+  fallback retained.
+- Schedule date picker NOT built: `TriageBody` has no `scheduledFor`; the
+  `s` shortcut archives-to-schedule via the existing `schedule` action
+  semantics only. Flagged for a follow-up API field.
+- Saved filters are localStorage v1; no server persistence.
+
 ## Known gaps carried into M4 (not resolved by docs)
 
-- `GET /api/browsers` (adapter kinds/caps/health — CLI-only today)
-- `POST /api/pairing` + pairing-status read (extension)
+- ~~`GET /api/browsers`~~ — shipped in M4b
+- ~~`POST /api/pairing`~~ — shipped as `GET /api/pair/code` + `POST /api/pair`;
+  pairing-status read still absent (settings shows minted code only)
+- `scheduledFor` on triage/schedule actions — still absent; date picker deferred
 - config-read endpoint for settings sections
 - `state_data.frameable` writer + artifact writer (snapshot.png)
 - `scheduledFor` on triage action

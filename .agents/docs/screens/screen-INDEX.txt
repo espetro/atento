@@ -1,5 +1,8 @@
 screen INDEX
-generated: 2026-11-06 (M4 design-gate specs — proposed UI, not yet implemented)
+generated: 2026-11-06 (M4 design-gate specs)
+status: IMPLEMENTED in M4b (feat/m4b) — see notes inline; styling
+decision updated post-gate: daisyUI 5 retained as base + semantic classes
+(Bits UI / Tailwind v4 dropped — see 'styling' below)
 scope: packages/ui (Svelte 5 SPA served by @linkinbox/server) + HTTP API contract
 
 NOTE: these are SPECIFICATIONS for the M4 design gate, not descriptions of
@@ -38,20 +41,27 @@ screen list
 layout shells
   app shell        collections rail | link list | preview pane (three columns;
                    collapses to list -> detail on narrow viewports)
-  dialog layer     Bits UI dialogs (ingest, re-extract adapter picker,
-                   schedule date picker, triage confirm) over any view
+  dialog layer     bespoke accessible Dialog.svelte (ingest, re-extract
+                   adapter picker, keyboard help) over any view — focus
+                   trapped, Esc closes, focus restored
 
 component roots (proposed)
-  views/Triage.svelte, views/PreviewPane.svelte, views/CollectionsRail.svelte,
-  views/Attention.svelte, views/IngestDialog.svelte, views/RunStatus.svelte,
-  views/Settings.svelte, components/StateChip.svelte, components/KeyHint.svelte
+  views/Triage.svelte, views/LinkList.svelte, views/PreviewPane.svelte,
+  views/CollectionsRail.svelte, views/Attention.svelte,
+  views/IngestDialog.svelte, views/RunStatus.svelte, views/Settings.svelte,
+  components/StateChip.svelte, components/CopyButton.svelte,
+  components/Dialog.svelte, components/LiveSync.svelte
 
-styling (decided — M4 gate)
-  Svelte 5 + Bits UI 2.20 + Tailwind v4. Semantic classes only, defined in the
-  ui stylesheet (`@theme` tokens `--color-surface/ink/accent` plus state
-  colors): `.btn`, `.chip`, `.chip-state-*`, `.pane`, `.list-row`, `.kbd`.
-  NO daisyUI, no raw Tailwind palette utilities for surfaces. Type mix:
-  bold display + light body (user's stated taste; see references/tokens.md).
+styling (decided — M4b implementation; supersedes the M4-gate "Bits UI +
+  Tailwind v4, no daisyUI" text)
+  Svelte 5 + daisyUI 5 kept as the base layer + hand-rolled semantic classes
+  in app.css. Bits UI and Tailwind v4 were dropped during implementation;
+  forms use @formisch/svelte + valibot. Semantic classes only for surfaces:
+  `.btn`, `.chip`, `.chip-state-*`, `.pane`, `.list-row`, `.kbd`, `.rail-row`,
+  `.field`, dialog classes — defined over CSS custom-property tokens
+  (`--color-surface/ink/accent` + state colors). No raw palette utilities
+  for surfaces. Type mix: bold display + light body (see
+  references/tokens.md).
 
 API surface the specs consume (all exist unless marked [gap])
   GET  /api/collections/summary           counts per collection + needsLoginHosts
@@ -70,10 +80,9 @@ API surface the specs consume (all exist unless marked [gap])
   GET  /api/events                        SSE; evt:{"l","r","i"} composite cursors,
                                          Last-Event-ID / ?since= resume
   GET  /api/metrics?last=                 per-stage + daily token/cost buckets
-  [gap] GET  /api/browsers                adapter kinds/caps/health (CLI-only today:
-                                         `linkinbox browsers`)
-  [gap] POST /api/pairing                 mint one-time extension pairing token
-                                         (today: manual token_env config)
+  GET  /api/browsers                     adapter kinds/caps/health (added M4b)
+  GET  /api/pair/code                     mint one-time pairing code (added M4b)
+  POST /api/pair                          redeem pairing code (added M4b)
 
 keyboard contract (all views, when no input/dialog is focused)
   j / k        move selection in the link list
@@ -83,6 +92,17 @@ keyboard contract (all views, when no input/dialog is focused)
   o            open the selected link's URL in the system browser
   1 - 4        switch preview tabs: Reader / Metadata / Snapshot / Live
   ?            show the keymap overlay
+
+implementation notes (M4b)
+  - state_data.frameable shipped: extractor records it; Live tab iframes
+    only when true, else snapshot + "Open in browser" (no proxy).
+  - Snapshot artifact convention: snapshot.png via
+    /api/links/{id}/artifacts/snapshot.png; honest empty state when absent.
+  - Saved filters: localStorage v1 keyed by collection (no server persistence).
+  - `schedule` triage action still takes no date (TriageBody = { ids, action });
+    the spec'd date picker was NOT built — needs a scheduledFor API field.
+  - Settings is read-only except pairing-code mint/copy; schedule section
+    explains cron/launchd ownership and shows "next run unknown".
 
 known gaps (to resolve during M4 implementation, not in this docs pass)
   - state_data.frameable does not exist yet; Live tab falls back to
