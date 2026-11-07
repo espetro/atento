@@ -13,6 +13,7 @@ export * from './adapters/enrich-fn.js'
 export * from './adapters/media-fn.js'
 export * from './adapters/browse-fn.js'
 export * from './linkinbox.js'
+export * from './ingest-input.js'
 
 // The shared contract surface the driving adapters render from. These are
 // core domain values and shapers, re-exported so adapters never reach into
@@ -79,6 +80,7 @@ export type {
   HostState,
   HostPolicy,
   IngestJob,
+  IngestJobStatus,
   IngestResult,
   LimitsConfig,
   Link,

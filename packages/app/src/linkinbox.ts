@@ -15,6 +15,7 @@
  * interfaces land in M1 without reshaping this module.
  */
 import { mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { openStore } from '@linkinbox/db'
 import { importFile, type ImportResult } from '@linkinbox/importers'
@@ -99,6 +100,13 @@ import {
   type UntilEmptyResult,
 } from '@linkinbox/core'
 import { loadLoginReport, type LoginReport, type PendingLoginPolicy } from './pending-logins.js'
+import {
+  ingestStatusOf,
+  runIngestInput,
+  type IngestInput,
+  type IngestJobSummary,
+  type IngestStatus,
+} from './ingest-input.js'
 import { createExtractFn } from './adapters/extract-fn.js'
 import { createEnrichFn } from './adapters/enrich-fn.js'
 import { createMediaFn, type MediaFn as AdapterMediaFn } from './adapters/media-fn.js'
@@ -244,6 +252,14 @@ export interface LinkinboxOps {
   ingestFiles(files: string[], options?: IngestFilesOptions): Promise<IngestFilesResult>
   /** Ingest pre-parsed raw links. */
   ingestRaws(raws: RawLink[], options?: { limit?: number; logger?: PipelineLogger; now?: () => Date; spoolDir?: string }): Promise<IngestResult>
+  /**
+   * The M2 bulk-ingest use case shared by CLI, MCP and the HTTP API. Every
+   * input kind resolves to RawLinks spooled through ingest_jobs; the result
+   * is a job summary only — link payloads are never echoed back.
+   */
+  ingest(input: IngestInput, options?: { logger?: PipelineLogger; now?: () => Date }): Promise<IngestJobSummary>
+  /** Progress for one ingest job (null when the id is unknown). */
+  ingestStatus(jobId: string): Promise<IngestStatus | null>
 
   // ---- pipeline stages -------------------------------------------------
   extract(options?: ExtractStageOptions): Promise<ExtractResult>
@@ -338,7 +354,15 @@ export function createLinkinboxOps(
   const store = deps.store
   const env = deps.env ?? process.env
   const logger = deps.logger ?? noopLogger
-  const spoolDir = deps.spoolDir ?? (cfg.dir !== '' ? join(cfg.dir, 'spool') : undefined)
+  // The ingest spool always resolves: <config dir>/spool, else next to the
+  // db, else the OS temp dir — bulk ingest is durable on every adapter.
+  const spoolDir =
+    deps.spoolDir ??
+    (cfg.dir !== ''
+      ? join(cfg.dir, 'spool')
+      : cfg.dbPath !== undefined
+        ? join(dirname(cfg.dbPath), 'spool')
+        : join(tmpdir(), 'linkinbox-spool'))
 
   // Lazily built, memoized adapter functions.
   let extractFnPromise: Promise<ExtractFn> | undefined
@@ -464,6 +488,19 @@ export function createLinkinboxOps(
         ...(options.now ? { now: options.now } : {}),
         ...(dir !== undefined ? { spoolDir: dir } : {}),
       })
+    },
+
+    ingest(input, options = {}) {
+      return runIngestInput(store, input, {
+        spoolDir,
+        logger: options.logger ?? logger,
+        ...(options.now ? { now: options.now } : {}),
+      })
+    },
+
+    async ingestStatus(jobId) {
+      const job = await store.getIngestJob(jobId)
+      return job === null ? null : ingestStatusOf(job)
     },
 
     async extract(options = {}) {

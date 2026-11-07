@@ -306,6 +306,111 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
   )
 
   server.registerTool(
+    'ingest_file',
+    {
+      description:
+        'Bulk-ingest links from a local file (spec name ingest.file): markdown, ' +
+        'json, url list (.txt), Safari reading list (.plist) or html bookmarks. ' +
+        'Costs zero tokens for the payload — the preferred ingest when the ' +
+        'agent runs on the same machine as the linkinbox store. Returns only ' +
+        'the job summary { jobId, accepted, duplicates, rejected, status }, ' +
+        'never the links themselves.',
+      inputSchema: {
+        path: z.string().check(z.minLength(1)),
+      },
+    },
+    async (args: { path: string }) => {
+      const ctx = await deps.ctx()
+      return json(await opsFor(ctx).ingest({ kind: 'file', path: args.path }, { logger: ctx.logger }))
+    },
+  )
+
+  server.registerTool(
+    'ingest_text',
+    {
+      description:
+        'Bulk-ingest links found in long-form text (spec name ingest.text): ' +
+        'notes, chat dumps, pasted pages. URLs are pulled out with the ' +
+        'markdown and url-list importers. Returns only the job summary.',
+      inputSchema: {
+        text: z.string().check(z.minLength(1)),
+      },
+    },
+    async (args: { text: string }) => {
+      const ctx = await deps.ctx()
+      return json(await opsFor(ctx).ingest({ kind: 'text', text: args.text }, { logger: ctx.logger }))
+    },
+  )
+
+  server.registerTool(
+    'ingest_urls',
+    {
+      description:
+        'Bulk-ingest an explicit URL array (spec name ingest.urls), capped at ' +
+        '500 urls per call — larger lists belong in a file via ingest_file. ' +
+        'Optional note and tags are attached to every link. Returns only the ' +
+        'job summary.',
+      inputSchema: {
+        urls: z.array(z.string().check(z.minLength(1))).check(z.minLength(1), z.maxLength(500)),
+        note: z.optional(z.string()),
+        tags: z.optional(z.array(z.string())),
+      },
+    },
+    async (args: { urls: string[]; note?: string; tags?: string[] }) => {
+      const ctx = await deps.ctx()
+      return json(
+        await opsFor(ctx).ingest(
+          {
+            kind: 'urls',
+            urls: args.urls,
+            ...(args.note !== undefined ? { note: args.note } : {}),
+            ...(args.tags !== undefined ? { tags: args.tags } : {}),
+          },
+          { logger: ctx.logger },
+        ),
+      )
+    },
+  )
+
+  server.registerTool(
+    'ingest_remote',
+    {
+      description:
+        'Bulk-ingest links from a remote file (spec name ingest.remote): a ' +
+        'gist or raw URL is fetched, then parsed with the importer its ' +
+        'extension selects (json, markdown, url list, plist). Returns only ' +
+        'the job summary.',
+      inputSchema: {
+        url: z.url(),
+      },
+    },
+    async (args: { url: string }) => {
+      const ctx = await deps.ctx()
+      return json(await opsFor(ctx).ingest({ kind: 'remote', url: args.url }, { logger: ctx.logger }))
+    },
+  )
+
+  server.registerTool(
+    'ingest_status',
+    {
+      description:
+        'Progress of one ingest job (spec name ingest.status): status, ' +
+        'total/done/cursor and the last error. Use it for large jobs; small ' +
+        'jobs are already done when ingest_* returns.',
+      inputSchema: {
+        jobId: z.string().check(z.minLength(1)),
+      },
+    },
+    async (args: { jobId: string }) => {
+      const ctx = await deps.ctx()
+      {
+        const status = await opsFor(ctx).ingestStatus(args.jobId)
+        return json({ job: status })
+      }
+    },
+  )
+
+  server.registerTool(
     'extract_run',
     {
       description: 'Run extraction on inbox links lacking content (spec name extract.run).',

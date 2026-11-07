@@ -7,6 +7,8 @@
 import { Hono } from 'hono'
 import { serve, type ServerType } from '@hono/node-server'
 import { existsSync, readFileSync } from 'node:fs'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { extname, join, resolve, sep } from 'node:path'
 import {
   createLinkinboxOps,
@@ -168,6 +170,103 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
       },
       result.outcome === 'created' ? 201 : 200,
     )
+  })
+
+  // ---- bulk ingest ------------------------------------------------------
+  //
+  // One use case behind every content type, same as the CLI and MCP:
+  //   multipart/form-data  -> a file upload, ingested like ingest_file
+  //   text/plain           -> long-form text, ingested like ingest_text
+  //   application/json     -> { kind: 'urls' | 'remote' | 'file' | 'text', ... }
+  // The response is always the job summary — never the links.
+
+  app.post('/api/ingest', async (c) => {
+    const contentType = c.req.header('content-type') ?? ''
+    try {
+      if (contentType.includes('multipart/form-data')) {
+        const body = await c.req.parseBody()
+        const file = body['file']
+        if (!(file instanceof File)) {
+          return c.json({ error: 'multipart body must carry a "file" part' }, 400)
+        }
+        const dir = await mkdtemp(join(tmpdir(), 'linkinbox-ingest-'))
+        try {
+          const name = file.name === '' ? 'upload' : file.name
+          const path = join(dir, name)
+          await writeFile(path, Buffer.from(await file.arrayBuffer()))
+          const summary = await ops.ingest({ kind: 'file', path })
+          return c.json(summary, summary.status === 'busy' ? 409 : 200)
+        } finally {
+          await rm(dir, { recursive: true, force: true }).catch(() => {})
+        }
+      }
+      if (contentType.includes('text/plain')) {
+        const text = await c.req.text()
+        const summary = await ops.ingest({ kind: 'text', text })
+        return c.json(summary, summary.status === 'busy' ? 409 : 200)
+      }
+      const body = (await c.req.json().catch(() => null)) as
+        | { kind?: string; path?: string; text?: string; urls?: unknown; url?: string; note?: string; tags?: unknown }
+        | null
+      if (!body || typeof body.kind !== 'string') {
+        return c.json(
+          { error: 'json body must be { kind: "urls"|"remote"|"file"|"text", ... }' },
+          400,
+        )
+      }
+      switch (body.kind) {
+        case 'urls': {
+          if (!Array.isArray(body.urls) || !body.urls.every((u) => typeof u === 'string')) {
+            return c.json({ error: 'urls must be an array of strings' }, 400)
+          }
+          const summary = await ops.ingest({
+            kind: 'urls',
+            urls: body.urls,
+            ...(typeof body.note === 'string' ? { note: body.note } : {}),
+            ...(Array.isArray(body.tags) && body.tags.every((t) => typeof t === 'string')
+              ? { tags: body.tags as string[] }
+              : {}),
+          })
+          return c.json(summary, summary.status === 'busy' ? 409 : 200)
+        }
+        case 'remote': {
+          if (typeof body.url !== 'string') return c.json({ error: 'url must be a string' }, 400)
+          const summary = await ops.ingest({ kind: 'remote', url: body.url })
+          return c.json(summary, summary.status === 'busy' ? 409 : 200)
+        }
+        case 'file': {
+          if (typeof body.path !== 'string') return c.json({ error: 'path must be a string' }, 400)
+          const summary = await ops.ingest({ kind: 'file', path: body.path })
+          return c.json(summary, summary.status === 'busy' ? 409 : 200)
+        }
+        case 'text': {
+          if (typeof body.text !== 'string') return c.json({ error: 'text must be a string' }, 400)
+          const summary = await ops.ingest({ kind: 'text', text: body.text })
+          return c.json(summary, summary.status === 'busy' ? 409 : 200)
+        }
+        default:
+          return c.json({ error: `unknown ingest kind "${body.kind}"` }, 400)
+      }
+    } catch (err) {
+      const message = errMsg(err)
+      // Input problems (missing file, bad url, too many urls, fetch failure)
+      // are client errors, not server faults.
+      if (
+        message.includes('at most') ||
+        message.includes('could not fetch') ||
+        message.includes('fetch of') ||
+        message.includes('exceeds')
+      ) {
+        return c.json({ error: message }, 400)
+      }
+      throw err
+    }
+  })
+
+  app.get('/api/ingest/:jobId', async (c) => {
+    const job = await ops.ingestStatus(c.req.param('jobId'))
+    if (!job) return c.json({ error: 'not found' }, 404)
+    return c.json({ job })
   })
 
   app.get('/api/links', async (c) => {

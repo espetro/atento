@@ -36,6 +36,8 @@ export const CLI_TO_TOOL: Record<string, string[]> = {
   enrich: ['enrich_run'],
   // `run` is the three pipeline stages in one pass.
   run: ['ingest_run', 'extract_run', 'enrich_run'],
+  // The `ingest` command group is the M2 bulk-ingest contract.
+  ingest: ['ingest_file', 'ingest_text', 'ingest_urls', 'ingest_remote', 'ingest_status'],
   list: ['links_list'],
   show: ['links_get'],
   triage: ['links_triage'],
@@ -58,6 +60,11 @@ const SPEC_TOOLS = [
   'links.overview',
   'links.pipeline',
   'ingest.run',
+  'ingest.file',
+  'ingest.text',
+  'ingest.urls',
+  'ingest.remote',
+  'ingest.status',
   'extract.run',
   'enrich.run',
   'metrics.get',
