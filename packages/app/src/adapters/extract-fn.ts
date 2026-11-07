@@ -9,6 +9,7 @@
  * agree on every host.
  */
 import {
+  DEFAULT_BROWSER_CONFIG,
   emptyHostState,
   hostPolicy,
   isLoginWall,
@@ -33,7 +34,7 @@ import {
 import type { ExtractFn } from '@linkinbox/core'
 
 /** An empty browser config, used when the caller passes none. */
-const EMPTY_BROWSER_CONFIG: BrowserConfig = { engine: 'agent-browser', stealthHosts: [] }
+const EMPTY_BROWSER_CONFIG: BrowserConfig = DEFAULT_BROWSER_CONFIG
 
 export interface RouterExtractOptions extends RouterOptions {
   /** Directory holding agent-browser login profiles. */
