@@ -1,5 +1,7 @@
 <script lang="ts">
   import { createQuery, useQueryClient } from '@tanstack/svelte-query'
+  import * as v from 'valibot'
+  import { createForm, Form, Field, type FormStore } from '@formisch/svelte'
   import { api, ApiError } from '../lib/api'
   import { sseIngestJobs } from '../lib/events'
   import type { IngestJob, IngestJobSummary } from '../lib/types'
@@ -19,6 +21,55 @@
 
   const MAX_URLS = 500
   const ACCEPT = '.md,.markdown,.txt,.html,.htm,.json,.jsonl,.csv'
+  const FILE_MAX_BYTES = 10 * 1024 * 1024
+
+  // ---- valibot schemas (formisch fields for paste mode; file checked on pick)
+  const URL_RE = /https?:\/\/[^\s)\]}>"']+/g
+  const MD_RE = /\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g
+
+  function detectUrls(text: string): string[] {
+    const urls = new Set<string>()
+    let m: RegExpExecArray | null
+    URL_RE.lastIndex = 0
+    MD_RE.lastIndex = 0
+    while ((m = URL_RE.exec(text)) !== null) urls.add(m[0].replace(/[.,;:!?]+$/, ''))
+    while ((m = MD_RE.exec(text)) !== null) urls.add(m[1]!)
+    return [...urls]
+  }
+
+  const pasteSchema = v.object({
+    text: v.pipe(
+      v.string(),
+      v.trim(),
+      v.nonEmpty('paste at least one URL or some text'),
+      v.check(
+        (t) => detectUrls(t).length <= MAX_URLS,
+        `too many urls — the limit is ${MAX_URLS}`,
+      ),
+    ),
+    note: v.string(),
+    tags: v.string(),
+  })
+  type PasteForm = v.InferInput<typeof pasteSchema>
+
+  const fileSchema = v.pipe(
+    v.custom<File>((i) => i instanceof File, 'choose a file'),
+    v.check((f) => f.size <= FILE_MAX_BYTES, 'file too large (max 10 MB)'),
+    v.check(
+      (f) => /\.(md|markdown|txt|html?|jsonl?|csv)$/i.test(f.name),
+      'unsupported file type — .md .txt .html .json .csv',
+    ),
+  )
+
+  type PasteSchema = typeof pasteSchema
+  let pasteForm = $state<FormStore<PasteSchema> | null>(null)
+  $effect(() => {
+    if (mode !== 'paste' || job != null) return
+    pasteForm = createForm({
+      schema: pasteSchema,
+      initialInput: { text, note, tags: tagsInput },
+    })
+  })
 
   type Mode = 'paste' | 'file'
   let mode = $state<Mode>('paste')
@@ -79,7 +130,7 @@
     while ((m = mdRe.exec(text)) !== null) urls.add(m[1]!)
     return [...urls]
   })
-  const hasMarkdown = $derived(/\[[^\]]*\]\(https?:/.test(text) || /[^\s]+\.(md|markdown|txt|html?)\b/i.test(text))
+  const hasMarkdown = $derived(hasMarkdownText(text))
   const overLimit = $derived(detected.length > MAX_URLS)
 
   function close() {
@@ -90,32 +141,16 @@
     setUrl({ dialog: '' })
   }
 
-  async function submit() {
+  // The last body we POSTed — Retry re-sends it verbatim (file mode rebuilds
+  // the FormData from the stored File since FormData is single-use here).
+  let lastBody = $state<Parameters<typeof api.ingest>[0] | null>(null)
+  let lastFile = $state<File | null>(null)
+
+  async function doIngest(body: Parameters<typeof api.ingest>[0]) {
     submitError = ''
     submitting = true
+    lastBody = body
     try {
-      let body: Parameters<typeof api.ingest>[0]
-      if (mode === 'file') {
-        if (!file) {
-          submitError = 'choose a file first'
-          return
-        }
-        const fd = new FormData()
-        fd.append('file', file, file.name)
-        body = fd
-      } else if (detected.length > 0 && !hasMarkdown && detected.join('') === text.replace(/\s+/g, '')) {
-        // pure url list -> kind:'urls'
-        body = {
-          kind: 'urls',
-          urls: detected,
-          ...(note.trim() ? { note: note.trim() } : {}),
-          ...(tagsInput.trim()
-            ? { tags: tagsInput.split(',').map((t) => t.trim()).filter(Boolean) }
-            : {}),
-        }
-      } else {
-        body = { kind: 'text', text }
-      }
       const summary = await api.ingest(body)
       job = summary
       liveJob = null
@@ -142,6 +177,62 @@
     }
   }
 
+  function buildPasteBody(output: PasteForm) {
+    const t = output.text.trim()
+    const urls = detectUrls(t)
+    const isPureList =
+      urls.length > 0 && !hasMarkdownText(t) && urls.join('') === t.replace(/\s+/g, '')
+    const note_ = output.note.trim()
+    const tags = output.tags
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+    if (isPureList) {
+      return {
+        kind: 'urls' as const,
+        urls,
+        ...(note_ ? { note: note_ } : {}),
+        ...(tags.length ? { tags } : {}),
+      }
+    }
+    return { kind: 'text' as const, text: t }
+  }
+
+  function hasMarkdownText(t: string): boolean {
+    return /\[[^\]]*\]\(https?:/.test(t) || /[^\s]+\.(md|markdown|txt|html?)\b/i.test(t)
+  }
+
+  function onPasteSubmit(output: PasteForm) {
+    void doIngest(buildPasteBody(output))
+  }
+
+  async function submitFile() {
+    submitError = ''
+    const parsed = v.safeParse(fileSchema, file)
+    if (!parsed.success) {
+      submitError = parsed.issues[0]?.message ?? 'invalid file'
+      return
+    }
+    const f = parsed.output
+    const fd = new FormData()
+    fd.append('file', f, f.name)
+    lastFile = f
+    await doIngest(fd)
+  }
+
+  async function retryLast() {
+    if (!lastBody && !lastFile) return
+    job = null
+    liveJob = null
+    if (lastBody) {
+      await doIngest(lastBody)
+    } else if (lastFile) {
+      const fd = new FormData()
+      fd.append('file', lastFile, lastFile.name)
+      await doIngest(fd)
+    }
+  }
+
   function onFileInput(e: Event) {
     const input = e.currentTarget as HTMLInputElement
     file = input.files?.[0] ?? null
@@ -162,15 +253,20 @@
   function onKeydown(e: KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault()
-      if (!submitting && job == null) void submit()
+      if (submitting || job != null) return
+      if (mode === 'file') {
+        void submitFile()
+      } else {
+        document.querySelector<HTMLFormElement>('[data-testid=ingest-form]')?.requestSubmit()
+      }
     }
   }
 
-  const warnings = $derived(liveJob ? [] : (job?.warnings ?? []))
+  const warnings = $derived(job?.warnings ?? [])
   const visibleWarnings = $derived(warningsAll ? warnings : warnings.slice(0, 5))
 </script>
 
-<Dialog {open} labelledBy="ingest-title" onClose={close}>
+<Dialog {open} labelledBy="ingest-title" onClose={close} initialFocus="[data-testid=ingest-textarea]">
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div class="ingest-dialog" role="group" aria-label="Ingest links" onkeydown={onKeydown} data-testid="ingest-dialog">
     <header class="ingest-head">
@@ -199,35 +295,89 @@
       </div>
 
       {#if mode === 'paste'}
-        <textarea
-          class="textarea ingest-text"
-          rows="10"
-          placeholder={'https://example.com/a\nhttps://example.com/b\n\n- [title](https://…) also works'}
-          aria-label="URLs or text to ingest"
-          bind:value={text}
-          data-testid="ingest-textarea"
-        ></textarea>
-        <p class="meta ingest-hint">
-          one URL per line · markdown `- [t](url)` also works · ≤ {MAX_URLS} urls
-          {#if detected.length > 0}
-            · <strong data-testid="url-count">{detected.length} urls detected</strong>
-          {/if}
-        </p>
-        {#if overLimit}
-          <p class="notice notice-bad" role="alert" data-testid="over-limit">
-            {detected.length} urls detected — the limit is {MAX_URLS}. Split the list.
-          </p>
+        {#if pasteForm}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <Form of={pasteForm} onsubmit={onPasteSubmit} class="ingest-form" data-testid="ingest-form">
+            <Field of={pasteForm} path={["text"]}>
+              {#snippet children(field)}
+                <textarea
+                  class="textarea ingest-text"
+                  rows="10"
+                  placeholder={'https://example.com/a\nhttps://example.com/b\n\n- [title](https://…) also works'}
+                  aria-label="URLs or text to ingest"
+                  value={String(field.input ?? '')}
+                  oninput={(e) => {
+                    field.onInput(e.currentTarget.value)
+                    text = e.currentTarget.value
+                  }}
+                  data-testid="ingest-textarea"
+                ></textarea>
+                {#if field.errors}<p class="field-error" role="alert">{field.errors[0]}</p>{/if}
+              {/snippet}
+            </Field>
+            <p class="meta ingest-hint">
+              one URL per line · markdown `- [t](url)` also works · ≤ {MAX_URLS} urls
+              {#if detected.length > 0}
+                · <strong data-testid="url-count">{detected.length} urls detected</strong>
+              {/if}
+            </p>
+            {#if overLimit}
+              <p class="notice notice-bad" role="alert" data-testid="over-limit">
+                {detected.length} urls detected — the limit is {MAX_URLS}. Split the list.
+              </p>
+            {/if}
+            <div class="field-row">
+              <label class="field">
+                <span class="field-label">note (optional)</span>
+                <Field of={pasteForm} path={["note"]}>
+                  {#snippet children(field)}
+                    <input
+                      class="input"
+                      type="text"
+                      value={String(field.input ?? '')}
+                      oninput={(e) => {
+                        field.onInput(e.currentTarget.value)
+                        note = e.currentTarget.value
+                      }}
+                      placeholder="why these links"
+                    />
+                  {/snippet}
+                </Field>
+              </label>
+              <label class="field">
+                <span class="field-label">tags (optional)</span>
+                <Field of={pasteForm} path={["tags"]}>
+                  {#snippet children(field)}
+                    <input
+                      class="input"
+                      type="text"
+                      value={String(field.input ?? '')}
+                      oninput={(e) => {
+                        field.onInput(e.currentTarget.value)
+                        tagsInput = e.currentTarget.value
+                      }}
+                      placeholder="ai, eng"
+                    />
+                  {/snippet}
+                </Field>
+              </label>
+            </div>
+            {#if submitError}
+              <p class="notice notice-bad" role="alert" data-testid="ingest-error">{submitError}</p>
+            {/if}
+            <footer class="ingest-foot">
+              <button type="button" class="btn" onclick={close}>Cancel</button>
+              <button
+                type="submit"
+                class="btn btn-primary"
+                disabled={submitting || overLimit}
+                data-testid="ingest-submit"
+              >
+                {submitting ? 'Ingesting…' : detected.length > 0 ? `Ingest ${detected.length} link${detected.length === 1 ? '' : 's'}` : 'Ingest'}
+              </button>
+            </footer>
+          </Form>
         {/if}
-        <div class="field-row">
-          <label class="field">
-            <span class="field-label">note (optional)</span>
-            <input class="input" type="text" bind:value={note} placeholder="why these links" />
-          </label>
-          <label class="field">
-            <span class="field-label">tags (optional)</span>
-            <input class="input" type="text" bind:value={tagsInput} placeholder="ai, eng" />
-          </label>
-        </div>
       {:else}
         <div
           class="dropzone"
@@ -261,22 +411,24 @@
         </div>
       {/if}
 
-      {#if submitError}
-        <p class="notice notice-bad" role="alert" data-testid="ingest-error">{submitError}</p>
-      {/if}
+      {#if mode === 'file'}
+        {#if submitError}
+          <p class="notice notice-bad" role="alert" data-testid="ingest-error">{submitError}</p>
+        {/if}
 
-      <footer class="ingest-foot">
-        <button type="button" class="btn" onclick={close}>Cancel</button>
-        <button
-          type="button"
-          class="btn btn-primary"
-          disabled={submitting || overLimit || (mode === 'paste' ? text.trim() === '' : file == null)}
-          onclick={() => void submit()}
-          data-testid="ingest-submit"
-        >
-          {submitting ? 'Ingesting…' : mode === 'paste' && detected.length > 0 ? `Ingest ${detected.length} link${detected.length === 1 ? '' : 's'}` : 'Ingest'}
-        </button>
-      </footer>
+        <footer class="ingest-foot">
+          <button type="button" class="btn" onclick={close}>Cancel</button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            disabled={submitting || file == null}
+            onclick={() => void submitFile()}
+            data-testid="ingest-submit"
+          >
+            {submitting ? 'Ingesting…' : 'Ingest'}
+          </button>
+        </footer>
+      {/if}
     {:else}
       <!-- progress / result state -->
       <div class="job-view" data-testid="ingest-job">
@@ -315,17 +467,11 @@
               <button
                 type="button"
                 class="btn btn-primary"
-                disabled={submitting}
-                onclick={() => {
-                  const j = job
-                  job = null
-                  liveJob = null
-                  // retry re-posts nothing — inputs were consumed; simplest
-                  // honest retry is closing and re-submitting from scratch.
-                  void j
-                }}
+                disabled={submitting || (lastBody == null && lastFile == null)}
+                onclick={() => void retryLast()}
+                data-testid="ingest-retry"
               >
-                Retry
+                {submitting ? 'Retrying…' : 'Retry'}
               </button>
             </footer>
           {:else if status === 'done'}
@@ -490,6 +636,11 @@
     gap: 2px;
     max-height: 90px;
     overflow-y: auto;
+  }
+  .field-error {
+    font-size: 12px;
+    color: var(--color-bad, #b91c1c);
+    margin: 4px 0 0;
   }
   .warning-line {
     font-family: var(--font-mono, ui-monospace, monospace);

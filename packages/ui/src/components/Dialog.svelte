@@ -10,11 +10,14 @@
     open = false,
     labelledBy,
     onClose,
+    initialFocus,
     children,
   }: {
     open?: boolean
     labelledBy?: string
     onClose: () => void
+    /** Selector for the element to focus on open (defaults to first focusable). */
+    initialFocus?: string
     children: Snippet
   } = $props()
 
@@ -30,7 +33,9 @@
     previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     // Move focus into the dialog on the next tick (children must be mounted).
     const id = requestAnimationFrame(() => {
-      const first = cardEl?.querySelector<HTMLElement>(FOCUSABLE)
+      const first =
+        (initialFocus ? cardEl?.querySelector<HTMLElement>(initialFocus) : null) ??
+        cardEl?.querySelector<HTMLElement>(FOCUSABLE)
       ;(first ?? cardEl)?.focus()
     })
     // Escape works even when focus somehow lands outside the card.
