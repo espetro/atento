@@ -382,6 +382,17 @@ export interface operations {
                     };
                 };
             };
+            /** @description Missing or wrong bearer token (non-loopback binds) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
         };
     };
     postApiPair: {

@@ -126,6 +126,8 @@ Clients that can reach the server (the browser extension, a script on another ma
 2. The user copies the code into the client.
 3. `POST /api/pair` with `{"code": "..."}` → `{"captureToken": "..."|null, "serverToken": "..."|null}`. This route is deliberately NOT bearer-gated — the code is the credential. Codes are single-use, expire after 5 minutes, and live in memory: a server restart just means pairing again. `captureToken` is the `[capture] token_env` value for `POST /capture`; `serverToken` is the `[server] token_env` value for `/api/*`. Either is null when the env var is unset.
 
+**Security note.** On a loopback bind, `GET /api/pair/code` is unauthenticated and `POST /api/pair` is ungated, so any local process can mint a code and receive the bearer tokens. That is a deliberate tradeoff — pairing exists so a local client does not need tokens typed by hand, and loopback already implies local trust — but it is bounded: codes are 8 chars from a 31-char alphabet (~39 bits), single-use, expire in 5 minutes, at most 10 may be live at once (oldest evicted), and redemption attempts are throttled to 30 per minute. On a non-loopback bind `/api/pair/code` sits behind the server bearer token like every other `/api/*` route, so remote clients cannot mint codes at all; `POST /api/pair` stays ungated everywhere because the code itself is the credential.
+
 ## iOS today
 
 Safari on iOS cannot run this extension path today. The Reading List plist import (`linkinbox import <plist>`) remains the iOS route. An iOS Shortcut that POSTs to `/capture` is untested and is not claimed to work.

@@ -86,6 +86,44 @@ describe('pairing: loopback', () => {
     expect(malformed.status).toBe(400)
   })
 
+  it('evicts the oldest code past the outstanding cap (default 10)', async () => {
+    const capped = app()
+    const codes: string[] = []
+    for (let i = 0; i < 11; i++) codes.push(await issueCode(capped))
+    const redeem = (code: string) =>
+      capped.request('/api/pair', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ code }),
+      })
+    // The first-issued code was evicted by the eleventh.
+    expect((await redeem(codes[0] as string)).status).toBe(401)
+    // The newest still redeems.
+    expect((await redeem(codes[10] as string)).status).toBe(200)
+  })
+
+  it('throttles redeem attempts (default 30/min, counting failures too)', async () => {
+    const throttled = app()
+    const redeem = () =>
+      throttled.request('/api/pair', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ code: 'ZZZZZZZZ' }),
+      })
+    for (let i = 0; i < 30; i++) {
+      expect((await redeem()).status).toBe(401)
+    }
+    // The 31st attempt inside the window is throttled: still 401, but a
+    // VALID code would also be refused — prove it with a real code.
+    const code = await issueCode(throttled)
+    const res = await throttled.request('/api/pair', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code }),
+    })
+    expect(res.status).toBe(401)
+  })
+
   it('returns null tokens when the env vars are unset', async () => {
     const empty = app({})
     const code = await issueCode(empty)

@@ -245,7 +245,13 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
       description:
         'Returns a short-lived, single-use code. Display it to the user; ' +
         'the client redeems it at POST /api/pair for the bearer tokens.',
-      responses: okJson('Pairing code issued', PairCodeBody),
+      responses: {
+        ...okJson('Pairing code issued', PairCodeBody),
+        401: {
+          description: 'Missing or wrong bearer token (non-loopback binds)',
+          content: jsonContent(ErrorBody),
+        },
+      },
     }),
     (c) => c.json(pairing.issue()),
   )
