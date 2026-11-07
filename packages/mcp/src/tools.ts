@@ -513,7 +513,9 @@ const sinceSchema = z.optional(z.number().check(z.int(), z.minimum(0)))
         'Read one collection inline (spec name collections.read): paginated ' +
         '(<=50 rows by default), fields projection, format=json|tsv. Pass ' +
         'since=<cursor> from a previous read or export to get only the ' +
-        'delta; the response carries the next cursor. Collections: ' +
+        'delta; the JSON response carries `cursor`, and TSV ends with a ' +
+        '`# cursor: <n>` trailer line — store it for the next read. ' +
+        'Collections: ' +
         COLLECTION_NAMES.join(', ') + '.',
       inputSchema: {
         name: collectionNameSchema,
@@ -542,13 +544,16 @@ const sinceSchema = z.optional(z.number().check(z.int(), z.minimum(0)))
         })
         if (args.format === 'tsv') {
           // TSV is the token-cheap form: emit it as the raw text payload.
-          const { serializeCollection } = await import('@linkinbox/app')
+          // The cursor rides a trailing `# cursor: <n>` line — the same
+          // convention the CLI and HTTP surfaces use — so delta reads work
+          // in this format too.
+          const { tsvWithCursor } = await import('@linkinbox/app')
           const fields = args.fields ?? ['id', 'url', 'title', 'category', 'priority', 'summary']
           return {
             content: [
               {
                 type: 'text' as const,
-                text: serializeCollection(result.rows, fields, 'tsv'),
+                text: tsvWithCursor(result.rows, fields, result.cursor),
               },
             ],
           }

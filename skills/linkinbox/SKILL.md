@@ -60,7 +60,7 @@ Exactly seven, all readable via `linkinbox collections read <name>`, MCP `collec
 | `review` | review-only hosts |
 | `triaged` | `scheduled`, `archived`, `discarded` |
 
-Read options: `--since <cursor>` (delta only), `--fields id,url,title,category,priority,summary` (projection; `summary` is `why_it_matters` truncated to 200 chars), `--format tsv` (~40% fewer tokens than JSON), `--limit`/`--offset` (max 50/page by default). For large sets use `collection_export` / `linkinbox collections export <name>` which writes `~/.linkinbox/exports/<name>-<cursor>.<ext>` and returns `{ path, uri, count, bytes }` — `uri` is a `linkinbox://exports/...` resource link to read lazily.
+Read options: `--since <cursor>` (delta only; the HTTP route also accepts `cursor=`), `--fields id,url,title,category,priority,summary` (projection; `summary` is `why_it_matters` truncated to 200 chars), `--format tsv` (~40% fewer tokens than JSON), `--limit`/`--offset` (max 50/page by default). Every read returns the next cursor: JSON carries a `cursor` field, TSV ends with a `# cursor: <n>` trailer line, and HTTP adds an `x-linkinbox-cursor` header — store whichever you got and pass it back as `since`. For large sets use `collection_export` / `linkinbox collections export <name>` which writes `~/.linkinbox/exports/<name>-<cursor>.<ext>` and returns `{ path, uri, count, bytes }` — `uri` is a `linkinbox://exports/...` resource link to read lazily. The HTTP `format=jsonl|md` streams every matching row uncapped.
 
 ## Reading pages that need a login (linkinbox-browser, folded in)
 

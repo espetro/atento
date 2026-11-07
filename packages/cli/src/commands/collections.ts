@@ -7,7 +7,7 @@ import type { Command } from 'commander'
 import {
   COLLECTION_NAMES,
   isCollectionName,
-  serializeCollection,
+  tsvWithCursor,
   DEFAULT_COLLECTION_FIELDS,
   type CollectionExportFormat,
   type CollectionName,
@@ -77,9 +77,13 @@ export function registerCollectionsCommands(
           })
           const fields = parseFields(opts.fields) ?? DEFAULT_COLLECTION_FIELDS
           if (opts.format === 'tsv') {
-            process.stdout.write(serializeCollection(result.rows, fields, 'tsv'))
-          } else {
+            // TSV carries its cursor as a trailing `# cursor:` line — the
+            // same convention the MCP and HTTP surfaces use.
+            process.stdout.write(tsvWithCursor(result.rows, fields, result.cursor))
+          } else if (opts.format === 'json') {
             console.log(JSON.stringify(result, null, 2))
+          } else {
+            throw new Error(`unknown format "${opts.format}"; expected json or tsv`)
           }
         } finally {
           await ctx.close()

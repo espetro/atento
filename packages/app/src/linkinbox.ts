@@ -112,12 +112,14 @@ import {
 import {
   collectionExport,
   collectionRead,
+  collectionScan,
   collectionsSummary,
   type CollectionExportOptions,
   type CollectionExportResult,
   type CollectionName,
   type CollectionReadOptions,
   type CollectionReadResult,
+  type CollectionScanResult,
   type CollectionsSummary,
 } from './collections.js'
 import { createExtractFn } from './adapters/extract-fn.js'
@@ -348,6 +350,14 @@ export interface LinkinboxOps {
   collectionsSummary(): Promise<CollectionsSummary>
   /** Inline paginated read of one collection; `since` is a link_events cursor. */
   collectionRead(name: CollectionName, options?: CollectionReadOptions): Promise<CollectionReadResult>
+  /**
+   * Full scan of one collection (or its delta): every matching row, no
+   * pagination cap. Backs the streaming HTTP formats (jsonl/md).
+   */
+  collectionScan(
+    name: CollectionName,
+    options?: { since?: number; fields?: readonly string[] },
+  ): Promise<CollectionScanResult>
   /** Write one collection (or its delta) to an export file; returns a handle. */
   collectionExport(
     name: CollectionName,
@@ -620,6 +630,10 @@ export function createLinkinboxOps(
 
     collectionRead(name, options = {}) {
       return collectionRead(store, name, options)
+    },
+
+    collectionScan(name, options = {}) {
+      return collectionScan(store, name, options)
     },
 
     collectionExport(name, options = {}) {

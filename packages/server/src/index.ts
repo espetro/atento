@@ -9,11 +9,12 @@ import { serve, type ServerType } from '@hono/node-server'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { extname, join, resolve, sep } from 'node:path'
+import { basename, extname, join, resolve, sep } from 'node:path'
 import {
   createLinkinboxOps,
   isCollectionName,
   serializeCollection,
+  tsvWithCursor,
   COLLECTION_NAMES,
   DEFAULT_COLLECTION_FIELDS,
   type CollectionExportFormat,
@@ -197,8 +198,12 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
         }
         const dir = await mkdtemp(join(tmpdir(), 'linkinbox-ingest-'))
         try {
-          const name = file.name === '' ? 'upload' : file.name
-          const path = join(dir, name)
+          const name = file.name === '' ? 'upload' : basename(file.name)
+          // A crafted multipart filename must never escape the temp dir.
+          const safe = name === '.' || name === '..' || name.includes('/') || name.includes('\\')
+            ? 'upload'
+            : name
+          const path = join(dir, safe)
           await writeFile(path, Buffer.from(await file.arrayBuffer()))
           const summary = await ops.ingest({ kind: 'file', path })
           return c.json(summary, summary.status === 'busy' ? 409 : 200)
@@ -291,9 +296,10 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
       return c.json({ error: `unknown collection "${name}"; expected one of: ${COLLECTION_NAMES.join(', ')}` }, 400)
     }
     const q = c.req.query()
-    const since = q['since'] !== undefined ? Number(q['since']) : undefined
+    const rawSince = q['since'] ?? q['cursor']
+    const since = rawSince !== undefined ? Number(rawSince) : undefined
     if (since !== undefined && (!Number.isInteger(since) || since < 0)) {
-      return c.json({ error: 'since must be a non-negative integer cursor' }, 400)
+      return c.json({ error: 'since/cursor must be a non-negative integer cursor' }, 400)
     }
     const format = q['format'] ?? 'json'
     const fields =
@@ -303,19 +309,18 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
     const limit = q['limit'] !== undefined ? Number(q['limit']) : undefined
     const offset = q['offset'] !== undefined ? Number(q['offset']) : undefined
 
-    // Export-style formats stream the whole (optionally delta) collection;
-    // json/tsv are the inline paginated read.
+    // Export-style formats stream EVERY matching row (no inline cap) — the
+    // same data collection_export writes to a file.
     if (format === 'jsonl' || format === 'md') {
-      const result = await ops.collectionRead(name as CollectionName, {
+      const scan = await ops.collectionScan(name as CollectionName, {
         ...(since !== undefined ? { since } : {}),
         ...(fields !== undefined ? { fields } : {}),
-        limit: 1_000_000,
       })
-      const body = serializeCollection(result.rows, fields ?? DEFAULT_COLLECTION_FIELDS, format)
+      const body = serializeCollection(scan.rows, fields ?? DEFAULT_COLLECTION_FIELDS, format)
       return new Response(body, {
         headers: {
           'content-type': format === 'jsonl' ? 'application/x-ndjson; charset=utf-8' : 'text/markdown; charset=utf-8',
-          'x-linkinbox-cursor': String(result.cursor),
+          'x-linkinbox-cursor': String(scan.cursor),
         },
       })
     }
@@ -329,7 +334,13 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
       ...(offset !== undefined ? { offset } : {}),
     })
     if (format === 'tsv') {
-      const body = serializeCollection(result.rows, fields ?? DEFAULT_COLLECTION_FIELDS, 'tsv')
+      // TSV carries its cursor as a trailing `# cursor:` line — the same
+      // convention the CLI and MCP surfaces use.
+      const body = tsvWithCursor(
+        result.rows,
+        fields ?? DEFAULT_COLLECTION_FIELDS,
+        result.cursor,
+      )
       return new Response(body, {
         headers: {
           'content-type': 'text/tab-separated-values; charset=utf-8',

@@ -12,6 +12,7 @@ import {
   createLinkinboxOps,
   isCollectionName,
   serializeCollection,
+  tsvWithCursor,
   COLLECTION_NAMES,
   loadConfig,
   type AppConfig,
@@ -231,6 +232,28 @@ describe('collections', () => {
     expect(body.trim().split('\n')).toHaveLength(1)
     expect(JSON.parse(body.trim())).toMatchObject({ url: 'https://e.example.com/x' })
     expect(result.bytes).toBe(Buffer.byteLength(body, 'utf8'))
+  })
+
+  it('collectionScan returns every matching row past the inline cap', async () => {
+    const dir = tempDir()
+    const { store, ops } = await opsFor(dir)
+    for (let i = 0; i < 205; i += 1) {
+      await addLink(store, `https://bulk-${i}.example.com/x`)
+    }
+    const scan = await ops.collectionScan('pending', { fields: ['id', 'url'] })
+    expect(scan.count).toBe(205)
+    expect(scan.rows).toHaveLength(205)
+    expect(scan.cursor).toBeGreaterThanOrEqual(0)
+    // The inline read still caps at 200.
+    const read = await ops.collectionRead('pending', { limit: 500 })
+    expect(read.rows.length).toBeLessThanOrEqual(200)
+    expect(read.total).toBe(205)
+  })
+
+  it('tsvWithCursor appends the # cursor trailer', () => {
+    const body = tsvWithCursor([{ id: 1, url: 'https://a' }], ['id', 'url'], 42)
+    expect(body.trimEnd().split('\n').at(-1)).toBe('# cursor: 42')
+    expect(body).toContain('id\turl')
   })
 
   it('export honors since and field projection', async () => {

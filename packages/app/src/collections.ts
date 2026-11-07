@@ -175,6 +175,26 @@ async function collectionLinks(store: Store, name: CollectionName): Promise<Link
   return links.filter((l) => collectionOfLink(l) === name).sort((a, b) => a.id - b.id)
 }
 
+/**
+ * Every link currently in one collection (or, with `since`, every link that
+ * changed after the cursor and is in it now), ordered by id — the shared
+ * match step behind reads, exports and full scans.
+ */
+async function matchCollection(
+  store: Store,
+  name: CollectionName,
+  since?: number,
+): Promise<Link[]> {
+  let matched: Link[]
+  if (since !== undefined) {
+    const changed = await store.listChangedLinks(since)
+    matched = changed.filter((l) => collectionOfLink(l) === name)
+  } else {
+    matched = await collectionLinks(store, name)
+  }
+  return matched.sort((a, b) => a.id - b.id)
+}
+
 /** Counts per collection plus the needs_login per-host breakdown. */
 export async function collectionsSummary(store: Store): Promise<CollectionsSummary> {
   const collections = Object.fromEntries(COLLECTION_NAMES.map((n) => [n, 0])) as Record<
@@ -219,15 +239,7 @@ export async function collectionRead(
   )
   const offset = Math.max(0, options.offset ?? 0)
   const fields = options.fields ?? DEFAULT_COLLECTION_FIELDS
-
-  let matched: Link[]
-  if (options.since !== undefined) {
-    const changed = await store.listChangedLinks(options.since)
-    matched = changed.filter((l) => collectionOfLink(l) === name)
-  } else {
-    matched = await collectionLinks(store, name)
-  }
-  matched.sort((a, b) => a.id - b.id)
+  const matched = await matchCollection(store, name, options.since)
 
   const page = matched.slice(offset, offset + limit)
   const hasMore = offset + limit < matched.length
@@ -242,6 +254,35 @@ export async function collectionRead(
     total: matched.length,
     hasMore,
     rows: page.map((l) => projectCollectionRow(l, fields)),
+  }
+}
+
+export interface CollectionScanResult {
+  collection: CollectionName
+  /** The cursor after the scan — pass it back as `since` for the delta. */
+  cursor: number
+  count: number
+  rows: Record<string, unknown>[]
+}
+
+/**
+ * Full scan of one collection (or its delta): every matching row, no
+ * pagination cap. This is the streaming path behind
+ * `GET /api/collections/:name?format=jsonl|md` — the inline `collectionRead`
+ * cap does not apply here.
+ */
+export async function collectionScan(
+  store: Store,
+  name: CollectionName,
+  options: { since?: number; fields?: readonly string[] } = {},
+): Promise<CollectionScanResult> {
+  const fields = options.fields ?? DEFAULT_COLLECTION_FIELDS
+  const matched = await matchCollection(store, name, options.since)
+  return {
+    collection: name,
+    cursor: await store.linkEventCursor(),
+    count: matched.length,
+    rows: matched.map((l) => projectCollectionRow(l, fields)),
   }
 }
 
@@ -281,6 +322,20 @@ export function serializeCollection(
   return [header, sep, ...body].join('\n') + '\n'
 }
 
+/**
+ * TSV reads carry their cursor as a trailing `# cursor: <n>` comment line —
+ * the one convention shared by the CLI, MCP and HTTP surfaces, so the
+ * token-cheapest format never drops the delta cursor. JSON reads expose the
+ * same value as the `cursor` field of the result object.
+ */
+export function tsvWithCursor(
+  rows: Record<string, unknown>[],
+  fields: readonly string[],
+  cursor: number,
+): string {
+  return serializeCollection(rows, fields, 'tsv') + `# cursor: ${cursor}\n`
+}
+
 export interface CollectionExportOptions {
   since?: number
   fields?: readonly string[]
@@ -307,14 +362,7 @@ export async function collectionExport(
 ): Promise<CollectionExportResult> {
   const format = options.format ?? 'jsonl'
   const fields = options.fields ?? DEFAULT_COLLECTION_FIELDS
-  let matched: Link[]
-  if (options.since !== undefined) {
-    const changed = await store.listChangedLinks(options.since)
-    matched = changed.filter((l) => collectionOfLink(l) === name)
-  } else {
-    matched = await collectionLinks(store, name)
-  }
-  matched.sort((a, b) => a.id - b.id)
+  const matched = await matchCollection(store, name, options.since)
   const rows = matched.map((l) => projectCollectionRow(l, fields))
   const body = serializeCollection(rows, fields, format)
   const bytes = Buffer.byteLength(body, 'utf8')
