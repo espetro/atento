@@ -4,7 +4,7 @@
  * underscores because the MCP SDK rejects dots; see TOOL_NAME_MAP for the
  * mapping back to the spec names.
  */
-import { z } from 'zod'
+import { z } from 'zod/mini'
 import {
   listLinks,
   getLink,
@@ -71,16 +71,16 @@ const STATUSES = ['inbox', 'scheduled', 'archived', 'discarded'] as const
 const ACTIONS = ['read_now', 'schedule', 'archive', 'discard'] as const
 const STATES = LINK_STATES as readonly LinkStateName[]
 
-const optionalFields = z.array(z.enum(LINK_FIELDS)).optional()
-const optionalLimit = z.number().int().positive().optional()
+const optionalFields = z.optional(z.array(z.enum(LINK_FIELDS)))
+const optionalLimit = z.optional(z.number().check(z.int(), z.positive()))
 
 const listInput = {
-  q: z.string().optional(),
-  status: z.enum(STATUSES).optional(),
-  category: z.string().optional(),
-  stale: z.boolean().optional(),
+  q: z.optional(z.string()),
+  status: z.optional(z.enum(STATUSES)),
+  category: z.optional(z.string()),
+  stale: z.optional(z.boolean()),
   fields: optionalFields,
-  filter: z.string().optional(),
+  filter: z.optional(z.string()),
   limit: optionalLimit,
 }
 
@@ -139,7 +139,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
         'breakdown. Read-only: it never mutates state. Use it to see where ' +
         'the whole corpus stands without listing every link.',
       inputSchema: {
-        topHosts: z.number().int().positive().optional(),
+        topHosts: z.optional(z.number().check(z.int(), z.positive())),
       },
     },
     async (args: { topHosts?: number }) => {
@@ -165,11 +165,11 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
         'state, host, q. Unlike links_list this spans all states, not just ' +
         'the inbox projection.',
       inputSchema: {
-        state: z.enum(STATES as [LinkStateName, ...LinkStateName[]]).optional(),
-        host: z.string().optional(),
-        q: z.string().optional(),
+        state: z.optional(z.enum(STATES as [LinkStateName, ...LinkStateName[]])),
+        host: z.optional(z.string()),
+        q: z.optional(z.string()),
         limit: optionalLimit,
-        offset: z.number().int().min(0).optional(),
+        offset: z.optional(z.number().check(z.int(), z.minimum(0))),
       },
     },
     async (args: {
@@ -199,7 +199,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
       description:
         'Get one link by id (spec name links.get). Extracted content only when fields includes it.',
       inputSchema: {
-        id: z.number().int().positive(),
+        id: z.number().check(z.int(), z.positive()),
         fields: optionalFields,
       },
     },
@@ -220,7 +220,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
         'Aggregate triage tool (spec name links.triage): apply one action to many ids. ' +
         'Actions: read_now, schedule, archive, discard.',
       inputSchema: {
-        ids: z.array(z.number().int().positive()).min(1),
+        ids: z.array(z.number().check(z.int(), z.positive())).check(z.minLength(1)),
         action: z.enum(ACTIONS),
       },
     },
@@ -240,7 +240,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
         'Restore parked links (archived, discarded, errored) back to the inbox. ' +
         'Deleted links are tombstones and are reported as blocked, never resurrected.',
       inputSchema: {
-        ids: z.array(z.number().int().positive()).min(1),
+        ids: z.array(z.number().check(z.int(), z.positive())).check(z.minLength(1)),
       },
     },
     async (args: { ids: number[] }) => {
@@ -255,7 +255,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
       description:
         'Sweep stale links (spec name links.sweep). Dry-run by default; apply archives. Never deletes.',
       inputSchema: {
-        apply: z.boolean().optional(),
+        apply: z.optional(z.boolean()),
       },
     },
     async (args: { apply?: boolean }) => {
@@ -274,7 +274,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
       description:
         'Ingest links from files (spec name ingest.run). Same importers as the CLI import command.',
       inputSchema: {
-        files: z.array(z.string().min(1)).min(1),
+        files: z.array(z.string().check(z.minLength(1))).check(z.minLength(1)),
         limit: optionalLimit,
       },
     },
@@ -418,7 +418,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     'metrics_get',
     {
       description: 'Per-stage metrics summary (spec name metrics.get), range like 24h, 7d, 2w.',
-      inputSchema: { range: z.string().optional(), now: z.string().datetime().optional() },
+      inputSchema: { range: z.optional(z.string()), now: z.optional(z.iso.datetime()) },
     },
     async (args: { range?: string; now?: string }) => {
       const ctx = await deps.ctx()
@@ -469,7 +469,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
         'human pacing, a daily cap, working hours and the circuit breaker. ' +
         'Nothing is written to the link store.',
       inputSchema: {
-        url: z.string().url(),
+        url: z.url(),
       },
     },
     async (args: { url: string }) => {
