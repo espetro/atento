@@ -42,6 +42,7 @@ import {
   createBrowserExtractor,
   createRouter,
   type Extractor,
+  type ExtractResult,
   type RouterOptions,
 } from '@linkinbox/extractors'
 import type { ExtractFn } from '@linkinbox/core'
@@ -241,9 +242,12 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
     // the adapter applies (dwell, scroll); it never bypasses it. An adapter
     // that cannot run (missing package, no profile) is skipped and the next
     // one tried; when the chain is exhausted the original outcome stands.
-    if (shouldEscalate(first, first.route)) {
+    if (shouldEscalate(first, first.route, url)) {
       const host = hostFromUrl(url)
       const usedId = first.route === 'browser' ? registry.resolve('reader', host) : undefined
+      // The last adapter that RAN but still hit a wall: when the chain is
+      // exhausted its outcome is more honest than the pre-escalation one.
+      let lastBlocked: { adapterId: string; result: ExtractResult } | undefined
       for (const adapterId of registry.escalate(host, usedId)) {
         const extractor = adapterReaders[adapterId]
         if (!extractor) continue
@@ -254,11 +258,28 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
         if (retried.meta?.['failed'] === true || retried.meta?.['missingProfile'] === true) {
           continue
         }
+        // It ran and the page still looks blocked (needsBrowser, a login
+        // wall, bot markers, 403/429): keep walking — the chain exists to
+        // find an adapter that actually gets through.
+        if (retried.needsBrowser === true || attemptWantsEscalation(retried, url)) {
+          lastBlocked = { adapterId, result: retried }
+          continue
+        }
         return adaptResult(
           {
             route: 'browser',
             ...retried,
             meta: { ...(retried.meta ?? {}), adapter: adapterId },
+          },
+          url,
+        )
+      }
+      if (lastBlocked) {
+        return adaptResult(
+          {
+            route: 'browser',
+            ...lastBlocked.result,
+            meta: { ...(lastBlocked.result.meta ?? {}), adapter: lastBlocked.adapterId },
           },
           url,
         )
@@ -315,23 +336,34 @@ function shouldEscalate(
     gone?: number
   },
   route: string,
+  url: string,
 ): boolean {
   if (result.gone !== undefined) return false
   const attempts = result.attempts.length > 0 ? result.attempts : []
   return attempts.some((attempt) => {
     const r = attempt.result
     if (r.gone !== undefined) return false
-    const blocked = r.meta?.['blocked'] === true
-    if (blocked) return true
-    if (r.status === 403 || r.status === 429) return true
-    if (looksBotBlocked(r.html ?? r.markdown)) return true
-    // A login wall on a page that still carries content.
-    return isLoginWall({
-      url: r.finalUrl ?? '',
-      body: r.html ?? r.markdown,
-      status: r.status,
-      hasProfile: r.meta?.['hasProfile'] === true,
-    })
+    return attemptWantsEscalation(r, url)
+  })
+}
+
+/**
+ * True when one extractor result still carries a bot-block or login-wall
+ * signal — the same detection that decides whether to enter escalation,
+ * reused to decide whether to keep walking the escalate chain.
+ */
+function attemptWantsEscalation(r: ExtractResultShape, url: string): boolean {
+  if (r.gone !== undefined) return false
+  const blocked = r.meta?.['blocked'] === true
+  if (blocked) return true
+  if (r.status === 403 || r.status === 429) return true
+  if (looksBotBlocked(r.html ?? r.markdown)) return true
+  // A login wall on a page that still carries content.
+  return isLoginWall({
+    url: r.finalUrl ?? url,
+    body: r.html ?? r.markdown,
+    status: r.status,
+    hasProfile: r.meta?.['hasProfile'] === true,
   })
 }
 

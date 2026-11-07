@@ -214,6 +214,46 @@ module = "./plugin.js"
     expect(result.markdown).toBe(ok.markdown)
   })
 
+  it('keeps walking the chain when a retry still looks blocked', async () => {
+    const calls: string[] = []
+    const extractFn = createExtractFn({
+      limits: unlimitedLimits(),
+      browserConfig: parseBrowserConfig(`
+[browser]
+reader = "headless"
+escalate = ["stealth", "user-session"]
+
+[browser.adapters.headless]
+kind = "agent-browser"
+[browser.adapters.stealth]
+kind = "patchright"
+[browser.adapters.user-session]
+kind = "cdp-attach"
+endpoint = "http://127.0.0.1:9222"
+`),
+      extractors: {
+        defuddle: fakeExtractor('defuddle', [{ markdown: '', html: cfBody, status: 403 }], calls),
+        readability: fakeExtractor('readability', [{ markdown: '' }]),
+        ytdlp: fakeExtractor('ytdlp', ok),
+        pdf: fakeExtractor('pdf', ok),
+      },
+      browserAdapters: {
+        headless: fakeExtractor('headless', [{ markdown: '' }], calls),
+        // The stealth adapter gets through the bot check but lands on a
+        // login wall: the chain must not stop here.
+        stealth: fakeExtractor('stealth', [
+          { markdown: 'Sign in to continue reading this page', status: 200 },
+        ], calls),
+        'user-session': fakeExtractor('user-session', [ok], calls),
+      },
+    })
+    const result = await extractFn('https://example.com/post')
+    expect(calls.filter((c) => c.startsWith('stealth:')).length).toBe(1)
+    expect(calls.filter((c) => c.startsWith('user-session:')).length).toBe(1)
+    expect(result.meta?.['adapter']).toBe('user-session')
+    expect(result.markdown).toBe(ok.markdown)
+  })
+
   it('never retries more than the escalate chain allows', async () => {
     const calls: string[] = []
     const extractFn = createExtractFn(

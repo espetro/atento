@@ -366,9 +366,10 @@ export function createLinkinboxOps(
       for (const profile of await store.listProfiles()) {
         const next = remapLegacyProfilePath(cfg.profilesDir, cfg.browser, profile.path)
         if (next === undefined || next === profile.path) continue
-        // Rewrite only when the move actually happened: the new dir exists
-        // and the old one is gone. Otherwise the path still resolves.
-        if (existsSync(next) && !existsSync(profile.path)) {
+        // Rewrite whenever the migrated target exists. The legacy source
+        // may still exist — <profiles>/<host> remains as the parent of the
+        // new <host>/<adapterId> dirs — so its existence proves nothing.
+        if (existsSync(next)) {
           await store.upsertProfile({ host: profile.host, path: next })
         }
       }
