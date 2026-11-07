@@ -614,11 +614,18 @@ export class FakeStore implements Store {
   async listIngestJobs(filter?: {
     status?: IngestJobStatus | IngestJobStatus[]
     limit?: number
+    finishedAfter?: Date
   }): Promise<IngestJob[]> {
     let out = [...this.ingestJobRows.values()]
     if (filter?.status !== undefined) {
       const statuses = Array.isArray(filter.status) ? filter.status : [filter.status]
       out = out.filter((j) => statuses.includes(j.status))
+    }
+    if (filter?.finishedAfter !== undefined) {
+      const after = filter.finishedAfter.getTime()
+      out = out.filter(
+        (j) => (j.finishedAt ?? j.updatedAt).getTime() >= after,
+      )
     }
     out.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id))
     if (filter?.limit !== undefined) out = out.slice(0, filter.limit)

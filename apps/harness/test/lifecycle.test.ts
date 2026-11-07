@@ -6,10 +6,13 @@ import { join } from 'node:path'
 import {
   harnessPidPath,
   harnessStatus,
+  isHarnessCommand,
   isPidAlive,
   readPidFile,
   stopHarness,
+  verifyHarnessPid,
   writePidFile,
+  type PsExecFn,
 } from '../src/lifecycle.js'
 
 let dirs: string[] = []
@@ -24,6 +27,14 @@ function tempEnv(): { env: NodeJS.ProcessEnv; dir: string } {
 function pidPathFor(env: NodeJS.ProcessEnv): string {
   return harnessPidPath(env)
 }
+
+/** ps exec that always reports a harness-looking command line. */
+const harnessPs: PsExecFn = async () => ({
+  stdout: 'node /repo/linkinbox/apps/harness/dist/bin.js start\n',
+})
+
+/** ps exec that reports a foreign process. */
+const foreignPs: PsExecFn = async () => ({ stdout: 'vim /tmp/notes.txt\n' })
 
 afterEach(async () => {
   for (const child of children) {
@@ -56,11 +67,18 @@ describe('pidfile', () => {
     const { env, dir } = tempEnv()
     const path = pidPathFor(env)
     expect(path).toBe(join(dir, '.linkinbox', 'harness.pid'))
-    writePidFile(path, { pid: process.pid, startedAt: '2026-01-01T00:00:00Z', port: 4173, url: 'http://127.0.0.1:4173' })
+    writePidFile(path, {
+      pid: process.pid,
+      startedAt: '2026-01-01T00:00:00Z',
+      port: 4173,
+      url: 'http://127.0.0.1:4173',
+      command: '/repo/linkinbox/apps/harness/dist/bin.js start',
+    })
     const info = readPidFile(path)
     expect(info?.pid).toBe(process.pid)
     expect(info?.port).toBe(4173)
     expect(info?.url).toBe('http://127.0.0.1:4173')
+    expect(info?.command).toBe('/repo/linkinbox/apps/harness/dist/bin.js start')
     expect(existsSync(path)).toBe(true)
   })
 
@@ -97,9 +115,58 @@ describe('pidfile', () => {
 describe('isPidAlive', () => {
   it('is true for this process, false for an impossible pid', () => {
     expect(isPidAlive(process.pid)).toBe(true)
-    // pid 0 is the process group on unix — not a valid target for signal 0
-    // semantics we want; use a very large pid instead.
     expect(isPidAlive(2 ** 22 + 12345)).toBe(false)
+  })
+})
+
+describe('isHarnessCommand', () => {
+  it('matches the workspace bin path and the installed bin name', () => {
+    expect(isHarnessCommand('node /repo/linkinbox/apps/harness/dist/bin.js start')).toBe(true)
+    expect(isHarnessCommand('/opt/homebrew/bin/linkinbox-harness start')).toBe(true)
+    expect(isHarnessCommand('node /x/node_modules/@linkinbox/harness/dist/bin.js start')).toBe(true)
+  })
+
+  it('rejects foreign commands', () => {
+    expect(isHarnessCommand('vim /tmp/notes.txt')).toBe(false)
+    expect(isHarnessCommand('node /other/app/dist/bin.js start')).toBe(false)
+    expect(isHarnessCommand('sleep 1000')).toBe(false)
+    expect(isHarnessCommand('')).toBe(false)
+  })
+})
+
+describe('verifyHarnessPid', () => {
+  it('verifies a live harness-looking pid', async () => {
+    const child = spawnSleeper()
+    const pid = child.pid!
+    const ok = await verifyHarnessPid(
+      { pid, command: '/repo/linkinbox/apps/harness/dist/bin.js start' },
+      harnessPs,
+    )
+    expect(ok).toBe(true)
+  })
+
+  it('rejects a foreign command line', async () => {
+    const child = spawnSleeper()
+    const ok = await verifyHarnessPid({ pid: child.pid! }, foreignPs)
+    expect(ok).toBe(false)
+  })
+
+  it('rejects when the recorded script basename is absent from ps output', async () => {
+    const child = spawnSleeper()
+    const ok = await verifyHarnessPid(
+      { pid: child.pid!, command: '/weird/path/custom-entry.js start' },
+      harnessPs,
+    )
+    expect(ok).toBe(false)
+  })
+
+  it('fails closed when ps errors', async () => {
+    const child = spawnSleeper()
+    const exec: PsExecFn = async () => {
+      throw new Error('ps missing')
+    }
+    const ok = await verifyHarnessPid({ pid: child.pid! }, exec)
+    expect(ok).toBe(false)
   })
 })
 
@@ -121,19 +188,37 @@ describe('stopHarness', () => {
     expect(existsSync(path)).toBe(false)
   })
 
-  it('SIGTERMs a live process and removes the pidfile', async () => {
+  it('refuses to signal a pid it cannot verify as the harness', async () => {
+    const { env } = tempEnv()
+    const child = spawnSleeper()
+    const pid = child.pid!
+    const path = pidPathFor(env)
+    writePidFile(path, { pid, startedAt: 'x' })
+    const result = await stopHarness({ env, exec: foreignPs, timeoutMs: 500, pollMs: 20 })
+    expect(result.stopped).toBe(false)
+    expect(result.refused).toBe(true)
+    // Pidfile kept for a later retry; the stranger process untouched.
+    expect(existsSync(path)).toBe(true)
+    expect(isPidAlive(pid)).toBe(true)
+  })
+
+  it('SIGTERMs a verified live harness process and removes the pidfile', async () => {
     const { env } = tempEnv()
     const child = spawnSleeper()
     const pid = await new Promise<number>((resolve) =>
       child.on('spawn', () => resolve(child.pid!)),
     )
     const path = pidPathFor(env)
-    writePidFile(path, { pid, startedAt: '2026-01-01T00:00:00Z' })
+    writePidFile(path, {
+      pid,
+      startedAt: '2026-01-01T00:00:00Z',
+      command: '/repo/linkinbox/apps/harness/dist/bin.js start',
+    })
 
     const exited = new Promise<number | null>((resolve) =>
       child.on('exit', (code) => resolve(code)),
     )
-    const result = await stopHarness({ env, timeoutMs: 5000, pollMs: 20 })
+    const result = await stopHarness({ env, exec: harnessPs, timeoutMs: 5000, pollMs: 20 })
     expect(result.stopped).toBe(true)
     expect(result.pid).toBe(pid)
     expect(result.killed).toBeUndefined()
@@ -161,7 +246,12 @@ describe('stopHarness', () => {
     const path = pidPathFor(env)
     writePidFile(path, { pid, startedAt: '2026-01-01T00:00:00Z' })
 
-    const result = await stopHarness({ env, timeoutMs: 300, pollMs: 20 })
+    const result = await stopHarness({
+      env,
+      exec: harnessPs,
+      timeoutMs: 300,
+      pollMs: 20,
+    })
     expect(result.stopped).toBe(true)
     expect(result.killed).toBe(true)
     expect(existsSync(path)).toBe(false)

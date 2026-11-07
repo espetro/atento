@@ -102,6 +102,19 @@ describe('createStaticMiddleware', () => {
     expect(await res.text()).not.toContain('secret')
   })
 
+  it('reserves /api exactly and by segment, but not lookalike prefixes', async () => {
+    const app = await appWith(makeWebRoot())
+    // /api has no route → real 404, not the SPA page.
+    const api = await app.request('/api')
+    expect(api.status).toBe(404)
+    // Segment lookalikes are ordinary SPA routes.
+    for (const p of ['/apiary', '/capturefoo', '/mcpfoo']) {
+      const res = await app.request(p)
+      expect(res.status).toBe(200)
+      expect(await res.text()).toContain('spa')
+    }
+  })
+
   it('serves the placeholder page when no build exists', async () => {
     const app = await appWith(null)
     const res = await app.request('/')

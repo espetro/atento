@@ -8,11 +8,12 @@
  * resolved from import.meta so it works from a pnpm workspace, a global
  * install or a bundled binary layout.
  */
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { configDir } from '@linkinbox/app'
+import { writeFileAtomicSync } from './atomic.js'
 import { defaultExec, type ExecFn } from './notify.js'
 
 export const LAUNCHD_LABEL = 'com.linkinbox.harness'
@@ -45,10 +46,15 @@ export function installPaths(
   }
 }
 
-/** Absolute path of this package's bin entry (dist/bin.js next to us). */
+/**
+ * Absolute path of this package's bin entry. From dist/ that's ./bin.js
+ * beside us; from src/ (vitest, tsx) bin.js doesn't exist yet, so fall back
+ * to the built ../dist/bin.js — which is what the supervisor should run.
+ */
 export function harnessBinPath(): string {
-  // src/install.ts compiles to dist/install.js; bin.js sits beside it.
-  return fileURLToPath(new URL('./bin.js', import.meta.url))
+  const beside = fileURLToPath(new URL('./bin.js', import.meta.url))
+  if (existsSync(beside)) return beside
+  return fileURLToPath(new URL('../dist/bin.js', import.meta.url))
 }
 
 export interface UnitRenderOptions {
@@ -148,12 +154,26 @@ function escapeXml(s: string): string {
     .replace(/"/g, '&quot;')
 }
 
-/** LINKINBOX_* env the service should inherit explicitly. */
+/** Standard bin dirs, prepended so launchd's bare environment still finds
+ * notification binaries (osascript is in /usr/bin; terminal-notifier and
+ * user-installed tools typically live in /opt/homebrew/bin or /usr/local/bin). */
+const SERVICE_PATH_DIRS = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin']
+
+/**
+ * Environment for the supervised service: every LINKINBOX_* var plus a
+ * PATH that guarantees the standard bin dirs (launchd strips PATH).
+ */
 export function serviceEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [k, v] of Object.entries(env)) {
     if (k.startsWith('LINKINBOX_') && typeof v === 'string' && v !== '') out[k] = v
   }
+  const existing = typeof env['PATH'] === 'string' ? env['PATH'] : ''
+  const merged = [...SERVICE_PATH_DIRS]
+  for (const dir of existing.split(':')) {
+    if (dir !== '' && !merged.includes(dir)) merged.push(dir)
+  }
+  out['PATH'] = merged.join(':')
   return out
 }
 
@@ -188,7 +208,7 @@ export async function installHarness(options: InstallOptions = {}): Promise<Inst
   const content = render({ logPath, env: serviceEnv(env) })
 
   mkdirSync(dirname(unitPath), { recursive: true })
-  writeFileSync(unitPath, content)
+  writeFileAtomicSync(unitPath, content)
 
   const errors: string[] = []
   let registered = false
@@ -249,7 +269,6 @@ export async function uninstallHarness(options: UninstallOptions = {}): Promise<
         await exec('launchctl', ['bootout', `gui/${uid}/${LAUNCHD_LABEL}`])
       } else {
         await exec('systemctl', ['--user', 'disable', '--now', SYSTEMD_UNIT.replace(/\.service$/, '')])
-        await exec('systemctl', ['--user', 'daemon-reload'])
       }
     } catch (err) {
       errors.push(err instanceof Error ? err.message : String(err))
@@ -257,5 +276,13 @@ export async function uninstallHarness(options: UninstallOptions = {}): Promise<
   }
   const removed = existsSync(unitPath)
   rmSync(unitPath, { force: true })
+  // daemon-reload AFTER the unit file is gone so systemd drops it cleanly.
+  if (register && platform !== 'darwin') {
+    try {
+      await exec('systemctl', ['--user', 'daemon-reload'])
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : String(err))
+    }
+  }
   return { unitPath, removed, errors }
 }

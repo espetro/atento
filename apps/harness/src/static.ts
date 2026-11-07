@@ -44,11 +44,21 @@ const CONTENT_TYPES: Record<string, string> = {
   '.webm': 'video/webm',
 }
 
-/** Paths owned by the api/mcp/capture surface — never served statically. */
-const RESERVED_PREFIXES = ['/api/', '/mcp', '/capture', '/openapi.json']
-
+/**
+ * Paths owned by the api/mcp/capture surface — never served statically.
+ * Segment-boundary matching: `/api` and `/api/...` are reserved but
+ * `/apiary` is not; same for `/capture`, `/mcp`, `/openapi.json`.
+ */
 function isReserved(path: string): boolean {
-  return RESERVED_PREFIXES.some((p) => path === p || path.startsWith(p))
+  return (
+    path === '/api' ||
+    path.startsWith('/api/') ||
+    path === '/capture' ||
+    path.startsWith('/capture/') ||
+    path === '/mcp' ||
+    path.startsWith('/mcp/') ||
+    path === '/openapi.json'
+  )
 }
 
 /**

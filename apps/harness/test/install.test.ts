@@ -2,12 +2,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
+  harnessBinPath,
   installHarness,
   installPaths,
   LAUNCHD_LABEL,
   renderLaunchdPlist,
   renderSystemdUnit,
+  serviceEnv,
   SYSTEMD_UNIT,
   uninstallHarness,
 } from '../src/install.js'
@@ -69,6 +72,33 @@ describe('renderSystemdUnit', () => {
       env: { LINKINBOX_HOME: "/tmp/it's" },
     })
     expect(unit).toContain(`Environment=LINKINBOX_HOME="/tmp/it's"`)
+  })
+})
+
+describe('serviceEnv', () => {
+  it('passes LINKINBOX_* vars and guarantees standard bin dirs in PATH', () => {
+    const env = serviceEnv({
+      LINKINBOX_HOME: '/tmp/lb',
+      PATH: '/custom/bin',
+    } as NodeJS.ProcessEnv)
+    expect(env['LINKINBOX_HOME']).toBe('/tmp/lb')
+    expect(env['PATH']).toContain('/opt/homebrew/bin')
+    expect(env['PATH']).toContain('/usr/local/bin')
+    expect(env['PATH']).toContain('/custom/bin')
+    // No PATH in env → still a usable default.
+    const bare = serviceEnv({ LINKINBOX_HOME: '/x' } as NodeJS.ProcessEnv)
+    expect(bare['PATH']).toContain('/usr/bin')
+  })
+})
+
+describe('harnessBinPath', () => {
+  it('resolves to the built dist/bin.js (src fallback included)', () => {
+    const p = harnessBinPath()
+    const distBin = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
+    expect(p).toBe(distBin)
+    // When the package is built the path must exist; in a src-only checkout
+    // (tests may run before `pnpm build`) the file may not exist yet.
+    if (existsSync(distBin)) expect(existsSync(p)).toBe(true)
   })
 })
 
@@ -141,6 +171,23 @@ describe('installHarness / uninstallHarness', () => {
     // Idempotent: second uninstall reports nothing removed.
     const again = await uninstallHarness({ env, platform: 'linux', homeDir: home, register: false, exec: neverExec })
     expect(again.removed).toBe(false)
+  })
+
+  it('uninstall reloads systemd only after the unit file is gone', async () => {
+    const home = tempDir()
+    const env = { LINKINBOX_HOME: tempDir() } as NodeJS.ProcessEnv
+    await installHarness({ env, platform: 'linux', homeDir: home, register: false, exec: neverExec })
+    const unitPath = join(home, '.config', 'systemd', 'user', SYSTEMD_UNIT)
+    const filePresentAtReload: boolean[] = []
+    const calls: string[] = []
+    const exec = async (file: string, args: string[]) => {
+      calls.push(`${file} ${args.join(' ')}`)
+      if (args.includes('daemon-reload')) filePresentAtReload.push(existsSync(unitPath))
+    }
+    await uninstallHarness({ env, platform: 'linux', homeDir: home, register: true, exec })
+    expect(calls.some((c) => c.includes('disable --now'))).toBe(true)
+    expect(calls.some((c) => c.includes('daemon-reload'))).toBe(true)
+    expect(filePresentAtReload).toEqual([false])
   })
 })
 

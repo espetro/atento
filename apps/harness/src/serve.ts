@@ -85,6 +85,8 @@ export interface HarnessRuntimeOptions {
   root?: string
   /** Pidfile path override (tests). */
   pidPath?: string
+  /** Called on post-listen server errors. Default: stderr line. */
+  onError?: (err: Error) => void
   /** Extra middleware mounted before static serving (tests). */
   extraMiddleware?: MiddlewareHandler
 }
@@ -154,9 +156,31 @@ export async function startHarness(options: HarnessRuntimeOptions): Promise<Harn
   hono.use('*', createStaticMiddleware({ webDir }))
 
   const server: ServerType = serve({ fetch: hono.fetch, port, hostname })
-  await new Promise<void>((res) => {
-    if (server.listening) return res()
-    server.once('listening', () => res())
+  try {
+    await new Promise<void>((res, rej) => {
+      const onError = (err: Error) => rej(err)
+      if (server.listening) return res()
+      server.once('error', onError)
+      server.once('listening', () => {
+        server.off('error', onError)
+        res()
+      })
+    })
+  } catch (err) {
+    // Bind failed — don't leak the store/app we opened.
+    if (ownsApp) await app.close().catch(() => {})
+    if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+      throw new Error(
+        `cannot bind http://${hostname}:${port} — address already in use ` +
+          `(another linkinbox-harness or process holds the port)`,
+      )
+    }
+    throw err
+  }
+  // Post-listen errors (rare for http.Server) must not crash the process
+  // as unhandled 'error' events; surface them through the optional hook.
+  server.on('error', (err) => {
+    ;(options.onError ?? ((e: Error) => console.error('linkinbox-harness server error:', e)))(err)
   })
   const address = server.address() as { port: number }
   const boundPort = address.port
@@ -188,6 +212,8 @@ export async function startHarness(options: HarnessRuntimeOptions): Promise<Harn
     startedAt: new Date().toISOString(),
     port: boundPort,
     url,
+    // argv tail (script + args) for the pid-reuse identity check in stop.
+    command: process.argv.slice(1).join(' '),
   }
   const pidPath = options.pidPath ?? harnessPidPath(env)
   writePidFile(pidPath, pidInfo)

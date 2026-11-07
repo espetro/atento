@@ -11,8 +11,10 @@ import { loadHarnessConfig } from './config.js'
 import {
   harnessStatus,
   harnessPidPath,
+  readPidFile,
   removePidFile,
   stopHarness,
+  verifyHarnessPid,
 } from './lifecycle.js'
 import { installHarness, uninstallHarness } from './install.js'
 import { startHarness, type HarnessRuntime } from './serve.js'
@@ -94,6 +96,11 @@ async function cmdStop(): Promise<void> {
   const result = await stopHarness({ env: env() })
   if (result.stopped) {
     console.log(`linkinbox-harness stopped (pid ${result.pid})`)
+  } else if (result.refused === true) {
+    console.log(
+      `linkinbox-harness: pid ${result.pid} is alive but could not be verified ` +
+        `as the harness (possible pid reuse) — nothing was signalled`,
+    )
   } else if (result.pid !== undefined) {
     console.log(`linkinbox-harness was not running (stale pidfile removed)`)
   } else {
@@ -101,14 +108,22 @@ async function cmdStop(): Promise<void> {
   }
 }
 
-function cmdStatus(json: boolean): void {
-  const status = harnessStatus(env())
+async function cmdStatus(json: boolean): Promise<void> {
+  const e = env()
+  const status = harnessStatus(e)
+  // Liveness says running — verify identity so a recycled pid doesn't
+  // masquerade as the service.
+  let verified = true
+  if (status.running && status.pid !== undefined) {
+    const info = readPidFile(harnessPidPath(e))
+    if (info !== null) verified = await verifyHarnessPid(info)
+  }
   if (json) {
-    console.log(JSON.stringify(status))
+    console.log(JSON.stringify({ ...status, verified }))
     return
   }
   if (status.running) {
-    console.log(`linkinbox-harness is running`)
+    console.log(`linkinbox-harness is running${verified ? '' : ' (pid identity unverified — possible pid reuse)'}`)
     console.log(`  pid:      ${status.pid}`)
     if (status.startedAt) console.log(`  started:  ${status.startedAt}`)
     if (status.url) console.log(`  url:      ${status.url}`)
@@ -185,8 +200,13 @@ export function createProgram(): Command {
     .command('status')
     .description('show whether the harness is running')
     .option('--json', 'machine-readable output')
-    .action((options: { json?: boolean }) => {
-      cmdStatus(options.json === true)
+    .action(async (options: { json?: boolean }) => {
+      try {
+        await cmdStatus(options.json === true)
+      } catch (err) {
+        console.error(`error: ${err instanceof Error ? err.message : String(err)}`)
+        process.exitCode = 1
+      }
     })
 
   program

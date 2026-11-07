@@ -10,15 +10,33 @@
  * ingest trigger arriving mid-run is dropped, not queued.
  *
  * on_ingest mechanics: ingest_jobs are durable rows, so the scheduler polls
- * `store.listIngestJobs` for terminal (done/failed) jobs it has not seen.
- * Completions inside the debounce window batch into ONE run. Jobs that a
- * harness run ingests itself are absorbed by a baseline refresh after every
- * tick, so scheduled runs cannot retrigger themselves; an external ingest
- * that completes *during* a run is absorbed too (documented trade-off — its
- * links are still picked up by the next tick).
+ * `store.listIngestJobs` for terminal (done/failed) jobs. Tracking is
+ * watermark-based, NOT a seen-set: each poll asks only for jobs whose
+ * effective finish stamp (`finished_at`, falling back to `updated_at` —
+ * failed jobs never set `finished_at`) is >= the watermark, so the scan
+ * stays bounded no matter how much terminal-job history accumulates.
+ * `boundaryIds` dedupes the jobs sitting exactly on the watermark stamp
+ * (millisecond ties); it only ever holds ids at the current max stamp, so
+ * it cannot grow unboundedly.
+ *
+ * Baseline: `start()` sets the watermark to now — jobs already terminal at
+ * startup are history, not triggers, with no enumeration needed.
+ *
+ * Self-ingest absorption: after each tick the scheduler re-scans and advances
+ * the watermark past the ingest jobs that run created (their ids come back
+ * in `summary.ingest.jobs`). External jobs that completed *during* the run
+ * are NOT absorbed — they arm the debounce and get their own follow-up run
+ * (strictly better than dropping them). After a FAILED run we cannot know
+ * which jobs were ours, so everything fresh is absorbed to avoid a
+ * retry-forever loop.
+ *
+ * Known drop: `stop()` clears an armed debounce timer, so completions seen
+ * just before shutdown never trigger a run. Their links are still picked up
+ * by the next scheduled tick or external ingest — acceptable for a service
+ * that is going away anyway.
  */
 import { Cron } from 'croner'
-import type { RunResult, Store } from '@linkinbox/app'
+import type { IngestJob, RunResult, Store } from '@linkinbox/app'
 import type { IngestJobStatus } from '@linkinbox/core'
 import type { HarnessConfig } from './config.js'
 import { runNotification, type Notifier } from './notify.js'
@@ -43,9 +61,17 @@ export interface SchedulerDeps {
   clearIntervalFn?: (handle: unknown) => void
   /** Called after each finished tick (success or failure), for logging. */
   onTick?: (record: HarnessRunRecord) => void
+  /** Called for non-fatal scheduler warnings (e.g. stop timeout). */
+  warn?: (message: string) => void
+  /** How long stop() waits for an in-flight tick. Default 30s. */
+  stopTimeoutMs?: number
 }
 
 const TERMINAL: IngestJobStatus[] = ['done', 'failed']
+/** Poll page size; the watermark makes truncation self-healing. */
+const POLL_LIMIT = 500
+/** stop() default bound on waiting for an in-flight tick. */
+const DEFAULT_STOP_TIMEOUT_MS = 30_000
 
 export class HarnessScheduler {
   private readonly deps: SchedulerDeps
@@ -54,8 +80,17 @@ export class HarnessScheduler {
   private debounceTimer: unknown
   private tickInFlight = false
   private stopped = false
-  /** Ingest job ids already accounted for (baseline + seen completions). */
-  private readonly seenJobs = new Set<string>()
+  /**
+   * Effective finish stamp below which jobs are history. Set to `now` at
+   * start() (baseline) and advanced after every scan. null before start().
+   */
+  private watermark: Date | null = null
+  /**
+   * Ids of jobs sitting exactly on the watermark stamp — already accounted
+   * for, so `>=` queries don't retrigger them. Cleared whenever the
+   * watermark advances; bounded by jobs-per-millisecond.
+   */
+  private readonly boundaryIds = new Set<string>()
 
   constructor(deps: SchedulerDeps) {
     this.deps = deps
@@ -91,15 +126,17 @@ export class HarnessScheduler {
       })
     }
     if (this.deps.config.onIngest) {
-      // Baseline: jobs already terminal at startup are history, not triggers.
-      void this.absorbTerminalJobs()
+      // Baseline: jobs finished before the scheduler started are history.
+      // No enumeration needed — the watermark alone excludes them, however
+      // much terminal-job history has accumulated.
+      this.watermark = this.now
       this.pollTimer = this.setIntervalFn(() => {
         void this.pollIngestJobs()
       }, this.deps.config.ingestPollMs)
     }
   }
 
-  /** Stop timers and wait for any in-flight tick. Idempotent. */
+  /** Stop timers and wait (bounded) for any in-flight tick. Idempotent. */
   async stop(): Promise<void> {
     this.stopped = true
     this.cron?.stop()
@@ -112,16 +149,26 @@ export class HarnessScheduler {
       this.clearTimeoutFn(this.debounceTimer)
       this.debounceTimer = undefined
     }
-    // Wait out an in-flight run so shutdown does not orphan app.run.
-    while (this.tickInFlight) {
+    // Wait out an in-flight run so shutdown does not orphan app.run — but
+    // bounded: a wedged run must not hang the service stop forever.
+    const timeoutMs = this.deps.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS
+    const deadline = Date.now() + timeoutMs
+    while (this.tickInFlight && Date.now() < deadline) {
       await new Promise((res) => setTimeout(res, 50))
+    }
+    if (this.tickInFlight) {
+      this.deps.warn?.(
+        `linkinbox-harness: stop timed out after ${timeoutMs}ms with a run still in flight`,
+      )
     }
   }
 
   /**
    * One run tick: app.run → journal record → notification. Overlapping
    * triggers return null immediately. Errors are journaled and notified,
-   * never thrown into the timer callback.
+   * never thrown into the timer callback; notifier/onTick failures are
+   * swallowed so tick's contract (record or null, never a rejection from
+   * post-run steps) holds.
    */
   async tick(trigger: RunTrigger): Promise<HarnessRunRecord | null> {
     if (this.tickInFlight || this.stopped) return null
@@ -129,6 +176,7 @@ export class HarnessScheduler {
     const started = Date.now()
     try {
       let record: HarnessRunRecord
+      let selfJobIds: Set<string> | null = null
       try {
         const result = await this.deps.run()
         record = {
@@ -140,6 +188,7 @@ export class HarnessScheduler {
           finishedAt: this.now.toISOString(),
           durationMs: Date.now() - started,
         }
+        selfJobIds = new Set(result.summary.ingest.jobs.map((j) => j.jobId))
       } catch (err) {
         record = {
           runId: `run-error-${this.now.getTime()}`,
@@ -158,55 +207,116 @@ export class HarnessScheduler {
         // journal failure must not kill the scheduler
       }
       if (this.deps.notifier !== undefined) {
-        await this.deps.notifier.notify(runNotification(record, this.deps.uiUrl))
+        try {
+          await this.deps.notifier.notify(runNotification(record, this.deps.uiUrl))
+        } catch {
+          // notification failure must not escape tick
+        }
       }
-      this.deps.onTick?.(record)
-      // Absorb the ingest jobs this run just completed so on_ingest cannot
-      // retrigger on its own output. Runs while tickInFlight is still set,
-      // so the poller cannot mark them as new triggers in the gap.
-      if (this.deps.config.onIngest) await this.absorbTerminalJobs()
+      try {
+        this.deps.onTick?.(record)
+      } catch {
+        // observer failure must not escape tick
+      }
+      // Absorb the ingest jobs this run just finished so on_ingest cannot
+      // retrigger on its own output — while tickInFlight is still set, so
+      // the poller cannot interleave. External completions during the run
+      // are left fresh and arm the debounce for a follow-up run.
+      if (this.deps.config.onIngest) {
+        await this.reconcileAfterTick(selfJobIds)
+      }
       return record
     } finally {
       this.tickInFlight = false
     }
   }
 
-  /** Mark every currently-terminal ingest job as seen (no trigger). */
-  private async absorbTerminalJobs(): Promise<void> {
+  /** Effective finish stamp of a terminal job (finished_at ?? updated_at). */
+  private jobStamp(job: IngestJob): number {
+    return (job.finishedAt ?? job.updatedAt).getTime()
+  }
+
+  /** Terminal jobs at or after the watermark (bounded by POLL_LIMIT). */
+  private async scanTerminalJobs(): Promise<IngestJob[]> {
     try {
-      const jobs = await this.deps.store.listIngestJobs({
+      return await this.deps.store.listIngestJobs({
         status: TERMINAL,
-        limit: 500,
+        finishedAfter: this.watermark ?? new Date(0),
+        limit: POLL_LIMIT,
       })
-      for (const job of jobs) this.seenJobs.add(job.id)
     } catch {
-      // store not ready / closed: skip this round
+      return []
     }
   }
 
-  private async pollIngestJobs(): Promise<void> {
-    if (this.stopped || this.tickInFlight) return
-    let jobs
-    try {
-      jobs = await this.deps.store.listIngestJobs({ status: TERMINAL, limit: 500 })
-    } catch {
-      return
+  /** Jobs in the batch not yet accounted for by the watermark/boundary. */
+  private freshJobs(jobs: IngestJob[]): IngestJob[] {
+    const wm = this.watermark?.getTime()
+    return jobs.filter((job) => {
+      const stamp = this.jobStamp(job)
+      if (wm === undefined) return true
+      if (stamp > wm) return true
+      if (stamp === wm) return !this.boundaryIds.has(job.id)
+      return false
+    })
+  }
+
+  /**
+   * Advance the watermark over a scanned batch. Ids sitting exactly on the
+   * new max stamp go into boundaryIds so the `>=` query doesn't refire them;
+   * jobs beyond POLL_LIMIT truncation keep stamp > watermark and are picked
+   * up by the next scan.
+   */
+  private advanceWatermark(jobs: IngestJob[]): void {
+    let max = this.watermark?.getTime() ?? Number.NEGATIVE_INFINITY
+    for (const job of jobs) max = Math.max(max, this.jobStamp(job))
+    if (max === Number.NEGATIVE_INFINITY) return
+    if (this.watermark === null || max > this.watermark.getTime()) {
+      this.watermark = new Date(max)
+      this.boundaryIds.clear()
     }
-    let found = false
     for (const job of jobs) {
-      if (!this.seenJobs.has(job.id)) {
-        this.seenJobs.add(job.id)
-        found = true
-      }
+      if (this.jobStamp(job) === max) this.boundaryIds.add(job.id)
     }
-    if (!found) return
-    // Debounce: each detection resets the timer so a burst of completions
-    // produces a single run.
+  }
+
+  /** Arm (or re-arm) the debounced ingest-triggered run. */
+  private armIngestDebounce(): void {
+    // Each detection resets the timer so a burst of completions produces a
+    // single run. If stop() clears this timer the trigger is dropped — see
+    // the module docstring; the links are still picked up by the next tick.
     if (this.debounceTimer !== undefined) this.clearTimeoutFn(this.debounceTimer)
     this.debounceTimer = this.setTimeoutFn(() => {
       this.debounceTimer = undefined
       void this.tick('ingest')
     }, this.deps.config.ingestDebounceMs)
+  }
+
+  private async pollIngestJobs(): Promise<void> {
+    if (this.stopped || this.tickInFlight) return
+    const jobs = await this.scanTerminalJobs()
+    if (jobs.length === 0) return
+    const fresh = this.freshJobs(jobs)
+    this.advanceWatermark(jobs)
+    if (fresh.length === 0) return
+    this.armIngestDebounce()
+  }
+
+  /**
+   * Post-tick reconciliation: advance the watermark past everything the
+   * scan sees, but only trigger on jobs this run did NOT ingest itself.
+   * `selfJobIds === null` means the run failed — absorb everything to avoid
+   * a retry-forever loop on a persistently failing pipeline.
+   */
+  private async reconcileAfterTick(selfJobIds: Set<string> | null): Promise<void> {
+    const jobs = await this.scanTerminalJobs()
+    if (jobs.length === 0) return
+    const fresh = this.freshJobs(jobs)
+    this.advanceWatermark(jobs)
+    if (selfJobIds === null) return
+    if (fresh.some((job) => !selfJobIds.has(job.id))) {
+      this.armIngestDebounce()
+    }
   }
 }
 

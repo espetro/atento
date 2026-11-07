@@ -6,6 +6,7 @@ import { loadConfig } from '@linkinbox/app'
 import { DEFAULT_HARNESS_CONFIG } from '../src/config.js'
 import { harnessStatus, harnessPidPath } from '../src/lifecycle.js'
 import { startHarness, type HarnessRuntime } from '../src/serve.js'
+import { createServer } from 'node:net'
 
 const dirs: string[] = []
 const runtimes: HarnessRuntime[] = []
@@ -88,5 +89,37 @@ describe('startHarness', () => {
 
     const asset = await fetch(`${runtime.url}/assets/app-deadbeef.js`)
     expect(asset.headers.get('cache-control')).toContain('immutable')
+  })
+
+  it('fails with a clear error on EADDRINUSE', async () => {
+    // Grab a free port, occupy it, then try to bind the same one twice.
+    const port = await new Promise<number>((resolve, reject) => {
+      const probe = createServer()
+      probe.once('error', reject)
+      probe.listen(0, '127.0.0.1', () => {
+        const addr = probe.address()
+        const p = typeof addr === 'object' && addr !== null ? addr.port : 0
+        probe.close(() => resolve(p))
+      })
+    })
+    const blocker = createServer()
+    await new Promise<void>((res) => blocker.listen(port, '127.0.0.1', res))
+    try {
+      const home = tempDir()
+      const env = { LINKINBOX_HOME: home } as NodeJS.ProcessEnv
+      const config = loadConfig(env)
+      await expect(
+        startHarness({
+          config,
+          env,
+          harness: { ...DEFAULT_HARNESS_CONFIG },
+          port,
+          hostname: '127.0.0.1',
+          webDir: null,
+        }),
+      ).rejects.toThrow(/address already in use/)
+    } finally {
+      await new Promise<void>((res) => blocker.close(() => res()))
+    }
   })
 })
