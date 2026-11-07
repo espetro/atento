@@ -6,42 +6,41 @@
  */
 import { z } from 'zod/mini'
 import {
-  listLinks,
-  getLink,
-  triage,
-  restore,
-  sweep,
-  applySweep,
-  metricsSummary,
-  pipelineOverview,
-  listPipelineLinks,
-  ingest,
-  extract,
-  enrich,
-  resumeIngestJobs,
-  guardDepsFromStore,
-  guardStatuses,
-  DEFAULT_LIMITS,
-  LLM_KEY,
+  createLinkinboxOps,
+  hostOf,
   LINK_STATES,
+  LLM_KEY,
+  DEFAULT_LIMITS,
   type LinkField,
   type LinkStateName,
+  type LinkinboxOps,
+  type ShareConfig,
   type SweepPlan,
   type TriageAction,
-  type GuardDeps,
-} from '@linkinbox/core'
-import { importFile } from '@linkinbox/importers'
-import { loadLoginReport } from '@linkinbox/cli'
-import {
-  browseRead,
-  hostOf,
-  listShareHosts,
-  type BrowseFn,
-  type BrowseOptions,
-  type ShareConfig,
-  type ShareHostEntry,
-} from '@linkinbox/core'
+} from '@linkinbox/app'
 import type { McpDeps } from './deps.js'
+
+/**
+ * The use cases for one MCP context: the same app layer the CLI and the
+ * HTTP server drive, bound to the context's store and config fields. Built
+ * per call — it is a plain object over the store, no I/O happens until a
+ * use case runs.
+ */
+function opsFor(ctx: import('./deps.js').McpContext): LinkinboxOps {
+  return createLinkinboxOps(
+    {
+      ttl: ctx.ttl,
+      ...(ctx.limits ? { limits: ctx.limits } : {}),
+      ...(ctx.login ? { login: ctx.login } : {}),
+      ...(ctx.share ? { share: ctx.share } : {}),
+    },
+    {
+      store: ctx.store,
+      logger: ctx.logger,
+      ...(ctx.spoolDir !== undefined ? { spoolDir: ctx.spoolDir } : {}),
+    },
+  )
+}
 
 const LINK_FIELDS: [LinkField, ...LinkField[]] = [
   'id',
@@ -115,7 +114,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     }) => {
       const ctx = await deps.ctx()
       {
-        let rows = await listLinks(ctx.store, {
+        let rows = await opsFor(ctx).list({
           q: args.q,
           status: args.status,
           category: args.category,
@@ -146,7 +145,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     async (args: { topHosts?: number }) => {
       const ctx = await deps.ctx()
       {
-        const overview = await pipelineOverview(ctx.store, { topHosts: args.topHosts })
+        const overview = await opsFor(ctx).overview({ topHosts: args.topHosts })
         return json({
           total: overview.total,
           byState: overview.byState,
@@ -182,7 +181,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     }) => {
       const ctx = await deps.ctx()
       {
-        const rows = await listPipelineLinks(ctx.store, {
+        const rows = await opsFor(ctx).pipelineLinks({
           state: args.state,
           host: args.host,
           q: args.q,
@@ -207,7 +206,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     async (args: { id: number; fields?: LinkField[] }) => {
       const ctx = await deps.ctx()
       {
-        const row = await getLink(ctx.store, args.id, args.fields)
+        const row = await opsFor(ctx).get(args.id, args.fields)
         if (!row) return json({ link: null })
         return json({ link: row })
       }
@@ -228,7 +227,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     async (args: { ids: number[]; action: TriageAction }) => {
       const ctx = await deps.ctx()
       {
-        const result = await triage(ctx.store, args.ids, args.action)
+        const result = await opsFor(ctx).triage(args.ids, args.action)
         return json(result)
       }
     },
@@ -246,7 +245,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     },
     async (args: { ids: number[] }) => {
       const ctx = await deps.ctx()
-      return json(await restore(ctx.store, args.ids))
+      return json(await opsFor(ctx).restore(args.ids))
     },
   )
 
@@ -262,8 +261,9 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     async (args: { apply?: boolean }) => {
       const ctx = await deps.ctx()
       {
-        const plan = await sweep(ctx.store, ctx.ttl)
-        const archived = args.apply === true ? await applySweep(ctx.store, plan) : 0
+        const ops = opsFor(ctx)
+        const plan = await ops.sweepPlan(ctx.ttl)
+        const archived = args.apply === true ? await ops.applySweepPlan(plan) : 0
         return json({ plan: planToJson(plan), archived })
       }
     },
@@ -282,23 +282,14 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     async (args: { files: string[]; limit?: number }) => {
       const ctx = await deps.ctx()
       {
+        const ops = opsFor(ctx)
         // Crash resume first: a killed ingest job finishes before new work.
-        if (ctx.spoolDir !== undefined) {
-          await resumeIngestJobs(ctx.store, { logger: ctx.logger })
+        if (ops.spoolDir !== undefined) {
+          await ops.resumeIngest({ logger: ctx.logger })
         }
-        const raws = []
-        const warnings: string[] = []
-        const importers: Record<string, number> = {}
-        for (const file of args.files) {
-          const result = await importFile(file)
-          warnings.push(...result.warnings)
-          raws.push(...result.links)
-          importers[result.importer] = (importers[result.importer] ?? 0) + result.links.length
-        }
-        const outcome = await ingest(ctx.store, raws, {
-          logger: ctx.logger,
+        const { outcome, warnings, importers } = await ops.ingestFiles(args.files, {
           limit: args.limit,
-          ...(ctx.spoolDir !== undefined ? { spoolDir: ctx.spoolDir } : {}),
+          logger: ctx.logger,
         })
         return json({
           importers,
@@ -323,15 +314,13 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     async (args: { limit?: number }) => {
       const ctx = await deps.ctx()
       {
-        const guard: GuardDeps = guardDepsFromStore(ctx.store, {
-          // Only the keys that are set: an undefined value would replace the
-          // default limits with nothing.
-          config: {
-            ...(ctx.limits ? { limits: ctx.limits } : {}),
-            ...(ctx.login ? { login: ctx.login } : {}),
-          },
+        const ops = opsFor(ctx)
+        // Same guard shape as before: limits + [login], no pacing.
+        const guard = ops.guardDeps({
+          ...(ctx.limits ? { limits: ctx.limits } : {}),
+          ...(ctx.login ? { login: ctx.login } : {}),
         })
-        const outcome = await extract(ctx.store, {
+        const outcome = await ops.extract({
           extract: await deps.extractFn(ctx),
           limit: args.limit,
           guard,
@@ -360,11 +349,11 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     async (args: { limit?: number }) => {
       const ctx = await deps.ctx()
       {
-        const guard: GuardDeps = guardDepsFromStore(ctx.store)
-        const outcome = await enrich(ctx.store, {
+        const ops = opsFor(ctx)
+        const outcome = await ops.enrich({
           enrich: await deps.enrichFn(),
           limit: args.limit,
-          guard,
+          guard: ops.guardDeps(),
           maxBatch: DEFAULT_LIMITS.maxBatch,
           ttl: ctx.ttl,
           logger: ctx.logger,
@@ -394,13 +383,13 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     async () => {
       const ctx = await deps.ctx()
       {
-        const guard: GuardDeps = guardDepsFromStore(ctx.store)
+        const ops = opsFor(ctx)
         // Report the hosts that have state; there is no hardcoded default
         // list, so an untouched install reports only the llm key.
         const states = await ctx.store.listHostStates()
         const keys = new Set<string>(states.map((s) => s.key))
         keys.add(LLM_KEY)
-        const rows = await guardStatuses(guard, [...keys].sort())
+        const rows = await ops.guardStatusesFor([...keys].sort())
         return json({
           hosts: rows.map((row) => ({
             key: row.key,
@@ -433,8 +422,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     async (args: { range?: string; now?: string }) => {
       const ctx = await deps.ctx()
       {
-        const summary = await metricsSummary(
-          ctx.store,
+        const summary = await opsFor(ctx).metrics(
           args.range ?? '7d',
           args.now !== undefined ? new Date(args.now) : new Date(),
         )
@@ -457,7 +445,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
       const ctx = await deps.ctx()
       {
         return json(
-          await loadLoginReport(ctx.store, {
+          await opsFor(ctx).loginPending({
             limits: ctx.limits,
             loginAllow: ctx.login?.allow,
           }),
@@ -499,7 +487,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
         }
         const read = await deps.browseFn(ctx)
         const guard = deps.browseGuard ? await deps.browseGuard(ctx) : undefined
-        const result = await browseRead(args.url, {
+        const result = await opsFor(ctx).browseRead(args.url, {
           share,
           read,
           hasProfile: deps.hasProfile
@@ -527,10 +515,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
       const ctx = await deps.ctx()
       {
         const profiles = await ctx.store.listProfiles()
-        const rows: ShareHostEntry[] = await listShareHosts(
-          profiles,
-          ctx.share ?? { hosts: [] },
-        )
+        const rows = await opsFor(ctx).browseHosts(profiles, ctx.share ?? { hosts: [] })
         return json({
           hosts: rows,
           note: ctx.share === undefined || ctx.share.hosts.length === 0

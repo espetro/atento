@@ -15,8 +15,7 @@
  * The Patchright import is dynamic and optional; the launcher is injected,
  * so the tests run with fakes and no real browser.
  */
-import type { BrowserConfig } from '@linkinbox/core'
-import { engineForHost } from '@linkinbox/core'
+import { engineForHost, type BrowserConfig } from '@linkinbox/app'
 import {
   defaultPatchrightLaunch,
   patchrightProfileDir,

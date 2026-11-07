@@ -5,7 +5,7 @@ import type { Command } from 'commander'
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { metricsSummary, type MetricsSummary } from '@linkinbox/core'
+import type { MetricsSummary } from '@linkinbox/app'
 import type { CliContext } from '../context.js'
 import { formatNumber, formatUsd, renderTable } from '../render.js'
 
@@ -15,7 +15,7 @@ export async function runMetrics(
   range: string,
   json: boolean,
 ): Promise<MetricsSummary> {
-  const summary = await metricsSummary(ctx.store, range)
+  const summary = await ctx.app.metrics(range)
   if (json) {
     console.log(JSON.stringify(summary, null, 2))
     return summary
@@ -164,6 +164,7 @@ export async function runServe(
   const started = (await mod.startServer({
     port: effective,
     store: ctx.store,
+    ops: ctx.app,
     config: ctx.config,
     hostname: '127.0.0.1',
     capture: ctx.config.capture,

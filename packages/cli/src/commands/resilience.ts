@@ -3,12 +3,7 @@
  * reopen time) and `breaker reset <host>`.
  */
 import type { Command } from 'commander'
-import {
-  LLM_KEY,
-  guardStatuses,
-  guardDepsFromStore,
-  guardReset,
-} from '@linkinbox/core'
+import { LLM_KEY } from '@linkinbox/app'
 import type { CliContext } from '../context.js'
 
 /** Hosts to report: every tracked host_state key plus the llm key. */
@@ -58,8 +53,7 @@ export function registerResilienceCommands(
     .action(async (opts: { json?: boolean }) => {
       const ctx = await deps.ctx()
       try {
-        const guard = guardDepsFromStore(ctx.store)
-        const rows = await guardStatuses(guard, await statusKeys(ctx))
+        const rows = await ctx.app.guardStatusesFor(await statusKeys(ctx))
         if (opts.json) {
           console.log(JSON.stringify(rows, null, 2))
           return
@@ -77,9 +71,8 @@ export function registerResilienceCommands(
     .action(async (host: string) => {
       const ctx = await deps.ctx()
       try {
-        const guard = guardDepsFromStore(ctx.store)
         const key = host === 'llm' ? LLM_KEY : host.toLowerCase()
-        const state = await guardReset(guard, key)
+        const state = await ctx.app.guardResetFor(key)
         console.log(`breaker for ${state.key}: closed (cooldown level reset)`)
       } finally {
         await ctx.close()

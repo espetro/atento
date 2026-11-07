@@ -4,11 +4,10 @@
  */
 import type { Command } from 'commander'
 import {
-  getLink,
   MEDIA_TIERS,
   normalizeUrl,
   type MediaTierName,
-} from '@linkinbox/core'
+} from '@linkinbox/app'
 import type { MediaReport, TierResult } from '@linkinbox/media'
 import type { CliContext } from '../context.js'
 import type { MediaFn } from '../media-fn.js'

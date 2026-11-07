@@ -1,0 +1,40 @@
+{
+  "name": "@linkinbox/app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "linkinbox application layer: use cases and the createLinkinbox composition root shared by the cli, mcp and server adapters",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@linkinbox/core": "workspace:*",
+    "@linkinbox/db": "workspace:*",
+    "@linkinbox/enrich": "workspace:*",
+    "@linkinbox/extractors": "workspace:*",
+    "@linkinbox/importers": "workspace:*",
+    "@linkinbox/media": "workspace:*",
+    "smol-toml": "^1.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

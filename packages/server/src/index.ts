@@ -1,7 +1,7 @@
 /**
- * hono API + static ui server. Every route is a thin wrapper over the shared
- * ops in @linkinbox/core and the Store from @linkinbox/db: no business logic
- * lives here. The REST contract mirrors the UI's types and mock layer exactly
+ * hono API + static ui server. Every route is a thin wrapper over the app
+ * layer's use cases (@linkinbox/app): no business logic lives here. The REST
+ * contract mirrors the UI's types and mock layer exactly
  * (packages/ui/src/lib/types.ts, packages/ui/src/mock).
  */
 import { Hono } from 'hono'
@@ -9,13 +9,10 @@ import { serve, type ServerType } from '@hono/node-server'
 import { existsSync, readFileSync } from 'node:fs'
 import { extname, join, resolve, sep } from 'node:path'
 import {
-  listLinks,
-  getLink,
-  triage,
-  sweep as planSweep,
-  applySweep,
-  metricsSummary,
-  pipelineOverview,
+  createLinkinboxOps,
+  type LinkinboxOps,
+} from '@linkinbox/app'
+import {
   shapeForUi,
   toPipelineRow,
   UI_SUMMARY_FIELDS,
@@ -23,7 +20,6 @@ import {
   DEFAULT_TTL_CONFIG,
   parseRange,
   DEFAULT_CAPTURE_CONFIG,
-  captureIngest,
   captureToken,
   parseCapture,
   tokensEqual,
@@ -44,6 +40,12 @@ export const DEFAULT_PORT = 4173
 
 export interface ServerOptions {
   store: Store
+  /**
+   * The app-layer use cases to drive. When absent they are built from the
+   * store plus the ttl below — the same ops the composition root exposes.
+   * `linkinbox serve` passes its createLinkinbox instance here.
+   */
+  ops?: LinkinboxOps
   /** Directory containing the built ui (index.html). Default the repo's ui/dist. */
   uiDist?: string
   port?: number
@@ -98,6 +100,8 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
   const ttl = opts.ttl ?? DEFAULT_TTL_CONFIG
   const capture = opts.capture ?? DEFAULT_CAPTURE_CONFIG
   const env = opts.env ?? process.env
+  const ops =
+    opts.ops ?? createLinkinboxOps({ ttl }, { store, env })
   const app = new Hono()
 
   app.onError((err, c) => c.json({ error: errMsg(err) }, 500))
@@ -155,7 +159,7 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
         400,
       )
     }
-    const result = await captureIngest(store, captureBody)
+    const result = await ops.captureIngest(captureBody)
     return c.json(
       {
         id: result.link.id,
@@ -191,7 +195,7 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
       host: q['host'] || undefined,
       staleAsOf: stale ? new Date() : undefined,
     }
-    const items = await listLinks(store, {
+    const items = await ops.list({
       ...filter,
       q: q['q'] || undefined,
       limit,
@@ -208,7 +212,7 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
       staleAsOf: filter.staleAsOf,
     }
     const total = q['q'] || filter.host
-      ? (await listLinks(store, { ...filter, q: q['q'] || undefined })).length
+      ? (await ops.list({ ...filter, q: q['q'] || undefined })).length
       : await store.countLinks(storeFilter)
     return c.json({ items: items.map(shapePipelineRow), total })
   })
@@ -217,7 +221,7 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
   // with its parked-link count, plus the busiest hosts. Read-only: it reads
   // the link rows once.
   app.get('/api/pipeline', async (c) => {
-    const overview = await pipelineOverview(store)
+    const overview = await ops.overview()
     return c.json({
       byState: overview.byState,
       byParkReason: overview.byParkReason,
@@ -240,12 +244,12 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
     if (typeof body.action !== 'string' || !ACTIONS.includes(body.action)) {
       return c.json({ error: `action must be one of: ${ACTIONS.join(', ')}` }, 400)
     }
-    const result = await triage(store, body.ids, body.action as TriageAction)
+    const result = await ops.triage(body.ids, body.action as TriageAction)
     return c.json({ updated: result.updated })
   })
 
   app.get('/api/links/:id{[0-9]+}', async (c) => {
-    const link = await getLink(store, Number(c.req.param('id')), UI_DETAIL_FIELDS)
+    const link = await ops.get(Number(c.req.param('id')), UI_DETAIL_FIELDS)
     if (!link) return c.json({ error: 'not found' }, 404)
     // The detail type keeps the raw enrichment blob alongside the flattened
     // summary fields.
@@ -253,12 +257,12 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
   })
 
   app.get('/api/sweep', async (c) => {
-    const plan = await planSweep(store, ttl)
+    const plan = await ops.sweepPlan(ttl)
     const groups: { category: string; links: Record<string, unknown>[] }[] = []
     for (const g of plan.groups) {
       const links: Record<string, unknown>[] = []
       for (const item of g.items) {
-        const link = await getLink(store, item.linkId, UI_SUMMARY_FIELDS)
+        const link = await ops.get(item.linkId, UI_SUMMARY_FIELDS)
         if (link) links.push(shapeForUi(link))
       }
       groups.push({ category: g.category, links })
@@ -268,8 +272,8 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
 
   // Sweep applies the plan: archive only, never delete.
   app.post('/api/sweep/apply', async (c) => {
-    const plan = await planSweep(store, ttl)
-    const archived = await applySweep(store, plan)
+    const plan = await ops.sweepPlan(ttl)
+    const archived = await ops.applySweepPlan(plan)
     return c.json({ archived })
   })
 
@@ -280,7 +284,7 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
     } catch (err) {
       return c.json({ error: errMsg(err) }, 400)
     }
-    const summary = await metricsSummary(store, last)
+    const summary = await ops.metrics(last)
     const stages = summary.stages.map((s) => ({
       stage: s.stage,
       runs: s.runs,

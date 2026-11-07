@@ -6,15 +6,7 @@ import type { Command } from 'commander'
 import { createInterface } from 'node:readline/promises'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import {
-  applyPrune,
-  applySweep,
-  prune,
-  sweep,
-  type PrunePlan,
-  type SweepPlan,
-  type TtlConfig,
-} from '@linkinbox/core'
+import type { PrunePlan, SweepPlan, TtlConfig } from '@linkinbox/app'
 import type { CliContext } from '../context.js'
 import { renderTable, shortDate } from '../render.js'
 
@@ -58,10 +50,10 @@ export async function runSweep(
   ttl: TtlConfig,
   opts: SweepOptions = {},
 ): Promise<SweepPlan> {
-  const plan = await sweep(ctx.store, ttl, { now: opts.now })
+  const plan = await ctx.app.sweepPlan(ttl, { now: opts.now })
   console.log(renderSweepPlan(plan))
   if (opts.apply === true && plan.totals.archive > 0) {
-    const updated = await applySweep(ctx.store, plan, opts.now ?? new Date())
+    const updated = await ctx.app.applySweepPlan(plan, opts.now ?? new Date())
     console.log(`archived ${updated} link(s)`)
   }
   return plan
@@ -82,7 +74,7 @@ export async function runPrune(
   ttl: TtlConfig,
   opts: PruneOptions = {},
 ): Promise<PrunePlan> {
-  const plan = await prune(ctx.store, ttl, { now: opts.now })
+  const plan = await ctx.app.prunePlan(ttl, { now: opts.now })
   if (plan.totals.delete === 0) {
     console.log('nothing to prune')
     return plan
@@ -102,7 +94,7 @@ export async function runPrune(
     return plan
   }
 
-  const deleted = await applyPrune(ctx.store, plan)
+  const deleted = await ctx.app.applyPrunePlan(plan)
   console.log(`deleted ${deleted} link(s)`)
   return plan
 }

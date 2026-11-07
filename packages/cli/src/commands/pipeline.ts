@@ -1,63 +1,23 @@
 /**
  * Pipeline-running commands: import, extract, enrich, run.
- * Each is a thin shell over the corresponding core stage.
+ * Each is a thin shell over the app layer's stage use cases.
  */
 import type { Command } from 'commander'
-import { join } from 'node:path'
-import { importFile } from '@linkinbox/importers'
 import {
-  enrich,
-  extract,
-  extractUntilEmpty,
   formatBatchSummary,
   formatTotals,
-  guardDepsFromStore,
-  ingest,
   pipelineLogger,
-  resumeIngestJobs,
   DEFAULT_LIMITS,
   type EnrichFn,
   type ExtractFn,
-  type GuardDeps,
   type MediaFn,
   type BusyRun,
-} from '@linkinbox/core'
-import { loadConfig } from '../config.js'
+} from '@linkinbox/app'
 import type { CliContext } from '../context.js'
 
-/** Build a guard over the store, using the CLI config limits and pacing. */
-function guardFor(ctx: CliContext): GuardDeps | undefined {
-  const limits = ctx.config.limits ?? DEFAULT_LIMITS
-  if (limits.disabled === true) return undefined
-  return guardDepsFromStore(ctx.store, {
-    // Only set keys: an undefined value would replace the default with nothing.
-    config: {
-      limits,
-      pacing: ctx.config.pacing,
-      ...(ctx.config.login ? { login: ctx.config.login } : {}),
-    },
-  })
-}
-
-/** Extract options shared by the extract and run commands. */
-function extractOptions(
-  ctx: CliContext,
-  extractFn: ExtractFn,
-  mediaFn: MediaFn | undefined,
-  limit?: number,
-  host?: string,
-) {
-  return {
-    extract: extractFn,
-    limit,
-    host,
-    guard: guardFor(ctx),
-    maxBatch: (ctx.config.limits ?? DEFAULT_LIMITS).maxBatch,
-    // The media stage runs inside extract for video links; the store-backed
-    // budget lives in the media adapter, so no budget wiring here.
-    ...(mediaFn ? { media: mediaFn } : {}),
-    logger: pipelineLogger('extract'),
-  }
+/** The stage logger names the pipeline always used. */
+function stageLogger(stage: 'ingest' | 'extract' | 'enrich') {
+  return pipelineLogger(stage)
 }
 
 export interface RunOutcome {
@@ -88,19 +48,12 @@ function reportBusy(busy: BusyRun | undefined, stage: string): void {
   process.exitCode = 3
 }
 
-/** The durable-ingest spool root: <config dir>/spool ( honours LINKINBOX_HOME ). */
-function spoolDirFor(ctx: CliContext): string {
-  return join(ctx.config.dir, 'spool')
-}
-
 /**
  * Finish ingest jobs a previous run left behind (crash resume). Returns
  * true when the ingest lock is held elsewhere — the caller must stop.
  */
 async function resumePendingIngest(ctx: CliContext): Promise<boolean> {
-  const resumed = await resumeIngestJobs(ctx.store, {
-    logger: pipelineLogger('ingest'),
-  })
+  const resumed = await ctx.app.resumeIngest({ logger: stageLogger('ingest') })
   for (const result of resumed) {
     if (result.busy) {
       reportBusy(result.busy, 'ingest')
@@ -117,19 +70,16 @@ async function resumePendingIngest(ctx: CliContext): Promise<boolean> {
 
 /** import <file...>: run the matching importer per file, then the ingest stage. */
 export async function runImport(ctx: CliContext, files: string[], limit?: number): Promise<void> {
-  const logger = pipelineLogger('ingest')
   if (await resumePendingIngest(ctx)) return
-  const raws = []
-  for (const file of files) {
-    const result = await importFile(file)
-    for (const warning of result.warnings) ctx.logger.warn('importer warning: {warning}', { warning })
-    raws.push(...result.links)
-    console.log(`${file}: ${result.links.length} links via ${result.importer}`)
-  }
-  const outcome = await ingest(ctx.store, raws, {
-    logger,
+  const { outcome } = await ctx.app.ingestFiles(files, {
     limit,
-    spoolDir: spoolDirFor(ctx),
+    logger: stageLogger('ingest'),
+    onFile: (file, result) => {
+      for (const warning of result.warnings) {
+        ctx.logger.warn('importer warning: {warning}', { warning })
+      }
+      console.log(`${file}: ${result.links.length} links via ${result.importer}`)
+    },
   })
   if (outcome.busy) {
     reportBusy(outcome.busy, 'ingest')
@@ -148,17 +98,26 @@ export async function runExtract(
   host?: string,
   untilEmpty = false,
 ): Promise<void> {
-  const outcome = untilEmpty
-    ? await extractUntilEmpty(ctx.store, {
-        ...extractOptions(ctx, extractFn, mediaFn, limit, host),
-        // Never sleep inside the CLI loop: the next `linkinbox extract`
-        // invocation handles the spacing wait, and a process that sleeps
-        // minutes is a process that gets killed.
-        sleep: async () => {},
-        onBatch: (summary) => console.log(formatBatchSummary(summary)),
-      })
-    : null
-  if (outcome) {
+  const shared = {
+    extract: extractFn,
+    limit,
+    host,
+    guard: ctx.app.stageGuard(),
+    maxBatch: (ctx.config.limits ?? DEFAULT_LIMITS).maxBatch,
+    // The media stage runs inside extract for video links; the store-backed
+    // budget lives in the media adapter, so no budget wiring here.
+    ...(mediaFn ? { media: mediaFn } : {}),
+    logger: stageLogger('extract'),
+  }
+  if (untilEmpty) {
+    const outcome = await ctx.app.extractUntilEmpty({
+      ...shared,
+      // Never sleep inside the CLI loop: the next `linkinbox extract`
+      // invocation handles the spacing wait, and a process that sleeps
+      // minutes is a process that gets killed.
+      sleep: async () => {},
+      onBatch: (summary) => console.log(formatBatchSummary(summary)),
+    })
     if (outcome.busy) {
       reportBusy(outcome.busy, 'extract')
       return
@@ -172,7 +131,7 @@ export async function runExtract(
     }
     return
   }
-  const result = await extract(ctx.store, extractOptions(ctx, extractFn, mediaFn, limit, host))
+  const result = await ctx.app.extract(shared)
   if (result.busy) {
     reportBusy(result.busy, 'extract')
     return
@@ -193,13 +152,13 @@ export async function runExtract(
 
 /** enrich [--limit N]: one structured-output call per link lacking enrichment. */
 export async function runEnrich(ctx: CliContext, enrichFn: EnrichFn, limit?: number): Promise<void> {
-  const outcome = await enrich(ctx.store, {
+  const outcome = await ctx.app.enrich({
     enrich: enrichFn,
     limit,
-    guard: guardFor(ctx),
+    guard: ctx.app.stageGuard(),
     maxBatch: (ctx.config.limits ?? DEFAULT_LIMITS).maxBatch,
     ttl: ctx.config.ttl,
-    logger: pipelineLogger('enrich'),
+    logger: stageLogger('enrich'),
   })
   if (outcome.busy) {
     reportBusy(outcome.busy, 'enrich')
@@ -230,19 +189,14 @@ export async function runAll(
   // Busy only blocks the ingest stage — extract/enrich have own locks.
   await resumePendingIngest(ctx)
   if (files.length > 0) {
-    const logger = pipelineLogger('ingest')
-    const raws = []
-    for (const file of files) {
-      const imported = await importFile(file)
-      for (const warning of imported.warnings) {
-        ctx.logger.warn('importer warning: {warning}', { warning })
-      }
-      raws.push(...imported.links)
-    }
-    const outcome = await ingest(ctx.store, raws, {
-      logger,
+    const { outcome } = await ctx.app.ingestFiles(files, {
       limit: options.limit,
-      spoolDir: spoolDirFor(ctx),
+      logger: stageLogger('ingest'),
+      onFile: (_file, imported) => {
+        for (const warning of imported.warnings) {
+          ctx.logger.warn('importer warning: {warning}', { warning })
+        }
+      },
     })
     result.import = outcome
     if (outcome.busy) {
@@ -252,10 +206,14 @@ export async function runAll(
     }
   }
 
-  const extractOutcome = await extract(
-    ctx.store,
-    extractOptions(ctx, extractFn, options.mediaFn, options.limit),
-  )
+  const extractOutcome = await ctx.app.extract({
+    extract: extractFn,
+    limit: options.limit,
+    guard: ctx.app.stageGuard(),
+    maxBatch: (ctx.config.limits ?? DEFAULT_LIMITS).maxBatch,
+    ...(options.mediaFn ? { media: options.mediaFn } : {}),
+    logger: stageLogger('extract'),
+  })
   result.extract = extractOutcome
   if (extractOutcome.busy) {
     reportBusy(extractOutcome.busy, 'extract')
@@ -263,13 +221,13 @@ export async function runAll(
     printStage(extractOutcome)
   }
 
-  const enrichOutcome = await enrich(ctx.store, {
+  const enrichOutcome = await ctx.app.enrich({
     enrich: enrichFn,
     limit: options.limit,
-    guard: guardFor(ctx),
+    guard: ctx.app.stageGuard(),
     maxBatch: (ctx.config.limits ?? DEFAULT_LIMITS).maxBatch,
     ttl: ctx.config.ttl,
-    logger: pipelineLogger('enrich'),
+    logger: stageLogger('enrich'),
   })
   result.enrich = enrichOutcome
   if (enrichOutcome.busy) {
@@ -285,7 +243,7 @@ export function registerPipelineCommands(
   deps: {
     ctx: () => Promise<CliContext>
     extractFn: (ctx: CliContext) => Promise<ExtractFn>
-    enrichFn: () => Promise<EnrichFn>
+    enrichFn: (ctx: CliContext) => Promise<EnrichFn>
     mediaFn?: (ctx: CliContext) => Promise<MediaFn>
   },
 ): void {
@@ -332,7 +290,7 @@ export function registerPipelineCommands(
     .action(async (opts: { limit?: number }) => {
       const ctx = await deps.ctx()
       try {
-        await runEnrich(ctx, await deps.enrichFn(), opts.limit)
+        await runEnrich(ctx, await deps.enrichFn(ctx), opts.limit)
       } finally {
         await ctx.close()
       }
@@ -346,7 +304,7 @@ export function registerPipelineCommands(
     .action(async (files: string[], opts: { limit?: number }) => {
       const ctx = await deps.ctx()
       try {
-        await runAll(ctx, files, await deps.extractFn(ctx), await deps.enrichFn(), {
+        await runAll(ctx, files, await deps.extractFn(ctx), await deps.enrichFn(ctx), {
           limit: opts.limit,
           mediaFn: await deps.mediaFn?.(ctx),
         })

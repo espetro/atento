@@ -1,20 +1,33 @@
 /**
- * Shared CLI context: config, store, logger. Every command resolves its
+ * Shared CLI context: config, app, store, logger. Every command resolves its
  * dependencies from here so the command bodies stay thin.
+ *
+ * The context is built on `createLinkinbox` from @linkinbox/app: the store
+ * opening, the config and the adapter wiring all live in the composition
+ * root; the CLI only adds its logging sinks on top.
  */
-import { openStore, type SqliteStore } from '@linkinbox/db'
 import { dirname } from 'node:path'
 import { mkdirSync } from 'node:fs'
+import { openStore, type SqliteStore } from '@linkinbox/db'
 import {
+  createLinkinbox,
   disposeLogging,
+  loadConfig,
   pipelineLogger,
   setupLogging,
+  type AppConfig,
+  type AsrFn,
+  type EnrichFn,
+  type ExtractFn,
+  type Linkinbox,
+  type MediaFn,
   type PipelineLogger,
-} from '@linkinbox/core'
-import { loadConfig, type AppConfig } from './config.js'
+} from '@linkinbox/app'
 
 export interface CliContext {
   config: AppConfig
+  /** The application layer: every operation goes through it. */
+  app: Linkinbox
   store: SqliteStore
   logger: PipelineLogger
   /** Flush logs and close the store. */
@@ -31,27 +44,42 @@ export interface ContextOptions {
   logPath?: string
   /** Override the config (tests). */
   config?: AppConfig
+  /** Override the extract fn (tests). */
+  extractFn?: ExtractFn
+  /** Override the enrich fn (tests). */
+  enrichFn?: EnrichFn
+  /** Override the media stage fn (tests). */
+  mediaFn?: MediaFn
+  /** Override the ASR provider for the media stage (tests). */
+  asr?: AsrFn
 }
 
-/** Build the context: config, open store, configure logging. */
+/** Build the context: config, app (store + adapters), logging sinks. */
 export async function createContext(options: ContextOptions = {}): Promise<CliContext> {
   const env = options.env ?? process.env
   const config = options.config ?? loadConfig(env)
-  mkdirSync(dirname(config.dbPath), { recursive: true })
-  const ownsStore = options.store === undefined
-  const store = options.store ?? (await openStore({ path: config.dbPath }))
-  const logging = setupLogging({
+  const logger = pipelineLogger('cli')
+  const app = await createLinkinbox(config, {
+    env,
+    ...(options.store !== undefined ? { store: options.store } : {}),
+    logger,
+    ...(options.extractFn !== undefined ? { extractFn: options.extractFn } : {}),
+    ...(options.enrichFn !== undefined ? { enrichFn: options.enrichFn } : {}),
+    ...(options.mediaFn !== undefined ? { mediaFn: options.mediaFn } : {}),
+    ...(options.asr !== undefined ? { asr: options.asr } : {}),
+  })
+  setupLogging({
     path: options.logPath ?? env['LINKINBOX_LOG_FILE'],
     console: options.quiet === true ? false : true,
   })
 
   return {
     config,
-    store,
-    logger: pipelineLogger('cli'),
+    app,
+    store: app.store as SqliteStore,
+    logger,
     async close() {
-      // An injected store belongs to the caller: only close what we opened.
-      if (ownsStore) await store.close()
+      await app.close()
       disposeLogging()
     },
   }

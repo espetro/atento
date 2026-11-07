@@ -28,14 +28,12 @@
     "typecheck": "tsc -p tsconfig.test.json"
   },
   "dependencies": {
+    "@linkinbox/app": "workspace:*",
     "@linkinbox/core": "workspace:*",
     "@linkinbox/db": "workspace:*",
-    "@linkinbox/enrich": "workspace:*",
     "@linkinbox/extractors": "workspace:*",
     "@linkinbox/media": "workspace:*",
-    "@linkinbox/importers": "workspace:*",
     "commander": "^15.0.0",
-    "smol-toml": "^1.9.1",
     "@linkinbox/server": "workspace:*"
   },
   "devDependencies": {
