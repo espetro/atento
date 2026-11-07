@@ -64,9 +64,11 @@ import type {
 import { createEventsResponse } from './events.js'
 import { createPairingService } from './pairing.js'
 import {
+  BrowserAdaptersBody,
   CollectionsSummaryBody,
   CollectionExportBody,
   CollectionReadResponse,
+  ConfigInfoBody,
   ErrorBody,
   errorResponses,
   IngestInputBody,
@@ -86,6 +88,7 @@ import {
   ReextractResponse,
   resolverOf,
   RunJournalBody,
+  RunListResponse,
   RunResultBody,
   SweepApplyResponse,
   SweepResponse,
@@ -154,6 +157,41 @@ function shapePipelineRow(link: LinkProjection): Record<string, unknown> {
   row['next_attempt_at'] = pipeline.nextAttemptAt
   row['updated_at'] = pipeline.updatedAt
   return row
+}
+
+/** Shape one runs row the way the run journal endpoints document it. */
+function shapeRunRow(run: {
+  id: number
+  stage: string
+  status?: string | null
+  pid?: number | null
+  startedAt: Date
+  heartbeatAt?: Date | null
+  finishedAt: Date | null
+  inputCount: number
+  okCount: number
+  errorCount: number
+  durationMs: number | null
+  tokensIn: number | null
+  tokensOut: number | null
+  costUsd: number | null
+}): Record<string, unknown> {
+  return {
+    id: run.id,
+    stage: run.stage,
+    status: run.status ?? null,
+    pid: run.pid ?? null,
+    startedAt: run.startedAt.toISOString(),
+    heartbeatAt: run.heartbeatAt?.toISOString() ?? null,
+    finishedAt: run.finishedAt?.toISOString() ?? null,
+    inputCount: run.inputCount,
+    okCount: run.okCount,
+    errorCount: run.errorCount,
+    durationMs: run.durationMs,
+    tokensIn: run.tokensIn,
+    tokensOut: run.tokensOut,
+    costUsd: run.costUsd,
+  }
 }
 
 function errMsg(err: unknown): string {
@@ -715,6 +753,12 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
         { name: 'category', in: 'query', required: false, schema: { type: 'string' } },
         { name: 'host', in: 'query', required: false, schema: { type: 'string' } },
         { name: 'stale', in: 'query', required: false, schema: { type: 'string' } },
+        {
+          name: 'collection',
+          in: 'query',
+          required: false,
+          schema: { type: 'string', enum: [...COLLECTION_NAMES] },
+        },
         { name: 'limit', in: 'query', required: false, schema: { type: 'integer' } },
         { name: 'offset', in: 'query', required: false, schema: { type: 'integer' } },
       ],
@@ -738,31 +782,46 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
         }
         state = q['state'] as LinkStateName
       }
+      // The collection filter (additive): restricts rows to one pipeline
+      // collection — the membership the collections rail navigates by.
+      let collection: CollectionName | undefined
+      if (q['collection'] !== undefined && q['collection'] !== '') {
+        if (!isCollectionName(q['collection'])) {
+          return c.json(
+            { error: `invalid collection "${q['collection']}"; expected one of: ${COLLECTION_NAMES.join(', ')}` },
+            400,
+          )
+        }
+        collection = q['collection']
+      }
       const filter = {
         status: status as Status | undefined,
         state,
         category: q['category'] || undefined,
         host: q['host'] || undefined,
         staleAsOf: stale ? new Date() : undefined,
+        collection,
       }
       const items = await ops.list({
         ...filter,
+        stale,
         q: q['q'] || undefined,
         limit,
         offset,
         fields: PIPELINE_SUMMARY_FIELDS,
       })
-      // The free-text match (and the host filter) live in ops (over url/title),
-      // so for those the total is the filtered length, not the raw store count.
-      // The store count handles the state filter on the FSM discriminant.
+      // The free-text match, the host filter and the collection filter live
+      // in ops (post-filters over full rows), so for those the total is the
+      // filtered length, not the raw store count. The store count handles
+      // the state filter on the FSM discriminant.
       const storeFilter = {
         status: (state ?? status) as Status | undefined,
         byState: state !== undefined,
         category: filter.category,
         staleAsOf: filter.staleAsOf,
       }
-      const total = q['q'] || filter.host
-        ? (await ops.list({ ...filter, q: q['q'] || undefined })).length
+      const total = q['q'] || filter.host || collection
+        ? (await ops.list({ ...filter, stale, q: q['q'] || undefined })).length
         : await store.countLinks(storeFilter)
       return c.json({ items: items.map(shapePipelineRow), total })
     },
@@ -1015,21 +1074,74 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
     async (c) => {
       const run = await ops.getRun(Number(c.req.param('id')))
       if (!run) return c.json({ error: 'not found' }, 404)
+      return c.json(shapeRunRow(run))
+    },
+  )
+
+  // The recent journal, newest first — the run status view's "last run"
+  // and journal list on a cold load (SSE only carries live transitions).
+  app.get(
+    '/api/runs',
+    describeRoute({
+      tags: ['run'],
+      summary: 'Recent run-journal rows, newest first',
+      parameters: [
+        {
+          name: 'limit',
+          in: 'query',
+          required: false,
+          schema: { type: 'integer' },
+        },
+      ],
+      responses: okJson('Run journal rows', RunListResponse),
+    }),
+    async (c) => {
+      const raw = c.req.query('limit')
+      const limit = raw !== undefined ? Number(raw) : 20
+      const runs = await ops.listRuns(Number.isInteger(limit) && limit > 0 ? limit : 20)
+      return c.json({ runs: runs.map(shapeRunRow) })
+    },
+  )
+
+  // ---- browsers / config (settings UI, read-only) -------------------------
+
+  app.get(
+    '/api/browsers',
+    describeRoute({
+      tags: ['config'],
+      summary:
+        'Configured browser adapters with capabilities and health — the ' +
+        'same dataset `linkinbox browsers` prints.',
+      responses: okJson('Browser adapters', BrowserAdaptersBody),
+    }),
+    async (c) => {
+      return c.json(await ops.browsers())
+    },
+  )
+
+  app.get(
+    '/api/config',
+    describeRoute({
+      tags: ['config'],
+      summary:
+        'Read-only config summary for the settings UI: sources, capture/' +
+        'server token configuration (booleans only — never values), the ' +
+        'config file path and the bind this server answers on.',
+      responses: okJson('Config summary', ConfigInfoBody),
+    }),
+    (c) => {
+      const info = ops.configInfo()
       return c.json({
-        id: run.id,
-        stage: run.stage,
-        status: run.status ?? null,
-        pid: run.pid ?? null,
-        startedAt: run.startedAt.toISOString(),
-        heartbeatAt: run.heartbeatAt?.toISOString() ?? null,
-        finishedAt: run.finishedAt?.toISOString() ?? null,
-        inputCount: run.inputCount,
-        okCount: run.okCount,
-        errorCount: run.errorCount,
-        durationMs: run.durationMs,
-        tokensIn: run.tokensIn,
-        tokensOut: run.tokensOut,
-        costUsd: run.costUsd,
+        dir: info.dir,
+        configPath: info.configPath,
+        sources: info.sources,
+        capture: info.capture,
+        server: info.server,
+        bind: {
+          hostname: bindHost,
+          port: opts.port ?? DEFAULT_PORT,
+          tokenRequired: !loopback,
+        },
       })
     },
   )
