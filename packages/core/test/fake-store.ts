@@ -275,6 +275,12 @@ export class FakeStore implements Store {
     return out
   }
 
+  async listLinkEvents(since: number, limit?: number): Promise<LinkHistoryEntry[]> {
+    let out = this.history.filter((h) => h.id > since).sort((a, b) => a.id - b.id)
+    if (limit !== undefined) out = out.slice(0, limit)
+    return out.map((h) => ({ ...h }))
+  }
+
   async countByState(): Promise<Record<LinkStateName, number>> {
     const out = {} as Record<LinkStateName, number>
     for (const name of LINK_STATES) out[name] = 0
@@ -506,6 +512,23 @@ export class FakeStore implements Store {
     return this.runs
       .filter((r) => this.journal.get(r.id)?.status === 'running')
       .map((r) => this.journalEntry(r.id))
+  }
+
+  async getRun(id: number): Promise<Run | null> {
+    return this.runs.find((r) => r.id === id) ?? null
+  }
+
+  async listRuns(opts: { since?: Date; limit?: number } = {}): Promise<Run[]> {
+    let out = [...this.runs].sort((a, b) => a.id - b.id)
+    if (opts.since !== undefined) {
+      out = out.filter(
+        (r) =>
+          r.startedAt > opts.since! ||
+          (r.finishedAt !== null && r.finishedAt > opts.since!),
+      )
+    }
+    if (opts.limit !== undefined) out = out.slice(0, opts.limit)
+    return out.map((r) => ({ ...r }))
   }
 
   async reclaimDeadRuns(
@@ -820,6 +843,8 @@ export async function seedLink(store: FakeStore, url: string, overrides: Partial
 function applyLinkPatch(link: Link, patch: LinkPatch): Link {
   const out = { ...link }
   if (patch.title !== undefined) out.title = patch.title
+  if (patch.note !== undefined) out.note = patch.note
+  if (patch.tags !== undefined) out.tags = patch.tags
   if (patch.extractedContent !== undefined) out.extractedContent = patch.extractedContent
   if (patch.extractedAt !== undefined) out.extractedAt = patch.extractedAt
   if (patch.needsBrowser !== undefined) out.needsBrowser = patch.needsBrowser

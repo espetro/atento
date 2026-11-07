@@ -21,6 +21,8 @@ import {
   type LoginConfig,
   type MediaConfig,
   type PacingConfig,
+  serverFromToml,
+  type ServerConfig,
   type ShareConfig,
   type TomlTable,
   type TtlConfig,
@@ -40,6 +42,8 @@ export interface AppConfig {
   media: MediaConfig
   /** Capture endpoint configuration from `[capture]`. */
   capture: CaptureConfig
+  /** HTTP server auth configuration from `[server]`. */
+  server: ServerConfig
   /** The share allowlist from `[share]`: the hosts another agent may read. */
   share: ShareConfig
   /** Browser engine configuration from `[browser]`. */
@@ -115,6 +119,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     pacing: pacingFromToml(toml),
     media: mediaFromToml(toml),
     capture: captureFromToml(toml as unknown as Record<string, unknown>),
+    server: serverFromToml(toml as unknown as Record<string, unknown>),
     share: shareFromToml(toml as unknown as Record<string, unknown>),
     browser: browserFromToml(toml as unknown as Record<string, unknown>),
     profilesDir: defaultProfilesDir(env),

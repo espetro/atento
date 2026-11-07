@@ -79,6 +79,13 @@ export interface RouterExtractOptions extends RouterOptions {
    * replace the port-backed extractor for that adapter id.
    */
   browserAdapters?: Record<string, Extractor>
+  /**
+   * Force one browser adapter id for every call (the re-extract endpoint's
+   * `adapter` argument). When set the router is bypassed: the named
+   * adapter's reader runs directly, with no escalation walk. An unknown id
+   * throws — a typo must never silently fall back to another engine.
+   */
+  forceAdapterId?: string
 }
 
 /**
@@ -233,7 +240,30 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
     }
   }
 
+  const forcedAdapter = options.forceAdapterId
+  if (forcedAdapter !== undefined && adapterReaders[forcedAdapter] === undefined) {
+    const known = Object.keys(adapterReaders).sort()
+    throw new Error(
+      `unknown browser adapter "${forcedAdapter}"` +
+        (known.length > 0 ? `; configured readers: ${known.join(', ')}` : '; no browser adapters configured'),
+    )
+  }
+
   return async (url: string) => {
+    // Forced-adapter mode (re-extract with an explicit adapter): run that
+    // adapter's reader directly — no router, no escalation.
+    if (forcedAdapter !== undefined) {
+      const extractor = adapterReaders[forcedAdapter] ?? fallbackBrowser
+      const result = await extractor.extract(url)
+      return adaptResult(
+        {
+          route: 'browser',
+          ...result,
+          meta: { ...(result.meta ?? {}), adapter: forcedAdapter },
+        },
+        url,
+      )
+    }
     const first = await router.extract(url)
     const firstAdapted = adaptResult(first, url)
     // Auto-escalation: a bot block (Cloudflare, captcha, HTTP 403/429) or a

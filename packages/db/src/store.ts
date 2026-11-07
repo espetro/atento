@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
-import { eq, inArray, and, gt, gte, lte, sql } from 'drizzle-orm'
+import { eq, inArray, and, gt, gte, lte, or, sql } from 'drizzle-orm'
 import {
   SCHEMA_VERSION,
   links,
@@ -134,22 +134,7 @@ export class SqliteStore implements Store {
       .from(runs)
       .orderBy(sql`${runs.startedAt} DESC, ${runs.id} DESC`)
       .all()
-      .map((r) => ({
-        id: r.id,
-        stage: r.stage,
-        status: (r.status as RunJournalStatus | null) ?? null,
-        pid: r.pid ?? null,
-        heartbeatAt: r.heartbeatAt ?? null,
-        startedAt: r.startedAt,
-        finishedAt: r.finishedAt ?? null,
-        inputCount: r.inputCount,
-        okCount: r.okCount,
-        errorCount: r.errorCount,
-        durationMs: r.durationMs ?? null,
-        tokensIn: r.tokensIn ?? null,
-        tokensOut: r.tokensOut ?? null,
-        costUsd: r.costUsd ?? null,
-      }))
+      .map(runFromRow)
   }
 
   async migrate(): Promise<void> {
@@ -611,6 +596,28 @@ export class SqliteStore implements Store {
     return rows.map(fromRow)
   }
 
+  /**
+   * Delta read of the event log itself: every link_events row newer than
+   * `since`, oldest first. Backs the resumable SSE cursor stream.
+   */
+  async listLinkEvents(since: number, limit?: number): Promise<LinkHistoryEntry[]> {
+    const q = this.db
+      .select()
+      .from(linkEvents)
+      .where(gt(linkEvents.id, since))
+      .orderBy(sql`${linkEvents.id} ASC`)
+    const rows = limit !== undefined ? q.limit(limit).all() : q.all()
+    return rows.map((r) => ({
+      id: r.id,
+      linkId: r.linkId,
+      fromState: r.fromState,
+      toState: r.toState,
+      event: r.event,
+      data: (r.data as Record<string, unknown> | null) ?? null,
+      at: r.at,
+    }))
+  }
+
   /** State histogram: how many links sit in each state. */
   async countByState(): Promise<Record<LinkStateName, number>> {
     const rows = this.db
@@ -738,6 +745,25 @@ export class SqliteStore implements Store {
       .orderBy(sql`${runs.id} ASC`)
       .all()
       .map(journalFromRow)
+  }
+
+  async getRun(id: number): Promise<Run | null> {
+    const row = this.db.select().from(runs).where(eq(runs.id, id)).get()
+    return row === undefined ? null : runFromRow(row)
+  }
+
+  async listRuns(opts: { since?: Date; limit?: number } = {}): Promise<Run[]> {
+    const q = this.db
+      .select()
+      .from(runs)
+      .where(
+        opts.since !== undefined
+          ? or(gt(runs.startedAt, opts.since), gt(runs.finishedAt, opts.since))
+          : undefined,
+      )
+      .orderBy(sql`${runs.id} ASC`)
+    const rows = opts.limit !== undefined ? q.limit(opts.limit).all() : q.all()
+    return rows.map(runFromRow)
   }
 
   /**
@@ -1176,6 +1202,26 @@ function jobFromRow(row: IngestJobRow): IngestJob {
   }
 }
 
+/** Map a runs row to the full Run view (journal fields plus counters). */
+function runFromRow(r: typeof runs.$inferSelect): Run {
+  return {
+    id: r.id,
+    stage: r.stage,
+    status: (r.status as RunJournalStatus | null) ?? null,
+    pid: r.pid ?? null,
+    heartbeatAt: r.heartbeatAt ?? null,
+    startedAt: r.startedAt,
+    finishedAt: r.finishedAt ?? null,
+    inputCount: r.inputCount,
+    okCount: r.okCount,
+    errorCount: r.errorCount,
+    durationMs: r.durationMs ?? null,
+    tokensIn: r.tokensIn ?? null,
+    tokensOut: r.tokensOut ?? null,
+    costUsd: r.costUsd ?? null,
+  }
+}
+
 /** Map a runs row to the journal view (status/pid/heartbeat included). */
 function journalFromRow(row: {
   id: number
@@ -1279,6 +1325,8 @@ function patchColumns(patch: LinkPatch | undefined): Partial<typeof links.$infer
   if (patch === undefined) return {}
   const set: Partial<typeof links.$inferInsert> = {}
   if (patch.title !== undefined) set.title = patch.title
+  if (patch.note !== undefined) set.note = patch.note
+  if (patch.tags !== undefined) set.tags = patch.tags
   if (patch.extractedContent !== undefined) set.extractedContent = patch.extractedContent
   if (patch.extractedAt !== undefined) set.extractedAt = patch.extractedAt
   if (patch.needsBrowser !== undefined) set.needsBrowser = patch.needsBrowser

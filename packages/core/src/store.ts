@@ -105,6 +105,13 @@ export interface Store {
    */
   listChangedLinks(since: number, limit?: number): Promise<Link[]>
 
+  /**
+   * Delta read of the event log itself: every `link_events` row whose id is
+   * greater than `since`, oldest first. This is the resumable cursor stream
+   * behind `GET /api/events` (SSE `Last-Event-ID`).
+   */
+  listLinkEvents(since: number, limit?: number): Promise<LinkHistoryEntry[]>
+
   /** Count of links per state name (state histogram). */
   countByState(): Promise<Record<LinkStateName, number>>
 
@@ -152,6 +159,19 @@ export interface Store {
 
   /** Every journal row still marked `running`. */
   listRunningRuns(): Promise<RunJournalEntry[]>
+
+  /**
+   * One `runs` row by id: the journal entry plus the stage counters
+   * (input/ok/error counts, duration, tokens, cost). Null when unknown.
+   */
+  getRun(id: number): Promise<Run | null>
+
+  /**
+   * `runs` rows ordered by id. `since` keeps rows whose `startedAt` OR
+   * `finishedAt` is newer than the instant — the poll shape live event
+   * streams use to spot run starts and finishes.
+   */
+  listRuns(opts?: { since?: Date; limit?: number }): Promise<Run[]>
 
   /**
    * Mark `running` journal rows `crashed` when their owner is gone: the pid
@@ -353,6 +373,10 @@ export type {
  */
 export interface LinkPatch {
   title?: string | null
+  /** User note shown in the UI list/preview. */
+  note?: string | null
+  /** User tags (JSON array column). */
+  tags?: string[] | null
   extractedContent?: string | null
   extractedAt?: Date | null
   needsBrowser?: boolean
