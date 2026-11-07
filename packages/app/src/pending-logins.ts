@@ -2,12 +2,8 @@
  * Pending logins: the hosts that still need a browser login before their
  * links can be extracted.
  *
- * The canonical data source is `listHostsNeedingLogin(store)` in
- * packages/core (the canary slice). That function does not exist on this
- * branch yet, so this module ships a temporary query against the same
- * tables and keeps the shape identical. The dependency is injected through
- * `loadPendingLogins`, so swapping the core function in is a one line
- * change at the call site and nothing else.
+ * The data source is `listHostsNeedingLogin(store)` in packages/core,
+ * injected through `loadPendingLogins` so tests can substitute a fake.
  *
  * A host needs a login when it has links parked on a login wall:
  *   - links in the `needs_browser` state (extraction needs the browser), or

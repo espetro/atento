@@ -1,6 +1,6 @@
 # Browser extension capture
 
-This doc assesses how linkinbox can ingest links and page content from the user's own logged-in browser. It is a design plus a thin proof of concept, not a shipped extension. The proof of concept lives in `packages/extension`: an MV3 manifest, a service worker that captures the active tab and POSTs to `/capture`, a payload builder, and an in-memory retry queue, all unit tested with a fake fetch.
+This doc assesses how linkinbox can ingest links and page content from the user's own logged-in browser. `packages/extension` is a working MV3 client: a service worker that captures the active tab and POSTs to `/capture`, bulk capture of tabs/bookmarks through `/api/ingest`, a durable `chrome.storage.local` outbox with retry/backoff/dead-letter, and one-time-code pairing via `/api/pair`. It is unit tested with a fake fetch and does not ship to a store.
 
 ## The shape of the problem
 

@@ -522,12 +522,6 @@ importers:
       '@linkinbox/app':
         specifier: workspace:*
         version: link:../app
-      '@linkinbox/core':
-        specifier: workspace:*
-        version: link:../core
-      '@linkinbox/db':
-        specifier: workspace:*
-        version: link:../db
       '@modelcontextprotocol/hono':
         specifier: 2.0.2
         version: 2.0.2(@modelcontextprotocol/server@2.4.0)(hono@4.13.14)
@@ -538,6 +532,12 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@linkinbox/core':
+        specifier: workspace:*
+        version: link:../core
+      '@linkinbox/db':
+        specifier: workspace:*
+        version: link:../db
       '@modelcontextprotocol/client':
         specifier: 2.4.0
         version: 2.4.0
