@@ -593,7 +593,9 @@ export function createLinkinboxOps(
         hasProfile:
           options.hasProfile ??
           (async (host) => (await store.getProfile(host)) !== null),
-        guard: options.guard === undefined ? ops.browseGuard() : options.guard,
+        // An explicit `guard` key (even undefined) wins; absent means the
+        // config guard. This mirrors the adapters' old wiring exactly.
+        guard: 'guard' in options ? options.guard : ops.browseGuard(),
       })
     },
 

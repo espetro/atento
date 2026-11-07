@@ -417,18 +417,15 @@ importers:
 
   packages/mcp:
     dependencies:
-      '@linkinbox/cli':
+      '@linkinbox/app':
         specifier: workspace:*
-        version: link:../cli
+        version: link:../app
       '@linkinbox/core':
         specifier: workspace:*
         version: link:../core
       '@linkinbox/db':
         specifier: workspace:*
         version: link:../db
-      '@linkinbox/importers':
-        specifier: workspace:*
-        version: link:../importers
       '@modelcontextprotocol/sdk':
         specifier: ^1.32.2
         version: 1.32.2(zod@4.6.7)
@@ -436,6 +433,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@linkinbox/cli':
+        specifier: workspace:*
+        version: link:../cli
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2

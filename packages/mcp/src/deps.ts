@@ -18,7 +18,7 @@ import type {
   SweepPlan,
   TriageResult,
   TtlConfig,
-} from '@linkinbox/core'
+} from '@linkinbox/app'
 
 export interface McpContext {
   store: Store
