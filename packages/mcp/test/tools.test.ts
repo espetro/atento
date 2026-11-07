@@ -23,6 +23,29 @@ describe('mcp tools', () => {
     }
   })
 
+  it('emits the expected JSON Schema for a representative tool', async () => {
+    const h = await createHarness()
+    try {
+      const { tools } = await h.client.listTools()
+      const linksGet = tools.find((t) => t.name === 'links_get')
+      // The SDK converts the zod/mini input shape through zod v4's
+      // toJSONSchema; this pins the contract clients see.
+      expect(linksGet?.inputSchema).toMatchObject({
+        type: 'object',
+        properties: {
+          id: { type: 'integer', exclusiveMinimum: 0 },
+          fields: {
+            type: 'array',
+            items: { type: 'string', enum: expect.any(Array) },
+          },
+        },
+        required: ['id'],
+      })
+    } finally {
+      await h.cleanup()
+    }
+  })
+
   it('links_list returns the default projection without extracted_content', async () => {
     const h = await createHarness()
     try {

@@ -3,7 +3,7 @@
  * TierResult; the combined MediaReport tracks every layer so the caller sees
  * an honest picture of what worked, what was empty, and what is not built.
  */
-import { z } from 'zod'
+import { z } from 'zod/mini'
 
 export const MEDIA_TIER_NAMES = ['caption', 'transcript', 'frames'] as const
 export const mediaTierNameSchema = z.enum(MEDIA_TIER_NAMES)
@@ -26,13 +26,13 @@ export const captionResultSchema = z.object({
   status: z.literal('ok'),
   seconds: z.number(),
   text: z.string(),
-  caption: z.string().optional(),
-  hashtags: z.array(z.string()).default([]),
-  author: z.string().optional(),
-  audioTrack: z.string().optional(),
-  likeCount: z.number().optional(),
-  commentCount: z.number().optional(),
-  viewCount: z.number().optional(),
+  caption: z.optional(z.string()),
+  hashtags: z._default(z.array(z.string()), []),
+  author: z.optional(z.string()),
+  audioTrack: z.optional(z.string()),
+  likeCount: z.optional(z.number()),
+  commentCount: z.optional(z.number()),
+  viewCount: z.optional(z.number()),
 })
 
 /** Transcript tier: downloaded audio, transcribed locally. */
@@ -43,8 +43,8 @@ export const transcriptResultSchema = z.object({
   seconds: z.number(),
   text: z.string(),
   /** Real-time factor when the provider reported it (< 1 is faster than realtime). */
-  rtf: z.number().optional(),
-  audioDurationSeconds: z.number().optional(),
+  rtf: z.optional(z.number()),
+  audioDurationSeconds: z.optional(z.number()),
 })
 
 export const tierErrorSchema = z.object({
@@ -76,7 +76,7 @@ export const tierEmptySchema = z.object({
   tier: mediaTierNameSchema,
   status: z.literal('empty'),
   seconds: z.number(),
-  reason: z.string().optional(),
+  reason: z.optional(z.string()),
 })
 
 /**

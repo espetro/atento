@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import { z } from 'zod/mini'
 import { PARK_REASONS } from '../pipeline/park-reason.js'
 
 /**
@@ -18,46 +18,46 @@ export const createdSchema = z.object({ state: z.literal('created') })
 export const extractingSchema = z.object({
   state: z.literal('extracting'),
   startedAt: z.string(),
-  attempt: z.number().int().min(1),
+  attempt: z.number().check(z.int(), z.minimum(1)),
 })
 
 export const extractedSchema = z.object({
   state: z.literal('extracted'),
   /** Characters of extracted content. 0 means "unknown". */
-  chars: z.number().int().min(0),
+  chars: z.number().check(z.int(), z.minimum(0)),
 })
 
 export const needsBrowserSchema = z.object({
   state: z.literal('needs_browser'),
   /** Older rows were parked without a host; they parse as an empty host. */
-  host: z.string().default(''),
+  host: z._default(z.string(), ''),
   /** Why a browser is needed, e.g. `login_wall` or `private_404`. */
-  reason: z.string().optional(),
+  reason: z.optional(z.string()),
   /**
    * The park reason class of the parked link: `login_wall`, `bot_block`,
    * `js_shell`, `http_error`, `timeout` or `review_only`. Older rows were
    * parked without one; they parse as `unknown`.
    */
-  reasonClass: z.enum(PARK_REASONS).default('unknown'),
+  reasonClass: z._default(z.enum(PARK_REASONS), 'unknown'),
 })
 
 export const deferredSchema = z.object({
   state: z.literal('deferred'),
   stage: z.enum(['extract', 'enrich']),
   nextAttemptAt: z.string(),
-  attempts: z.number().int().min(0),
+  attempts: z.number().check(z.int(), z.minimum(0)),
   reason: z.string(),
   /**
    * The park reason class of the deferral, when it names a blocker. A pure
    * throttle (spacing, daily cap) carries no class: it parses as `unknown`.
    */
-  reasonClass: z.enum(PARK_REASONS).default('unknown'),
+  reasonClass: z._default(z.enum(PARK_REASONS), 'unknown'),
 })
 
 export const enrichingSchema = z.object({
   state: z.literal('enriching'),
   startedAt: z.string(),
-  attempt: z.number().int().min(1),
+  attempt: z.number().check(z.int(), z.minimum(1)),
 })
 
 export const inboxSchema = z.object({
@@ -67,7 +67,7 @@ export const inboxSchema = z.object({
 
 export const scheduledSchema = z.object({
   state: z.literal('scheduled'),
-  scheduledFor: z.string().nullable(),
+  scheduledFor: z.nullable(z.string()),
 })
 
 export const archivedSchema = z.object({
@@ -85,7 +85,7 @@ export const erroredSchema = z.object({
   state: z.literal('errored'),
   stage: z.enum(['extract', 'enrich']),
   error: z.string(),
-  attempts: z.number().int().min(0),
+  attempts: z.number().check(z.int(), z.minimum(0)),
   retryable: z.boolean(),
 })
 
@@ -114,8 +114,10 @@ export type LinkState = z.infer<typeof LinkStateSchema>
 export type LinkStateName = LinkState['state']
 
 /** All state names, in stable order (used by the transition table and docs). */
-export const LINK_STATES = LinkStateSchema.options.map(
-  (o) => o.shape.state.value,
+export const LINK_STATES = LinkStateSchema._zod.def.options.map(
+  // zod/mini literals keep their values on `_zod.def.values`; there is no
+  // `.options`/`.value` accessor like classic zod exposes.
+  (o) => o.shape.state._zod.def.values[0],
 ) as [LinkStateName, ...LinkStateName[]]
 
 /** States that carry a lease (`startedAt`). */
