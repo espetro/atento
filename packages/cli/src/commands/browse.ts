@@ -14,7 +14,7 @@
  * and the circuit breaker. Nothing is written to the link store.
  */
 import type { Command } from 'commander'
-import { guardDepsFromStore, type BrowseResult } from '@linkinbox/core'
+import { guardDepsFromStore, type BrowseResult } from '@linkinbox/app'
 import type { CliContext } from '../context.js'
 import { runBrowse, runBrowseHosts, type BrowseDeps } from '../browse-fn.js'
 

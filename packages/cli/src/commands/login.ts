@@ -22,7 +22,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { Command } from 'commander'
 import type { CliContext } from '../context.js'
-import { hostPolicy } from '@linkinbox/core'
+import { hostPolicy } from '@linkinbox/app'
 import { renderTable } from '../render.js'
 import { runPatchrightLogin, hostUsesPatchright, type PatchrightLoginLaunch, type WaitForEnter } from '../patchright-login.js'
 import {

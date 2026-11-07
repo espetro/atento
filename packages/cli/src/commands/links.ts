@@ -4,21 +4,14 @@
  */
 import type { Command } from 'commander'
 import {
-  listLinks,
-  getLink,
-  triage,
-  restore,
-  retryHeadless,
-  linkHistory,
-  pipelineOverview,
-  toPipelineRow,
   LINK_STATES,
+  toPipelineRow,
   type LinkField,
   type Status,
   type TriageAction,
   type LinkStateName,
   type PipelineOverview,
-} from '@linkinbox/core'
+} from '@linkinbox/app'
 import type { CliContext } from '../context.js'
 import { renderTable, shortDate } from '../render.js'
 
@@ -69,7 +62,7 @@ export async function runList(ctx: CliContext, opts: ListOptions): Promise<void>
     ? (opts.fields.split(',').map((f) => f.trim()) as LinkField[])
     : undefined
 
-  const rows = await listLinks(ctx.store, {
+  const rows = await ctx.app.list({
     status,
     state,
     category: opts.category,
@@ -122,7 +115,7 @@ export async function runList(ctx: CliContext, opts: ListOptions): Promise<void>
 
 /** show <id>: the full record including extracted markdown. */
 export async function runShow(ctx: CliContext, id: number, json: boolean): Promise<void> {
-  const row = await getLink(ctx.store, id, [
+  const row = await ctx.app.get(id, [
     'id',
     'url',
     'title',
@@ -175,7 +168,7 @@ export async function runShow(ctx: CliContext, id: number, json: boolean): Promi
     console.log(content)
   }
 
-  const history = await linkHistory(ctx.store, id)
+  const history = await ctx.app.history(id)
   if (history.length > 0) {
     console.log('\n--- history ---')
     for (const h of history) {
@@ -215,7 +208,7 @@ export async function runTriage(ctx: CliContext, opts: TriageOptions): Promise<v
   if (opts.batch) {
     // The batch filter needs the fields it filters on, so they are requested
     // explicitly (the default projection is deliberately compact).
-    const rows = await listLinks(ctx.store, {
+    const rows = await ctx.app.list({
       fields: ['id', 'status', 'category', 'title'],
       limit: 100000,
     })
@@ -231,7 +224,7 @@ export async function runTriage(ctx: CliContext, opts: TriageOptions): Promise<v
     throw new Error('triage needs at least one link id (or --batch with a filter)')
   }
 
-  const result = await triage(ctx.store, ids, action)
+  const result = await ctx.app.triage(ids, action)
   console.log(`${result.updated} link${result.updated === 1 ? '' : 's'} -> ${result.status}`)
   if (result.missing.length > 0) {
     console.log(`missing: ${result.missing.join(', ')}`)
@@ -281,7 +274,7 @@ export async function runRetryHeadless(
   if (opts.headless !== true) {
     throw new Error('retry needs --headless; captured content is never re-fetched implicitly')
   }
-  const result = await retryHeadless(ctx.store, opts.ids)
+  const result = await ctx.app.retryHeadless(opts.ids)
   if (result.updated.length > 0) {
     console.log(
       `${result.updated.length} link${result.updated.length === 1 ? '' : 's'} requeued for headless extraction: ${result.updated.join(', ')}`,
@@ -299,7 +292,7 @@ export async function runRetryHeadless(
 
 /** restore <ids...>: move archived/discarded/errored links back to the inbox. */
 export async function runRestore(ctx: CliContext, ids: number[]): Promise<void> {
-  const result = await restore(ctx.store, ids)
+  const result = await ctx.app.restore(ids)
   console.log(
     `${result.updated} link${result.updated === 1 ? '' : 's'} restored to inbox`,
   )
@@ -350,7 +343,7 @@ export function formatOverview(overview: PipelineOverview): string {
 
 /** overview [--json]: the state counts and the busiest hosts. */
 export async function runOverview(ctx: CliContext, opts: OverviewOptions): Promise<void> {
-  const overview = await pipelineOverview(ctx.store)
+  const overview = await ctx.app.overview()
   if (opts.json === true) {
     console.log(JSON.stringify(overview, null, 2))
     return

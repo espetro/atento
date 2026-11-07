@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 export default defineConfig({
   resolve: {
     alias: {
+      '@linkinbox/app': fileURLToPath(new URL('../app/src/index.ts', import.meta.url)),
       '@linkinbox/core': fileURLToPath(new URL('../core/src/index.ts', import.meta.url)),
       '@linkinbox/db': fileURLToPath(new URL('../db/src/index.ts', import.meta.url)),
       '@linkinbox/extractors': fileURLToPath(new URL('../extractors/src/index.ts', import.meta.url)),

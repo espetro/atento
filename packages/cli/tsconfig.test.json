@@ -4,11 +4,14 @@
     "noEmit": true,
     "rootDir": "..",
     "paths": {
+      "@linkinbox/app": ["../app/src/index.ts"],
       "@linkinbox/core": ["../core/src/index.ts"],
       "@linkinbox/db": ["../db/src/index.ts"],
       "@linkinbox/extractors": ["../extractors/src/index.ts"],
-      "@linkinbox/importers": ["../importers/src/index.ts"]
+      "@linkinbox/importers": ["../importers/src/index.ts"],
+      "@linkinbox/media": ["../media/src/index.ts"],
+      "@linkinbox/enrich": ["../enrich/src/index.ts"]
     }
   },
-  "include": ["src", "test", "../core/src", "../db/src", "../extractors/src", "../importers/src"]
+  "include": ["src", "test", "../app/src", "../core/src", "../db/src", "../extractors/src", "../importers/src", "../media/src", "../enrich/src"]
 }
