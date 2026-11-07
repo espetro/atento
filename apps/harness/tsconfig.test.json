@@ -1,0 +1,31 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "../..",
+    "paths": {
+      "@linkinbox/app": ["../../packages/app/src/index.ts"],
+      "@linkinbox/core": ["../../packages/core/src/index.ts"],
+      "@linkinbox/db": ["../../packages/db/src/index.ts"],
+      "@linkinbox/mcp": ["../../packages/mcp/src/index.ts"],
+      "@linkinbox/server": ["../../packages/server/src/index.ts"],
+      "@linkinbox/enrich": ["../../packages/enrich/src/index.ts"],
+      "@linkinbox/extractors": ["../../packages/extractors/src/index.ts"],
+      "@linkinbox/importers": ["../../packages/importers/src/index.ts"],
+      "@linkinbox/media": ["../../packages/media/src/index.ts"]
+    }
+  },
+  "include": [
+    "src",
+    "test",
+    "../../packages/app/src",
+    "../../packages/core/src",
+    "../../packages/db/src",
+    "../../packages/mcp/src",
+    "../../packages/server/src",
+    "../../packages/enrich/src",
+    "../../packages/extractors/src",
+    "../../packages/importers/src",
+    "../../packages/media/src"
+  ]
+}

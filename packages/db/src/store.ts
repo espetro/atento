@@ -857,11 +857,19 @@ export class SqliteStore implements Store {
   async listIngestJobs(filter?: {
     status?: IngestJobStatus | IngestJobStatus[]
     limit?: number
+    finishedAfter?: Date
   }): Promise<IngestJob[]> {
     const conds = []
     if (filter?.status !== undefined) {
       const statuses = Array.isArray(filter.status) ? filter.status : [filter.status]
       conds.push(inArray(ingestJobs.status, statuses))
+    }
+    if (filter?.finishedAfter !== undefined) {
+      // Effective finish stamp: finished_at when set, else updated_at —
+      // failed jobs are marked failed without a finished_at.
+      conds.push(
+        sql`coalesce(${ingestJobs.finishedAt}, ${ingestJobs.updatedAt}) >= ${filter.finishedAfter.getTime()}`,
+      )
     }
     const q = this.db.select().from(ingestJobs)
     const filtered = conds.length ? q.where(and(...conds)) : q

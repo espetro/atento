@@ -213,10 +213,17 @@ export interface Store {
     },
   ): Promise<void>
 
-  /** Jobs in the given statuses, oldest first. */
+  /**
+   * Jobs in the given statuses, oldest first.
+   * `finishedAfter` keeps only jobs whose effective finish stamp
+   * (`finished_at`, falling back to `updated_at` — failed jobs never set
+   * `finished_at`) is at or after the given time. Lets pollers watermark
+   * instead of scanning the whole terminal-job history.
+   */
   listIngestJobs(filter?: {
     status?: IngestJobStatus | IngestJobStatus[]
     limit?: number
+    finishedAfter?: Date
   }): Promise<IngestJob[]>
 
   /**
