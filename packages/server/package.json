@@ -22,11 +22,12 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.14.0",
+    "@linkinbox/app": "workspace:*",
     "@linkinbox/core": "workspace:*",
-    "@linkinbox/db": "workspace:*",
     "hono": "^4.9.0"
   },
   "devDependencies": {
+    "@linkinbox/db": "workspace:*",
     "@types/node": "^24.10.1",
     "typescript": "^5.9.0",
     "vitest": "^3.0.0"

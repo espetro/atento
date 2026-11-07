@@ -164,6 +164,7 @@ export async function runServe(
   const started = (await mod.startServer({
     port: effective,
     store: ctx.store,
+    ops: ctx.app,
     config: ctx.config,
     hostname: '127.0.0.1',
     capture: ctx.config.capture,

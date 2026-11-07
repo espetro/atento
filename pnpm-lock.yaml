@@ -470,16 +470,19 @@ importers:
       '@hono/node-server':
         specifier: ^1.14.0
         version: 1.19.17(hono@4.13.14)
+      '@linkinbox/app':
+        specifier: workspace:*
+        version: link:../app
       '@linkinbox/core':
         specifier: workspace:*
         version: link:../core
-      '@linkinbox/db':
-        specifier: workspace:*
-        version: link:../db
       hono:
         specifier: ^4.9.0
         version: 4.13.14
     devDependencies:
+      '@linkinbox/db':
+        specifier: workspace:*
+        version: link:../db
       '@types/node':
         specifier: ^24.10.1
         version: 24.19.2
