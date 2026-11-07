@@ -1,7 +1,9 @@
 screen: needs-login-1
-name: Needs-login / blocked / errored view ("attention")
-route: /?view=attention&collection=needs_login|blocked|errored|review
-file: packages/ui/src/views/Attention.svelte (proposed)
+name: Needs-login view (CORE — parked-link remediation)
+route: /?view=needs-login&collection=needs_login|blocked|errored|review
+file: packages/ui/src/views/NeedsLogin.svelte (proposed — reuses the triage list+preview shell)
+Priority: CORE — the login process blocks ingestion, so parked links
+must stay trackable; this is a read surface with remediation actions.
 
 The "only you can fix this" surface. It reuses the triage list+preview
 shell but re-frames the job: instead of read/archive decisions, each
@@ -47,7 +49,7 @@ EMPTY (all caught up):
 │            ✓ Nothing needs a login right now.                                 │
 │                                                                               │
 │            Links that hit a login wall will appear here after the next run.   │
-│            [ Run a pass now ]   (POST /api/run)                               │
+│            [ Run a pass now ]   (opens run drawer → Run now)                               │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -63,8 +65,8 @@ EMPTY (all caught up):
 | Link list | required | Same rows/tabs as triage-1; state chip shows the park reason class (login_wall, bot_block, js_shell, http_error, timeout, review_only, unknown) |
 | Preview pane | required | Same four tabs; for parked links Reader usually shows whatever extraction exists (partial), Snapshot shows the parked page's screenshot when captured — the "what did the bot see" evidence |
 | Bulk actions | action | "Archive all from host" / "Discard all" per host row (confirm dialog listing count); individual a/s/d/r/o unchanged |
-| Run-a-pass CTA | action | Empty states and banner footers offer POST /api/run; while a run is active the button shows live stage progress (ingest → extract → enrich → sweep) fed by SSE `run` events |
-| Exit-code bridge | ambient | When arriving from run-1 with `needsAction`, a banner reads "last run finished — N links need you" with counts per collection |
+| Run-a-pass CTA | action | Empty states and banner footers open the run drawer (run-1) whose "Run now" fires POST /api/run; while a run is active the run chip shows live stage progress (ingest → extract → enrich → sweep) fed by SSE `run` events |
+| Exit-code bridge | ambient | When arriving from the run drawer with `needsAction`, a banner reads "last run finished — N links need you" with counts per collection |
 
 ## Behavior
 

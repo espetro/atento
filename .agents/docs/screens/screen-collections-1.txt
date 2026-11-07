@@ -1,10 +1,11 @@
 screen: collections-1
 name: Collections sidebar (rail)
-route: chrome of /?view=triage (and attention); collapsible
-file: packages/ui/src/views/CollectionsRail.svelte (proposed)
+route: chrome of /?view=triage and /?view=needs-login; collapsible
+file: packages/ui/src/views/CollectionsRail.svelte (proposed — chrome of
+the CORE views triage + needs-login; Priority: CORE navigation spine)
 
 The navigation spine of the app. It is not a separate route — it is the
-left column of the app shell on every triage-family view, spec'd
+left column of the app shell on every CORE view, spec'd
 separately because it carries its own data contract (summary counts,
 host grouping, saved filters) and its own responsive behavior.
 
@@ -49,7 +50,7 @@ COLLAPSED (icon strip, 760–1099px)      MOBILE (<760px)
 │ ⛔ │ blocked                           │  left sheet over │
 │ ✕  │ errored                           │  the list)       │
 │ …  │ …                                 │                  │
-│ ⚙  │ settings                          │                  │
+│ ⚙  │ settings                          │
 └────┘                                  └──────────────────┘
 ```
 
@@ -64,7 +65,7 @@ COLLAPSED (icon strip, 760–1099px)      MOBILE (<760px)
 | Saved filters group | conditional | Hidden until ≥1 saved filter exists; each row shows a compact filter summary (e.g. "unread ai") + count when applicable; click applies the stored {collection,q,state,category,host,stale} |
 | Save current filter | action | Visible only while any filter is active; prompts for a name (inline input, not modal); persists to localStorage `linkinbox.savedFilters` |
 | Delete/edit filter | action | Context menu (right-click / long-press) on a saved row: rename, delete |
-| Settings row | action | Navigates to `?view=settings` |
+| Settings row | action | Navigates to `?view=settings` (read-only view) |
 | Ingest row | action | Opens the ingest dialog (`?dialog=ingest`) from anywhere |
 | Collapse toggle | action | Desktop: collapses rail to icon strip (state in localStorage); mobile: opens/closes the sheet |
 | Counts freshness | ambient | Counts refresh on SSE `link`/`run`/`ingest` events (debounced 500ms) and on window focus; a subtle pulse marks a count that just changed |

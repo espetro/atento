@@ -1,13 +1,21 @@
 screen: triage-1
 name: Triage workspace
 route: /?view=triage&collection=<name>&selected=<id>&tab=<reader|metadata|snapshot|live>
-file: packages/ui/src/views/Triage.svelte (proposed)
+file: packages/ui/src/views/Triage.svelte (proposed — reshapes the
+existing views/Inbox.svelte + views/Pipeline.svelte into one surface;
+Priority: CORE / read-first daily surface)
 
 The daily-driver surface. Three columns on desktop — collections rail,
 link list, preview pane — collapsing to list -> detail on narrow
-viewports. Every row and pane is live: state transitions arrive over
-GET /api/events (SSE) and update rows in place; nothing requires a
-manual refresh.
+viewports, plus a top bar carrying the run chip, ingest button and
+settings link (secondary chrome lives there, not in views). Every row
+and pane is live: state transitions arrive over GET /api/events (SSE)
+and update rows in place; nothing requires a manual refresh.
+
+Data stack (decided): all server state via @tanstack/svelte-query
+(createQueryClient pattern in src/lib/api.ts); the link list is
+virtualized with @tanstack/svelte-virtual — DOM stays bounded at 1k+
+links and j/k selection works against the virtual row model.
 
 Collections are pipeline positions, not folders: enriched, pending,
 needs_login, blocked, errored, review, triaged (see
@@ -77,9 +85,9 @@ PREVIEW TABS
 | Metadata tab | required | Enrichment card: category, priority, why_it_matters, read_minutes, expires_at + expiry_reason, confidence bar; editable fields title/note/tags with save-on-blur PATCH; "Re-extract with adapter…" button opens adapter picker (lists configured browser adapters; disabled with reason when none) |
 | Snapshot tab | conditional | Artifact image from GET /api/links/{id}/artifacts/snapshot.png (inline content-disposition); empty state + "capture on next extract" hint when 404 |
 | Live tab | conditional | `<iframe>` of the real URL when state_data.frameable; otherwise Snapshot fallback + "Open in browser" (window.open). Frameable links show a "live — untrusted page" caption; iframe is sandboxed (`allow-scripts` only, no same-origin, no popups) |
-| Action bar | required | `a` archive · `s` schedule · `d` discard · `r` re-extract · `o` open; schedule opens a small date picker popover (needs scheduledFor — see INDEX known gaps); destructive actions confirm inline (undo toast, not modal) |
+| Action bar | required | `a` archive · `s` schedule · `d` discard · `r` re-extract · `o` open; `s` fires POST /api/links/triage `{action:'schedule'}` with NO date (scheduledFor is not on the wire — see INDEX scheduling note); destructive actions confirm inline (undo toast, not modal) |
 | Keymap hint | ambient | `.kbd` chips in the action bar footer; `?` opens the full overlay |
-| Empty collection | conditional | Centered empty state: collection name, count 0, suggestion ("run a pass" → POST /api/run, "ingest links" → opens ingest dialog) |
+| Empty collection | conditional | Centered empty state: collection name, count 0, suggestion ("run a pass" → opens the run drawer's Run now, "ingest links" → opens ingest dialog) |
 | Error state | conditional | List/detail fetch failure: inline alert with retry; SSE disconnect shows a subtle "reconnecting…" chip in the header, never a blocking modal |
 
 ## Behavior
@@ -100,10 +108,14 @@ PREVIEW TABS
   `evt:{l,r,i}` cursor means no family is skipped.
 - Triage actions POST /api/links/triage `{ids:[selected], action}`;
   multi-select (shift-click range, cmd-click toggle) batches ids into one
-  call. Optimistic update with rollback on error. `discard`/`archive`
-  offer a 6s undo toast that re-triages back to inbox/scheduled.
+  call. Optimistic update via the svelte-query mutation cache with
+  rollback on error. `s` schedules with no date — recurrence/date
+  picking is harness-UI future work, out of scope (INDEX scheduling
+  note). `discard`/`archive` offer a 6s undo toast that re-triages back
+  to inbox/scheduled.
 - `r` on a link with >1 configured adapter opens the adapter picker
-  (Bits UI dialog listing `linkinbox browsers` ids + health); on a
+  (dialog primitive listing `linkinbox browsers` ids + health — library
+  per INDEX Q1); on a
   single-adapter setup it fires POST /api/links/{id}/reextract directly.
   409 responses (illegal state / busy) surface the server's reason
   inline, e.g. "extract is busy — run 41 holds the lock".

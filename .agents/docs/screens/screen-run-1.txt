@@ -1,26 +1,69 @@
 screen: run-1
-name: Run status
-route: /?view=run
-file: packages/ui/src/views/RunStatus.svelte (proposed)
+name: Run status — shell chip, popover, detail drawer
+route: chrome of every view — chip lives in the app-shell top bar;
+       drawer opens as `?drawer=run` over any view
+file: packages/ui/src/components/RunChip.svelte +
+      packages/ui/src/views/RunDrawer.svelte (proposed)
+Priority: SECONDARY — run/ingest/settings are side-effect/write
+surfaces; this is chrome + a drawer, NOT a standalone view.
 
-What happened the last time the pipeline ran, and a button to run it
-again. Two data sources: POST /api/run returns a RunResult
-(`runId`, `cursorBefore`/`cursorAfter`, per-stage summaries, ingest job
-summaries, `needsAction`, post-run collections) and the run journal
+Merged treatment (per review): there is no `?view=run` destination.
+The app shell carries a persistent run chip; clicking it opens a
+small popover with the last-run verdict; "Details" (or the drawer's
+own affordance) opens the full run drawer with stage table, journal
+and live progress. "Run now" lives in both the popover footer and
+the drawer header — it is the one write action, everything else is
+read.
+
+Data sources: POST /api/run returns a RunResult (`runId`,
+`cursorBefore`/`cursorAfter`, per-stage summaries, ingest job
+summaries, `needsAction`, post-run collections); the run journal
 (GET /api/runs/{id} + SSE `run` events) gives per-stage rows with
-status/pid/timestamps/counters/tokens/cost.
+status/pid/timestamps/counters/tokens/cost. All reads go through
+@tanstack/svelte-query; SSE `run`/`ingest` events invalidate the
+run-status query keys.
 
 Exit-code semantics are a first-class UI concept (from
 packages/cli/src/commands/pipeline.ts):
 
 | code | meaning                    | UI treatment                                  |
 |------|----------------------------|-----------------------------------------------|
-| 0    | done — nothing needs you   | green "all clear" banner                      |
-| 2    | finished, needs-you        | amber banner + per-collection counts + CTA to attention view |
-| 1    | failure                    | red banner + stage that failed + error detail |
-| 3    | busy — another run holds a lock | neutral "already running" state + holder info (runId, pid, stage) |
+| 0    | done — nothing needs you   | neutral/green chip "✓ last run clean"         |
+| 2    | finished, needs-you        | amber chip "⚠ N need you" + count badge; popover CTA to needs-login view |
+| 1    | failure                    | red chip "last run failed" + stage name       |
+| 3    | busy — another run holds a lock | neutral chip "run in progress" / "busy" + holder info |
 
-```DESKTOP```
+```TOP BAR (every view)```
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ linkinbox   [enriched ▾]        🔍 search…        ⚠ 2 need you · run chip │ ⚙ │ ⊕ │
+│                                  collections crumb       └ popover on click ┘
+└──────────────────────────────────────────────────────────────────────────┘
+
+RUN CHIP (states):
+  idle/no runs   "no runs yet" (dim)          → popover: "No runs yet —
+                                               [Run now] or `linkinbox run`"
+  running        "⟳ run-9f3c · extract" (pulse)→ popover: live stage stepper
+  done (0)       "✓ clean · 14:02"            → popover: verdict + duration
+  needs-you (2)  "⚠ 2 need you · 14:02"       → popover: per-collection
+                                               counts + [Review →] needs-login
+  failed (1)     "✕ failed · enrich · 14:02"   → popover: failing stage +
+                                               [Details]
+  busy (3)       "⏸ busy · run-81ab"          → popover: holder runId/pid/
+                                               stage + [Watch]
+
+POPOVER (~340px, anchored under the chip):
+┌──────────────────────────────────────────┐
+│ ⚠ Last run finished — 2 links need you   │
+│   needs_login 2 · errored 1              │
+│   run-9f3c · 14:02 · 38s · exit 2         │
+│                                          │
+│   [ Review what needs you → ]            │
+│   ──────────────────────────────────     │
+│              [ Run now ]  [ Details → ]  │
+└──────────────────────────────────────────┘
+
+DRAWER (?drawer=run — right-side sheet, ~480px, over any view):
 
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  Pipeline run                                              [ Run now ]   │
@@ -60,7 +103,7 @@ BUSY (exit 3 equivalent):
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  ⏸ Another run is in progress                                            │
 │  run-81ab holds the extract lock (pid 5123, started 13:58)               │
-│  [ Watch it ]  — subscribes to SSE; this view flips to live when it ends │
+│  [ Watch it ]  — subscribes to SSE; the chip/drawer flip when it ends    │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -68,41 +111,47 @@ BUSY (exit 3 equivalent):
 
 | Element | State | Description |
 |---------|-------|-------------|
-| Run now button | required | POST /api/run; disabled while a run is active (SSE `run` status=running) or when busy; label becomes "Running…" with stage name during the pass |
-| Verdict banner | required | One of the four exit-code treatments above; derived from RunResult (`needsAction` → 2) or the busy/failed responses; includes counts per attention collection when needsAction |
-| Run header line | required | runId (truncated, copyable), `cursorBefore → cursorAfter` (the link_events delta this pass covered — same numbers the CLI prints), started/finished/duration |
-| Stage table | required | Rows: ingest (job count + accepted/duplicates/rejected totals), extract, enrich, sweep. Columns: status chip, input→ok, errors, deferred, needs_browser, duration, tokens in/out, cost. Missing values render `—`, never 0 |
-| Needs-action panel | conditional | Only when needsAction or attention collections non-empty: per-collection counts + the exact remediation (host → `linkinbox login <host>` with copy button; errored count → link to filtered list) |
-| Journal list | required | Recent run-journal rows from SSE `run` events + GET /api/runs/{id} on demand: `#id stage status time counters duration tokens cost`; newest first, ~20 shown, "show all" expands; clicking a row fetches the full journal row |
-| Live progress | conditional | While a run is active: per-stage stepper (ingest → extract → enrich → sweep) with the current stage highlighted; ingest jobs show done/total; extract/enrich show batch counters when available |
-| Busy panel | conditional | 409/busy result: holder runId + pid + stage + startedAt; "Watch it" just keeps the SSE subscription — the view transitions itself when the run finishes |
-| Failure detail | conditional | Exit-1 treatment: the failing stage row expands inline with `errorCount` and a link to the errored collection; raw error strings from journal rows are shown verbatim in a mono block |
-| Metrics link | action | Footer link to metrics view (GET /api/metrics — stage p50/p95, tokens, daily cost); metrics is its own surface, not duplicated here |
+| Run chip | required | Top-bar pill: state glyph + short verdict + relative time; the ONLY always-visible run surface; click opens the popover; while a run is active it pulses and names the current stage |
+| Chip badge | conditional | needs-you count (exit-2 attention collections) shown as a count chip on the run chip itself |
+| Popover | required | Last-run verdict summary (~340px): banner line, per-collection counts when needsAction, runId/duration/exit code, footer with [Run now] + [Details →] |
+| Run now | action | POST /api/run from popover or drawer; disabled while a run is active or busy; label becomes "Running…" with stage name during the pass |
+| Verdict banner | required (drawer) | One of the four exit-code treatments; derived from RunResult (`needsAction` → 2) or the busy/failed responses; includes counts per attention collection when needsAction |
+| Run header line | required (drawer) | runId (truncated, copyable), `cursorBefore → cursorAfter`, started/finished/duration |
+| Stage table | required (drawer) | Rows: ingest (job count + accepted/duplicates/rejected totals), extract, enrich, sweep. Columns: status chip, input→ok, errors, deferred, needs_browser, duration, tokens in/out, cost. Missing values render `—`, never 0 |
+| Needs-action panel | conditional (drawer) | Only when needsAction or attention collections non-empty: per-collection counts + exact remediation (host → `linkinbox login <host>` with copy button; errored count → link to filtered needs-login view) |
+| Journal list | required (drawer) | Recent run-journal rows from SSE `run` events + GET /api/runs/{id}: `#id stage status time counters duration tokens cost`; newest first, ~20 shown, "show all" expands; clicking a row fetches the full journal row |
+| Live progress | conditional | While a run is active: per-stage stepper (ingest → extract → enrich → sweep) with the current stage highlighted; shown in the popover AND mirrored in the drawer; ingest jobs show done/total; extract/enrich show batch counters when available |
+| Busy panel | conditional | 409/busy result: holder runId + pid + stage + startedAt; "Watch it" keeps the SSE subscription — chip/drawer transition themselves when the run finishes |
+| Failure detail | conditional | Exit-1 treatment: the failing stage row expands inline with `errorCount` and a link to the errored collection; raw error strings from journal rows verbatim in a mono block |
+| Metrics link | action | Footer link in the drawer to a metrics surface (GET /api/metrics — stage p50/p95, tokens, daily cost); metrics is its own surface, not duplicated here |
 | Cursor explainer | ambient | `?` tooltip on the cursor range: "link_events ids covered by this pass; use as `since` for delta reads" |
 
 ## Behavior
 
-- On mount: show the MOST RECENT completed run. Source of truth:
-  the run journal (SSE `run` events carry finished runs; GET
-  /api/runs/{id} fetches detail). If no run exists yet → empty state
-  "No runs yet — [Run now] or `linkinbox run`".
+- On chip mount: the chip reflects the MOST RECENT run. Source of
+  truth: the run journal (SSE `run` events carry finished runs; GET
+  /api/runs/{id} fetches detail). If no run exists → dim "no runs
+  yet" chip; popover offers [Run now] or `linkinbox run`.
+- The chip is a svelte-query subscriber: `run` SSE events invalidate
+  the run-status query; no polling. A dropped POST /api/run connection
+  does NOT mean the run stopped (the journal is durable); the chip
+  keeps tracking via SSE.
 - Run now: POST /api/run is synchronous-ish but long; the UI must not
-  block — fire the request, immediately enter live-progress mode fed by
-  SSE `run`/`ingest` events, and reconcile with the RunResult body when
-  the POST resolves. A dropped POST connection does NOT mean the run
-  stopped (the journal is durable); the live view keeps tracking via SSE.
+  block — fire the request, immediately show live-progress in the
+  chip popover/drawer fed by SSE `run`/`ingest` events, and reconcile
+  with the RunResult body when the POST resolves.
 - Exit-code mapping is UI-derived, not a wire field: `needsAction` → 2;
   thrown error/5xx → 1; `busy` in any stage summary or HTTP 409 → 3;
-  otherwise 0. The banner always states the code ("exit 2") so CLI and
-  UI vocabularies match.
+  otherwise 0. The chip label and drawer banner always state the code
+  ("exit 2") so CLI and UI vocabularies match.
 - Stage rows come from RunResult.summary (ingest.jobs aggregated,
   extract/enrich RunStageSummary {input,ok,errors,deferred,
   needsBrowser}, swept, collections). The journal adds per-run-row
   granularity (each stage attempt is its own runs row with pid,
   heartbeat, tokens, cost).
-- needsAction panel reuses the attention view's remediation copy —
-  keep the strings in one place (shared module) so CLI hint, run view
-  and attention banner never diverge.
+- Needs-action panel reuses the needs-login view's remediation copy —
+  keep the strings in one place (shared module) so CLI hint, run
+  drawer and needs-login banner never diverge.
 - SSE `run` events: `status` transitions running → done/failed; the
   payload includes heartbeatAt — render "last heartbeat Xm ago" on
   running rows so a dead run is distinguishable from a slow one
@@ -110,8 +159,13 @@ BUSY (exit 3 equivalent):
 - Journal pagination: server listRuns is cursor-based; v1 shows the
   latest ~20 events accumulated from the SSE stream plus explicit
   fetches — no infinite scroll in v1.
-- Empty/error states: API down → the whole view degrades to "server
-  unreachable" with the bind address hint (loopback vs token — the UI
-  knows its own base URL; on 401 show "this server requires a token"
-  with the token_env name from config, never ask for the token in a
-  password field [decision needed — see SPEC-SUMMARY]).
+- URL state: the drawer is `?drawer=run` so it is deep-linkable and
+  survives view switches; closing clears the param. The popover is
+  transient (click-outside / Esc closes) and never in the URL.
+- Empty/error states: API down → the chip degrades to "server
+  unreachable" (⚠ glyph) and the drawer shows the bind-address hint;
+  on 401 show "this server requires a token" with the token_env name
+  from config — never ask for the token in a password field.
+- Accessibility: chip is a `<button aria-haspopup>`; popover/drawer
+  trap focus per the dialog-layer rules; run status is never
+  color-only (glyph + text); live progress uses `role="status"`.
