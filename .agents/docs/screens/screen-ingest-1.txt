@@ -12,7 +12,7 @@ warnings}` — never link arrays. The dialog must never imply it received
 links back; progress comes from GET /api/ingest/{jobId} and SSE
 `ingest` events.
 
-```DIALOG (dialog primitive per INDEX Q1, ~560px)```
+```DIALOG (~560px, bespoke Dialog.svelte — focus-trapped, Esc closes)```
 
 ┌──────────────────────────────────────────────────────────────┐
 │  Ingest links                                             ✕  │
@@ -113,7 +113,7 @@ SUBMITTED → progress state (same dialog, content swaps):
   more" expands.
 - Keyboard: `Esc` closes (even mid-job — job continues server-side);
   `Cmd/Ctrl+Enter` submits; focus lands in the textarea on open.
-- Accessibility: dialog is modal (chosen primitive), focus trapped, labelled;
+- Accessibility: dialog is modal (Dialog.svelte), focus trapped, labelled;
   progress bar has `role="progressbar"` with aria-valuenow=done/total;
   file dropzone is a real `<input type=file>` fallback for keyboard/AT.
 - Demo mode: works identically against the seeded LINKINBOX_HOME —

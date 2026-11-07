@@ -1,6 +1,8 @@
 screen INDEX
 revised: 2026-11-06 (M4 spec revision — read-first hierarchy per review)
-generated: 2026-11-06 (M4 design-gate specs — proposed UI, not yet implemented)
+status: IMPLEMENTED in M4b — styling decision updated post-gate:
+        daisyUI 5 retained as base + semantic classes (Bits UI / Tailwind v4
+        dropped — see 'styling' below)
 scope: packages/ui (@linkinbox/ui — the EXISTING Svelte 5 package; the
        harness serves its vite build output) + HTTP API contract
 
@@ -45,65 +47,66 @@ user flows
 
 screen list
   triage-1        Triage workspace          /?view=triage&collection=<name>&selected=<id>&tab=<t>
-                  packages/ui/src/views/Triage.svelte (proposed; reshapes
-                  existing views/Inbox.svelte + Pipeline.svelte)
+                  packages/ui/src/views/Triage.svelte (+ LinkList.svelte,
+                  PreviewPane.svelte; reshaped Inbox/Pipeline)
   collections-1   Collections rail           (chrome of every core view;
                   collapsible rail on desktop, sheet on mobile)
-                  packages/ui/src/views/CollectionsRail.svelte (proposed)
+                  packages/ui/src/views/CollectionsRail.svelte
   needs-login-1   Needs-login view          /?view=needs-login&collection=needs_login|blocked|errored|review
-                  packages/ui/src/views/NeedsLogin.svelte (proposed;
-                  reuses the triage shell)
+                  packages/ui/src/views/Attention.svelte (spec name
+                  NeedsLogin.svelte)
   ingest-1        Ingest dialog             (dialog over any view;
                   ?dialog=ingest — SECONDARY chrome, not a screen)
-                  packages/ui/src/views/IngestDialog.svelte (proposed)
+                  packages/ui/src/views/IngestDialog.svelte
   run-1           Run status                (shell status chip + popover;
                   detail drawer on demand — SECONDARY chrome)
-                  packages/ui/src/components/RunChip.svelte +
-                  views/RunDrawer.svelte (proposed)
+                  packages/ui/src/views/RunStatus.svelte (spec names
+                  RunChip.svelte + RunDrawer.svelte)
   settings-1      Settings (READ-ONLY)      /?view=settings
-                  packages/ui/src/views/Settings.svelte (proposed)
+                  packages/ui/src/views/Settings.svelte
 
 layout shells
   app shell        collections rail | link list | preview pane (three
                    columns on core views; collapses to list -> detail on
                    narrow viewports) + top bar carrying the run chip,
                    ingest button and settings link
-  dialog layer     dialog/popover primitives over any view: ingest,
+  dialog layer     bespoke accessible Dialog.svelte over any view: ingest,
                    re-extract adapter picker, schedule confirm,
-                   triage undo toast, run detail drawer
+                   triage undo toast, run detail drawer — focus trapped,
+                   Esc closes, focus restored
 
-component roots (proposed — packages/ui/src/)
-  views/Triage.svelte, views/PreviewPane.svelte, views/CollectionsRail.svelte,
-  views/NeedsLogin.svelte, views/IngestDialog.svelte, views/Settings.svelte,
-  views/RunDrawer.svelte, components/RunChip.svelte, components/StateChip.svelte,
-  components/KeyHint.svelte
-  (existing: views/Inbox.svelte, Pipeline.svelte, Sweep.svelte, Metrics.svelte,
-   Dock.svelte, DetailDrawer.svelte, LinkCard.svelte, StateBadge.svelte —
-   Inbox/Pipeline fold into Triage; Sweep/Metrics/Dock disposition is an
-   M4b implementation detail, not spec'd here)
+component roots (implemented — packages/ui/src/)
+  views/Triage.svelte, views/LinkList.svelte, views/PreviewPane.svelte,
+  views/CollectionsRail.svelte, views/Attention.svelte (the needs-login
+  view — spec name NeedsLogin.svelte), views/IngestDialog.svelte,
+  views/RunStatus.svelte (run chip + detail drawer content — spec names
+  RunChip.svelte + RunDrawer.svelte), views/Settings.svelte,
+  components/StateChip.svelte, components/CopyButton.svelte,
+  components/Dialog.svelte, components/LiveSync.svelte
+  (views/Metrics.svelte survives unstyled — see SPEC-SUMMARY)
 
-data stack (DECIDED — M4 gate)
-  - @tanstack/svelte-query v6 for ALL server-side state (already a
-    devDependency; src/lib/api.ts createQueryClient is the pattern).
-    SSE events invalidate/patch queries; no hand-rolled fetch state.
-  - @tanstack/svelte-virtual for the link list (already a
-    devDependency) — DOM stays bounded at 1k+ links.
-  - formisch + valibot for form validation — the ingest dialog inputs
-    (urls/text/file) and any remaining forms. NOT yet installed; add as
-    devDependencies+dependencies of @linkinbox/ui in M4b.
+data stack (DECIDED — M4 gate, implemented in M4b)
+  - @tanstack/svelte-query v6 for ALL server-side state (src/lib/api.ts
+    createQueryClient is the pattern). SSE events invalidate/patch
+    queries; no hand-rolled fetch state.
+  - @tanstack/svelte-virtual for the link list — DOM stays bounded at
+    1k+ links.
+  - formisch + valibot for form validation — installed; ingest dialog
+    (urls/text/file) and the metadata form use it.
   - Server payloads stay zod-typed at the API boundary
     (packages/server/src/schemas.ts); the UI validates FORM input with
     valibot schemas, it does not re-validate API responses.
 
-styling (partially decided — see SPEC-SUMMARY open questions)
-  Svelte 5 + Tailwind v4. Semantic classes only, defined in the ui
-  stylesheet: `.btn`, `.chip`, `.chip-state-*`, `.pane`, `.list-row`,
-  `.kbd`. State colors via `.chip-state-*` tokens only.
-  REALITY CHECK: packages/ui currently ships daisyUI 5 as the theme
-  layer (@plugin 'daisyui' in src/app.css) and Bits UI is NOT installed.
-  The earlier "Bits UI 2.20, no daisyUI" decision predates the package;
-  confirm direction before M4b (open question Q1). Type mix: bold
-  display + light body (user's stated taste; see references/tokens.md).
+styling (decided — M4b implementation; supersedes the M4-gate "Bits UI +
+  Tailwind v4, no daisyUI" text)
+  Svelte 5 + daisyUI 5 kept as the base layer + hand-rolled semantic classes
+  in app.css. Bits UI and Tailwind v4 were dropped during implementation;
+  forms use @formisch/svelte + valibot. Semantic classes only for surfaces:
+  `.btn`, `.chip`, `.chip-state-*`, `.pane`, `.list-row`, `.kbd`, `.rail-row`,
+  `.field`, dialog classes — defined over CSS custom-property tokens
+  (`--color-surface/ink/accent` + state colors). No raw palette utilities
+  for surfaces. Type mix: bold display + light body (see
+  references/tokens.md).
 
 API surface the specs consume (all exist unless marked [gap])
   GET  /api/collections/summary           counts per collection + needsLoginHosts
@@ -124,23 +127,27 @@ API surface the specs consume (all exist unless marked [gap])
   GET  /api/events                        SSE; evt:{"l","r","i"} composite cursors,
                                          Last-Event-ID / ?since= resume
   GET  /api/metrics?last=                 per-stage + daily token/cost buckets
-  GET  /api/pair/code                     [M5, unmerged] -> { code, expiresAt }
-                                         (5-min single-use code; bearer-gated
-                                         on non-loopback binds, open on loopback)
-  POST /api/pair                          [M5, unmerged] { code } ->
-                                         { captureToken, serverToken } —
-                                         redeemed by the EXTENSION, never by
-                                         the UI; the UI only displays the code
-  [gap] GET  /api/browsers                adapter kinds/caps/health (CLI-only today:
-                                         `linkinbox browsers`) — M4b
-  [gap] config-read                        current config values for the
-                                         read-only settings view — M4b
+  POST /api/links/restore                 restore parked links to inbox
+                                         (added M4b fix-round: the FSM-legal
+                                         undo path — RESTORE event)
+  GET  /api/browsers                      adapter kinds/caps/health (added M4b)
+  GET  /api/config                        read-only config values for the
+                                         settings view (added M4b; token
+                                         values never exposed)
+  GET  /api/runs                          run journal list (added M4b)
+  GET  /api/pair/code                     mint one-time pairing code ->
+                                         { code, expiresAt } (5-min
+                                         single-use; bearer-gated on
+                                         non-loopback, open on loopback)
+  POST /api/pair                          redeem code -> { captureToken,
+                                         serverToken } — redeemed by the
+                                         EXTENSION, never by the UI; the UI
+                                         only displays the code
   [gap] state_data.frameable writer        extractor records frameability —
                                          extractor milestone (post-M4)
   [gap] artifact/snapshot writer           snapshot.png capture — extractor
                                          milestone (post-M4)
-  [gap] pairing-status read                "paired? last capture?" — needs a
-                                         server read; M4b or later
+  [gap] pairing-status read                "paired? last capture?" — later
 
 scheduling (DECIDED — out of scope for this UI)
   Recurrence is a HARNESS feature (apps/harness harness.toml:
@@ -164,6 +171,28 @@ keyboard contract (all core views, when no input/dialog is focused)
   1 - 4        switch preview tabs: Reader / Metadata / Snapshot / Live
   ?            show the keymap overlay
 
+implementation notes (M4b)
+  - state_data.frameable is NOT yet recorded by the extractor — only the
+    mock fabricates it. The Live tab still falls back to snapshot +
+    "Open in browser" everywhere until the extractor ships the field
+    (kept in known gaps below).
+  - Snapshot artifact convention: snapshot.png via
+    /api/links/{id}/artifacts/snapshot.png; honest empty state when absent.
+  - Saved filters: localStorage v1 keyed by collection (no server persistence).
+  - `schedule` triage action still takes no date (TriageBody = { ids, action });
+    the spec'd date picker was NOT built — needs a scheduledFor API field.
+  - Undo for archive/discard goes through POST /api/links/restore (RESTORE
+    event), never a fake read_now triage — TRIAGE on parked links is an
+    ILLEGAL_TRANSITION. The UI checks the restored count before toasting.
+  - needs-login bulk actions ("archive all"/"discard all" per host) fetch
+    the host's links then POST /api/links/triage; "Check sessions" has no
+    verify endpoint — it runs a pipeline pass and points at
+    `linkinbox login list` (honest fallback per spec).
+  - Ingest paste/file input is validated by valibot schemas through
+    formisch fields (URL count ≤ 500, non-empty, file type/size).
+  - Settings is read-only except pairing-code mint/copy; schedule section
+    explains cron/launchd ownership and shows "next run unknown".
+
 known gaps (collected in SPEC-SUMMARY.md; milestone owners noted)
   - state_data.frameable does not exist yet; Live tab falls back to
     snapshot + "Open in browser" until the extractor records it.
@@ -171,11 +200,7 @@ known gaps (collected in SPEC-SUMMARY.md; milestone owners noted)
   - No artifact writer ships yet; Snapshot tab renders only when
     /api/links/{id}/artifacts/<name> returns bytes (convention:
     snapshot.png). Owner: extractor milestone (post-M4).
-  - GET /api/browsers, config-read, pairing-status read: small M4b API
-    additions — flagged [gap] per screen.
-  - Pairing endpoints exist on feat/m5 (unmerged at spec time); the UI
-    spec targets the real contract, so pairing UI lands after M5 merges.
+  - pairing-status read ("paired? last capture?") — small server read,
+    later milestone.
   - Saved filters have no server persistence story yet; v1 keeps them in
     localStorage keyed by collection.
-  - Dialog primitive library undecided (daisyUI present, Bits UI proposed)
-    — see SPEC-SUMMARY Q1.

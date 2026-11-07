@@ -158,6 +158,53 @@ describe('POST /api/links/triage', () => {
   })
 })
 
+describe('POST /api/links/restore', () => {
+  it('restores archived links to the inbox and reports counts', async () => {
+    const app = createApp(store)
+    const a = await seed()
+    const b = await seed()
+    await app.request('/api/links/triage', {
+      method: 'POST',
+      body: JSON.stringify({ ids: [a, b], action: 'archive' }),
+    })
+    const res = await app.request('/api/links/restore', {
+      method: 'POST',
+      body: JSON.stringify({ ids: [a, b] }),
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { updated: number; missing: number[]; blocked: number[] }
+    expect(body.updated).toBe(2)
+    expect(body.blocked).toEqual([])
+    expect((await store.getLink(a))!.state).toBe('inbox')
+    expect((await store.getLink(b))!.state).toBe('inbox')
+  })
+
+  it('blocks links that are not parked and reports missing ids', async () => {
+    const app = createApp(store)
+    const live = await seed()
+    const res = await app.request('/api/links/restore', {
+      method: 'POST',
+      body: JSON.stringify({ ids: [live, 424242424] }),
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { updated: number; missing: number[]; blocked: number[] }
+    expect(body.updated).toBe(0)
+    expect(body.blocked).toContain(live)
+    expect(body.missing).toContain(424242424)
+    // Untouched: a non-parked link keeps its FSM state (seed default 'created').
+    expect((await store.getLink(live))!.state).toBe('created')
+  })
+
+  it('rejects malformed bodies', async () => {
+    const app = createApp(store)
+    const res = await app.request('/api/links/restore', {
+      method: 'POST',
+      body: JSON.stringify({ ids: 'nope' }),
+    })
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('sweep', () => {
   it('GET /api/sweep groups stale links by category with UI-shaped links', async () => {
     const res = await createApp(store).request('/api/sweep')

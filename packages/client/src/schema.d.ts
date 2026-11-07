@@ -195,6 +195,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/links/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore parked (archived/discarded) links back to the inbox */
+        post: operations["postApiLinksRestore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/links/{id}": {
         parameters: {
             query?: never;
@@ -273,6 +290,57 @@ export interface paths {
         };
         /** One run-journal row by id (stage, status, counters, tokens) */
         get: operations["getApiRunsById"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Recent run-journal rows, newest first */
+        get: operations["getApiRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browsers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Configured browser adapters with capabilities and health — the same dataset `linkinbox browsers` prints. */
+        get: operations["getApiBrowsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read-only config summary for the settings UI: sources, capture/server token configuration (booleans only — never values), the config file path and the bind this server answers on. */
+        get: operations["getApiConfig"];
         put?: never;
         post?: never;
         delete?: never;
@@ -961,6 +1029,7 @@ export interface operations {
                 category?: string;
                 host?: string;
                 stale?: string;
+                collection?: "enriched" | "pending" | "needs_login" | "blocked" | "errored" | "review" | "triaged";
                 limit?: number;
                 offset?: number;
             };
@@ -1047,6 +1116,78 @@ export interface operations {
         };
         responses: {
             /** @description Triage result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+            /** @description Missing or wrong bearer token (non-loopback binds) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+            /** @description Internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+        };
+    };
+    postApiLinksRestore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    ids: number[];
+                };
+            };
+        };
+        responses: {
+            /** @description Restore result */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1608,6 +1749,141 @@ export interface operations {
                 content: {
                     "application/json": {
                         error: string;
+                    };
+                };
+            };
+        };
+    };
+    getApiRuns: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run journal rows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        runs: ({
+                            id: number;
+                            stage: string;
+                            status?: string;
+                            startedAt: string;
+                            finishedAt: string | null;
+                            inputCount: number;
+                            okCount: number;
+                            errorCount: number;
+                            durationMs: number | null;
+                            tokensIn: number | null;
+                            tokensOut: number | null;
+                            costUsd: number | null;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                    };
+                };
+            };
+        };
+    };
+    getApiBrowsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Browser adapters */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        adapters: ({
+                            id: string;
+                            kind: string;
+                            roles: string[];
+                            caps: {
+                                stealth: boolean;
+                                headless: boolean;
+                                persistentProfile: boolean;
+                            } | null;
+                            defaultFor: {
+                                reader: boolean;
+                                login: boolean;
+                            };
+                            inEscalate: boolean;
+                            health: {
+                                ok: boolean;
+                                detail: string;
+                            };
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        hostMappings: {
+                            [key: string]: string;
+                        };
+                        reader: string;
+                        login: string;
+                        escalate: string[];
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    getApiConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Config summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        dir: string;
+                        configPath: string;
+                        sources: string[];
+                        capture: {
+                            tokenEnv: string;
+                            tokenConfigured: boolean;
+                            allowedOrigins: string[];
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        server: {
+                            tokenEnv: string;
+                            tokenConfigured: boolean;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        bind: {
+                            hostname: string;
+                            port: number;
+                            tokenRequired: boolean;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    } & {
+                        [key: string]: unknown;
                     };
                 };
             };

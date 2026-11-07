@@ -46,18 +46,18 @@ B5. No fabricated data: sections without a backing endpoint render
 ---------------------------------------------------------------
 C. DESIGN SYSTEM (gate)
 ---------------------------------------------------------------
-C1. Semantic classes only (.btn/.chip/.chip-state-*/.pane/.list-row/
-    .kbd + tokens). Zero daisyUI classes, zero raw palette utilities.
+C1. Semantic classes only for surfaces (.btn/.chip/.chip-state-*/.pane/
+    .list-row/.kbd/.rail-row/.field + tokens). M4b decision: daisyUI 5 is
+    retained as the base layer but surfaces use the semantic classes —
+    no raw palette utilities.
 C2. Tokens honored: off-light ground, one accent, state colors only
     via .chip-state-*, hairline borders on static surfaces, single
     shadow recipe on floating layers (references/tokens.md).
 C3. Type mix: bold display titles + light body per tokens.md; ≤2
     weights per region.
-C4. One dialog/popover primitive library used consistently for
-    dialog/popover/tabs/drawer — no bespoke modal/focus-trap
-    implementations. (Library TBD: daisyUI is installed today, Bits UI
-    was the earlier proposal — see SPEC-SUMMARY Q1; grade against
-    whichever is decided.)
+C4. Dialogs are the bespoke accessible Dialog.svelte (focus trap, Esc,
+    focus restore) — M4b dropped Bits UI; forms use @formisch/svelte +
+    valibot, not bespoke validation.
 
 ---------------------------------------------------------------
 D. STATES & EDGE CASES (gate)

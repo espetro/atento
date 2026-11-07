@@ -111,11 +111,11 @@ PREVIEW TABS
   call. Optimistic update via the svelte-query mutation cache with
   rollback on error. `s` schedules with no date — recurrence/date
   picking is harness-UI future work, out of scope (INDEX scheduling
-  note). `discard`/`archive` offer a 6s undo toast that re-triages back
-  to inbox/scheduled.
+  note). `discard`/`archive` offer a 6s undo toast that restores via
+  POST /api/links/restore (the FSM-legal RESTORE path — TRIAGE on parked
+  links is illegal).
 - `r` on a link with >1 configured adapter opens the adapter picker
-  (dialog primitive listing `linkinbox browsers` ids + health — library
-  per INDEX Q1); on a
+  (Dialog.svelte listing `linkinbox browsers` ids + health); on a
   single-adapter setup it fires POST /api/links/{id}/reextract directly.
   409 responses (illegal state / busy) surface the server's reason
   inline, e.g. "extract is busy — run 41 holds the lock".

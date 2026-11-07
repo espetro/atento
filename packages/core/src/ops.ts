@@ -11,6 +11,7 @@ import type { LinkHistoryEntry } from './store.js'
 import { isTerminal, parseLinkState } from './fsm/index.js'
 import { planSweep, planPrune, type SweepPlan, type PrunePlan } from './sweep.js'
 import { hostOfUrl } from './url.js'
+import { collectionOfLink, type CollectionName } from './collections.js'
 import type { TtlConfig } from './ttl.js'
 
 /** Fields a caller can request in a link projection. */
@@ -118,11 +119,21 @@ export const UI_SUMMARY_FIELDS: LinkField[] = [
   'enrichment',
 ]
 
-/** The UI summary fields plus the detail-only ones (`LinkDetail`). */
+/** The UI detail fields plus the fields the preview pane edits or reads:
+ * note/tags (PATCH targets), source, the FSM state payload (frameable,
+ * park error detail) and the lifecycle stamps. */
 export const UI_DETAIL_FIELDS: LinkField[] = [
   ...UI_SUMMARY_FIELDS,
   'extracted_content',
   'confidence',
+  'note',
+  'tags',
+  'source',
+  'stateData',
+  'needsBrowser',
+  'createdAt',
+  'updatedAt',
+  'extractedAt',
 ]
 
 /**
@@ -170,6 +181,8 @@ export interface ListLinksOptions {
   q?: string
   /** Filter on the host of the url, e.g. `example.com`. */
   host?: string
+  /** Restrict to links belonging to one pipeline collection. */
+  collection?: CollectionName
   fields?: LinkField[]
   limit?: number
   offset?: number
@@ -182,27 +195,39 @@ export async function listLinks(
   options: ListLinksOptions = {},
 ): Promise<LinkProjection[]> {
   const now = options.now ?? new Date()
+  // Collection membership, the host filter and the free-text query are all
+  // post-filters over full link rows, so they share one unbounded store
+  // read; limit/offset are applied after filtering (correct pages).
+  const postFilter =
+    options.q !== undefined ||
+    options.host !== undefined ||
+    options.collection !== undefined
   const filter: LinkFilter = {
     status: options.state !== undefined ? (options.state as Status) : options.status,
     byState: options.state !== undefined,
     category: options.category,
     staleAsOf: options.stale ? now : undefined,
-    offset: options.offset,
+    offset: postFilter ? undefined : options.offset,
   }
-  // When a text query or a host filter is present the limit is applied after
-  // filtering, so the store must hand back everything the filter allows.
-  const postFilter = options.q !== undefined || options.host !== undefined
-  const links = await store.listLinks(postFilter ? filter : { ...filter, limit: options.limit })
+  const links = await store.listLinks(
+    postFilter ? filter : { ...filter, limit: options.limit },
+  )
   let out = links
+  if (options.collection !== undefined) {
+    out = out.filter((l) => collectionOfLink(l) === options.collection)
+  }
   if (options.host !== undefined && options.host !== '') {
     const host = options.host.toLowerCase()
     out = out.filter((l) => hostOfUrl(l.url) === host)
   }
   if (options.q) {
     const q = options.q.toLowerCase()
-    out = links.filter(
+    out = out.filter(
       (l) => l.url.toLowerCase().includes(q) || (l.title ?? '').toLowerCase().includes(q),
     )
+  }
+  if (postFilter && options.offset !== undefined && options.offset > 0) {
+    out = out.slice(options.offset)
   }
   if (options.limit !== undefined) out = out.slice(0, options.limit)
   return out.map((l) => projectLink(l, options.fields))

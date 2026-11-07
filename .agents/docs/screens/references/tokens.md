@@ -11,12 +11,14 @@ All M4 screens: `screen-triage-1`, `screen-collections-1`,
 
 ## Stack (decided, do not relitigate)
 
-Svelte 5 · Bits UI 2.20 · Tailwind v4 · semantic classes defined in the
-ui stylesheet (`@theme` tokens + component classes). **No daisyUI.**
+Svelte 5 · daisyUI 5 (base layer) · semantic classes defined in
+`packages/ui/src/app.css` over CSS custom-property tokens. **M4b decision:
+Bits UI and Tailwind v4 were dropped; daisyUI is kept as the base.**
 Allowed class vocabulary: `.btn`, `.chip`, `.chip-state-*`, `.pane`,
-`.list-row`, `.kbd` + the token utilities they resolve to. Raw Tailwind
-palette colors (`bg-neutral-100`, `text-zinc-500`, …) are forbidden on
-surfaces — they break the token contract.
+`.list-row`, `.rail-row`, `.kbd`, `.field`, dialog classes + the token
+custom properties they resolve to. Raw palette utilities are forbidden on
+surfaces — they break the token contract. Forms: @formisch/svelte +
+valibot.
 
 ## Ground
 

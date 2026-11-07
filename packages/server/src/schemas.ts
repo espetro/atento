@@ -181,6 +181,10 @@ export const TriageBody = z.object({
   action: z.enum(['read_now', 'schedule', 'archive', 'discard']),
 })
 
+export const RestoreBody = z.object({
+  ids: z.array(z.number().check(z.int(), z.positive())).check(z.minLength(1)),
+})
+
 export const SweepResponse = z.object({
   groups: z.array(
     z.object({
@@ -231,6 +235,57 @@ export const RunJournalBody = z.looseObject({
   tokensIn: z.nullable(z.number()),
   tokensOut: z.nullable(z.number()),
   costUsd: z.nullable(z.number()),
+})
+
+export const RunListResponse = z.object({
+  runs: z.array(RunJournalBody),
+})
+
+// ---- browsers / config (settings UI, read-only) --------------------------
+
+export const BrowserAdapterBody = z.looseObject({
+  id: z.string(),
+  kind: z.string(),
+  roles: z.array(z.string()),
+  caps: z.nullable(
+    z.object({
+      stealth: z.boolean(),
+      headless: z.boolean(),
+      persistentProfile: z.boolean(),
+    }),
+  ),
+  defaultFor: z.object({ reader: z.boolean(), login: z.boolean() }),
+  inEscalate: z.boolean(),
+  health: z.object({ ok: z.boolean(), detail: z.string() }),
+})
+
+export const BrowserAdaptersBody = z.looseObject({
+  adapters: z.array(BrowserAdapterBody),
+  hostMappings: z.record(z.string(), z.string()),
+  reader: z.string(),
+  login: z.string(),
+  escalate: z.array(z.string()),
+})
+
+/** GET /api/config: read-only config summary; token VALUES never appear. */
+export const ConfigInfoBody = z.looseObject({
+  dir: z.string(),
+  configPath: z.string(),
+  sources: z.array(z.string()),
+  capture: z.looseObject({
+    tokenEnv: z.string(),
+    tokenConfigured: z.boolean(),
+    allowedOrigins: z.array(z.string()),
+  }),
+  server: z.looseObject({
+    tokenEnv: z.string(),
+    tokenConfigured: z.boolean(),
+  }),
+  bind: z.looseObject({
+    hostname: z.string(),
+    port: z.number(),
+    tokenRequired: z.boolean(),
+  }),
 })
 
 // ---- events (SSE) ---------------------------------------------------------

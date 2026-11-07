@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 import { openStore } from '@linkinbox/db'
 import { importFile, type ImportResult } from '@linkinbox/importers'
+import { createBrowserRegistry } from '@linkinbox/browser'
 import {
   applyPrune,
   applySweep,
@@ -110,6 +111,8 @@ import {
   type TtlConfig,
   type UntilEmptyOptions,
   type UntilEmptyResult,
+  captureToken,
+  serverToken,
 } from '@linkinbox/core'
 import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
@@ -357,6 +360,60 @@ export interface IngestFilesResult {
 /** One resumed ingest job outcome plus its job row. */
 export type { IngestJobRunResult } from '@linkinbox/core'
 
+/** One browser adapter row for the settings UI / `GET /api/browsers`. */
+export interface BrowserAdapterInfo {
+  id: string
+  kind: string
+  roles: string[]
+  caps: {
+    stealth: boolean
+    headless: boolean
+    persistentProfile: boolean
+  } | null
+  defaultFor: { reader: boolean; login: boolean }
+  inEscalate: boolean
+  health: { ok: boolean; detail: string }
+}
+
+/** The `linkinbox browsers` dataset, machine-readable. */
+export interface BrowserAdaptersInfo {
+  adapters: BrowserAdapterInfo[]
+  hostMappings: Record<string, string>
+  reader: string
+  login: string
+  escalate: string[]
+}
+
+/**
+ * Read-only config summary for the settings UI (`GET /api/config`). Only
+ * booleans and names leave the process — token VALUES never do.
+ */
+export interface LinkinboxConfigInfo {
+  /** Config directory holding config.toml; '' when unknown. */
+  dir: string
+  /** Absolute path of config.toml, '' when the dir is unknown. */
+  configPath: string
+  /** `[sources] paths` entries (local paths or URLs). */
+  sources: string[]
+  capture: {
+    tokenEnv: string
+    /** Whether the capture bearer token env var resolves. */
+    tokenConfigured: boolean
+    allowedOrigins: string[]
+  }
+  server: {
+    tokenEnv: string
+    /** Whether the /api bearer token env var resolves. */
+    tokenConfigured: boolean
+  }
+  browser: {
+    reader: string
+    login: string
+    escalate: string[]
+    hostMappings: Record<string, string>
+  }
+}
+
 /**
  * The application surface the driving adapters consume. Every member is a
  * use case bound to the store and config the composition root resolved.
@@ -450,6 +507,15 @@ export interface LinkinboxOps {
   patchLink(id: number, patch: LinkPatch): Promise<Link | null>
   /** One `runs` journal row by id (null when unknown). */
   getRun(id: number): Promise<Run | null>
+  /**
+   * Recent `runs` journal rows, newest first (bounded tail read — the
+   * store lists ascending, so the tail is sliced and reversed).
+   */
+  listRuns(limit?: number): Promise<Run[]>
+  /** Browser adapters with health — the `linkinbox browsers` dataset. */
+  browsers(): Promise<BrowserAdaptersInfo>
+  /** Read-only config summary for the settings UI; never exposes secrets. */
+  configInfo(): LinkinboxConfigInfo
   /**
    * Delta read of the link_events log: the resumable cursor stream behind
    * `GET /api/events`. `since` is the last seen event id.
@@ -985,6 +1051,69 @@ export function createLinkinboxOps(
 
     getRun(id) {
       return store.getRun(id)
+    },
+
+    async listRuns(limit = 20) {
+      // The store lists ascending; the journal UI wants the newest tail.
+      const cap = Math.min(Math.max(1, limit), 500)
+      const rows = await store.listRuns({ limit: 500 })
+      return rows.slice(-cap).reverse()
+    },
+
+    async browsers() {
+      const registry = createBrowserRegistry(cfg.browser, {
+        profilesDir: cfg.profilesDir,
+      })
+      const adapters: BrowserAdapterInfo[] = []
+      for (const listing of registry.list()) {
+        const health = await registry.health(listing.id)
+        const caps = listing.caps
+        adapters.push({
+          id: listing.id,
+          kind: listing.kind,
+          roles: listing.roles,
+          caps: caps
+            ? {
+                stealth: caps.stealth,
+                headless: caps.headless,
+                persistentProfile: caps.persistentProfile,
+              }
+            : null,
+          defaultFor: listing.defaultFor,
+          inEscalate: listing.inEscalate,
+          health: { ok: health.ok, detail: health.detail },
+        })
+      }
+      return {
+        adapters,
+        hostMappings: cfg.browser.hosts,
+        reader: cfg.browser.reader,
+        login: cfg.browser.login,
+        escalate: cfg.browser.escalate,
+      }
+    },
+
+    configInfo() {
+      return {
+        dir: cfg.dir,
+        configPath: cfg.dir !== '' ? join(cfg.dir, 'config.toml') : '',
+        sources: cfg.sources,
+        capture: {
+          tokenEnv: cfg.capture.tokenEnv,
+          tokenConfigured: captureToken(cfg.capture, env) !== null,
+          allowedOrigins: cfg.capture.allowedOrigins,
+        },
+        server: {
+          tokenEnv: cfg.server.tokenEnv,
+          tokenConfigured: serverToken(cfg.server, env) !== null,
+        },
+        browser: {
+          reader: cfg.browser.reader,
+          login: cfg.browser.login,
+          escalate: cfg.browser.escalate,
+          hostMappings: cfg.browser.hosts,
+        },
+      }
     },
 
     listEvents(since, limit) {
