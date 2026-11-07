@@ -144,11 +144,15 @@ export interface IngestJob {
 // ---- run -------------------------------------------------------------------
 
 export interface RunStageSummary {
-  okCount?: number
-  errorCount?: number
+  batches?: number
   input?: number
+  ok?: number
+  errors?: number
   deferred?: number
   needsBrowser?: number
+  hitCap?: boolean
+  /** Set when another run held this stage's lock; the stage did no work (exit 3). */
+  busy?: { runId?: number | string; pid?: number } | null
   [key: string]: unknown
 }
 

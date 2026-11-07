@@ -4,6 +4,7 @@
   import { sseConnected, sseRunLog } from '../lib/events'
   import { timeAgo, fmtDuration, fmtTokens, fmtCost } from '../lib/format'
   import { collectionMeta } from '../lib/copy'
+  import { runVerdict } from '../lib/runVerdict'
   import CopyButton from '../components/CopyButton.svelte'
   import StateChip from '../components/StateChip.svelte'
   import type { UrlState } from '../lib/urlState'
@@ -79,25 +80,9 @@
   }
 
   // ---- verdict --------------------------------------------------------------
-  type Verdict = { code: number; tone: 'ok' | 'warn' | 'bad' | 'neutral'; text: string }
-  const verdict = $derived.by((): Verdict | null => {
-    if (runError) return { code: 1, tone: 'bad', text: `Run failed — ${runError}` }
-    if (busyInfo) return { code: 3, tone: 'neutral', text: 'Another run is in progress' }
-    if (liveRunning && !runResult) return null // live panel covers it
-    if (runResult) {
-      const needs = runResult.summary.needsAction
-      return needs
-        ? { code: 2, tone: 'warn', text: 'Last run finished — needs you' }
-        : { code: 0, tone: 'ok', text: 'Last run finished — all clear' }
-    }
-    if (latestRun) {
-      const row = latestRun
-      if (row.errorCount > 0 || row.status === 'failed')
-        return { code: 1, tone: 'bad', text: `Last run had errors (#${row.id})` }
-      return { code: 0, tone: 'ok', text: 'Last run finished' }
-    }
-    return null
-  })
+  const verdict = $derived(
+    runVerdict({ runResult, latestRun, runError, busyInfo, liveRunning }),
+  )
 
   const attentionCounts = $derived(summaryQuery.data?.collections ?? {})
   const attentionTotal = $derived(
@@ -109,6 +94,13 @@
   const loginHosts = $derived(summaryQuery.data?.needsLoginHosts ?? [])
 
   function attentionLink(collection: string) {
+    // Bridge banner: Attention shows "last run finished — N links need you"
+    // when arriving from the run view.
+    try {
+      sessionStorage.setItem('linkinbox:attention-from-run', '1')
+    } catch {
+      /* storage unavailable — banner simply won't show */
+    }
     setUrl({ view: 'attention', collection, selected: null, q: '', state: '', category: '', host: '', stale: false })
   }
 
@@ -138,10 +130,10 @@
       },
       {
         name: 'extract',
-        status: 'done',
-        in_: `${s.extract?.input ?? '—'} → ${s.extract?.okCount ?? '—'}`,
+        status: s.extract?.busy ? 'busy' : 'done',
+        in_: `${s.extract?.input ?? '—'} → ${s.extract?.ok ?? '—'}`,
         ok: '',
-        err: `${s.extract?.errorCount ?? 0} err`,
+        err: `${s.extract?.errors ?? 0} err`,
         defer: `${s.extract?.deferred ?? 0} deferred`,
         nb: `${s.extract?.needsBrowser ?? 0} need browser`,
         dur: '—',
@@ -150,10 +142,10 @@
       },
       {
         name: 'enrich',
-        status: 'done',
-        in_: `${s.enrich?.input ?? '—'} → ${s.enrich?.okCount ?? '—'}`,
+        status: s.enrich?.busy ? 'busy' : 'done',
+        in_: `${s.enrich?.input ?? '—'} → ${s.enrich?.ok ?? '—'}`,
         ok: '',
-        err: `${s.enrich?.errorCount ?? 0} err`,
+        err: `${s.enrich?.errors ?? 0} err`,
         defer: `${s.enrich?.deferred ?? 0} deferred`,
         nb: '',
         dur: '—',
