@@ -181,7 +181,7 @@ describe('program: run then list then triage', () => {
         expect(Array.isArray(body.items)).toBe(true)
         await started.close()
       })
-      expect(out.stdout).toContain('serving on http://localhost:')
+      expect(out.stdout).toContain('serving on http://127.0.0.1:')
     } finally {
       await db.cleanup()
     }
@@ -200,7 +200,7 @@ describe('program: run then list then triage', () => {
         expect(res.status).toBeGreaterThan(0)
         await started.close()
       })
-      expect(out.stdout).toContain('serving on http://localhost:')
+      expect(out.stdout).toContain('serving on http://127.0.0.1:')
     } finally {
       await db.cleanup()
     }

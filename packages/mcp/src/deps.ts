@@ -4,11 +4,13 @@
  * in-memory client over the same tools with fakes.
  */
 import type {
+  AppConfig,
   BrowseFn,
   BrowseOptions,
   ExtractFn,
   EnrichFn,
   LimitsConfig,
+  Linkinbox,
   LoginConfig,
   MetricsSummary,
   PipelineLogger,
@@ -98,3 +100,30 @@ export const TOOL_NAME_MAP: Record<string, string> = {
 export type SweepProposal = SweepPlan
 export type MetricsResult = MetricsSummary
 export type TriageResultShape = TriageResult
+
+/**
+ * Build production McpDeps from a live `Linkinbox` app — the same wiring
+ * the stdio bin uses, shared so `linkinbox serve` mounts identical tools
+ * over streamable HTTP. The browse tools reuse the app's saved-profile
+ * read path and `[share]` allowlist; nothing is written to the store.
+ */
+export function createMcpDeps(app: Linkinbox, logger: PipelineLogger): McpDeps {
+  const config = app.config as AppConfig
+  const context: McpContext = {
+    store: app.store,
+    ttl: config.ttl,
+    logger,
+    limits: config.limits,
+    login: config.login,
+    share: config.share,
+    spoolDir: app.spoolDir,
+  }
+  return {
+    ctx: async () => context,
+    extractFn: async () => app.extractFn(),
+    enrichFn: () => app.enrichFn(),
+    browseFn: async () => app.browseFn(),
+    browseGuard: async () => app.browseGuard(),
+    hasProfile: async (host) => (await app.store.getProfile(host)) !== null,
+  }
+}

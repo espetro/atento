@@ -10,8 +10,8 @@
  *   prune  - hard delete with an interactive confirmation; stays CLI-only
  */
 import { describe, expect, it } from 'vitest'
-import { createProgram } from '@linkinbox/cli'
-import { TOOL_NAME_MAP } from '../src/index.js'
+import { TOOL_NAME_MAP } from '@linkinbox/mcp'
+import { createProgram } from '../src/index.js'
 
 /** CLI commands with no MCP tool, and why. */
 export const CLI_ONLY_EXCEPTIONS: Record<string, string> = {

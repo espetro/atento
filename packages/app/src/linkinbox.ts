@@ -16,7 +16,7 @@
  */
 import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { openStore } from '@linkinbox/db'
 import { importFile, type ImportResult } from '@linkinbox/importers'
 import {
@@ -58,6 +58,7 @@ import {
   migrateBrowserProfiles,
   noopLogger,
   remapLegacyProfilePath,
+  DEFAULT_SERVER_CONFIG,
   type AsrFn,
   type BrowseFn,
   type BrowseOptions,
@@ -77,9 +78,13 @@ import {
   type HostState,
   type IngestResult,
   type LimitsConfig,
+  type Link,
   type LinkField,
   type LinkHistoryEntry,
+  type LinkOutcome,
+  type LinkPatch,
   type LinkProjection,
+  type LinkStateName,
   type ListLinksOptions,
   type LoginConfig,
   type MediaConfig,
@@ -93,6 +98,8 @@ import {
   type PrunePlan,
   type RawLink,
   type RetryHeadlessResult,
+  type Run,
+  type ServerConfig,
   type ShareConfig,
   type ShareHostEntry,
   type Store,
@@ -105,6 +112,7 @@ import {
   type UntilEmptyResult,
 } from '@linkinbox/core'
 import { existsSync } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
 import { loadLoginReport, type LoginReport, type PendingLoginPolicy } from './pending-logins.js'
 import {
   ingestStatusOf,
@@ -147,6 +155,8 @@ export interface LinkinboxConfig {
   media?: MediaConfig
   capture?: CaptureConfig
   share?: ShareConfig
+  /** HTTP server auth config (`[server]`); the server adapter reads it. */
+  server?: ServerConfig
   browser?: BrowserConfig
   profilesDir?: string
   /** Config dir; the ingest spool lives at <dir>/spool. */
@@ -193,6 +203,11 @@ export interface ExtractStageOptions {
   guard?: GuardDeps | null
   /** The media stage; absent runs without it (the default). */
   media?: MediaFn | null
+  /**
+   * Re-extract only these link ids (the reextract endpoint passes one).
+   * Intersected with the `created` queue inside the extract stage.
+   */
+  linkIds?: number[]
   maxBatch?: number
   maxAttempts?: number
   leaseMs?: number
@@ -259,6 +274,45 @@ export interface RunOptions {
   now?: () => Date
 }
 
+/** Options for the reextract use case (`POST /api/links/:id/reextract`). */
+export interface ReextractOptions {
+  /**
+   * Force one browser adapter id. Honoured only by the config-wired
+   * extract fn: an injected `extractFn` dep (tests) cannot pick adapters
+   * and is used as-is.
+   */
+  adapter?: string
+  /** Cap forwarded to the extract stage. */
+  limit?: number
+}
+
+/** Outcome of `reextractLink`. */
+export type ReextractResult =
+  | {
+      ok: true
+      linkId: number
+      /** The extract stage's outcome row for this link, when it ran. */
+      outcome?: LinkOutcome
+      /** The link's FSM state after the call. */
+      state: string | null
+    }
+  | {
+      ok: false
+      reason: 'not_found' | 'deleted' | 'illegal_state' | 'busy' | 'error'
+      /** The link's FSM state when the refusal is state-dependent. */
+      state?: string
+      message?: string
+      /** Set when another extract run held the stage lock. */
+      busy?: BusyRun
+    }
+
+/** One artifact file stored for a link (screenshot, snapshot, ...). */
+export interface ArtifactContent {
+  name: string
+  contentType: string
+  body: Uint8Array
+}
+
 /** What `run` returns: cursors bracketing the pass plus per-stage totals. */
 export interface RunResult {
   /** Unique id for this pass (`run-<uuid>`), for logs and harness records. */
@@ -315,6 +369,8 @@ export interface LinkinboxOps {
   readonly spoolDir: string
   /** The collection export root: <config dir>/exports (or next to the db). */
   readonly exportsDir: string
+  /** The link-artifact root: <config dir>/artifacts (or next to the db). */
+  readonly artifactsDir: string
 
   // ---- adapter functions (lazy, memoized, config-wired) -------------
   extractFn(): Promise<ExtractFn>
@@ -386,6 +442,31 @@ export interface LinkinboxOps {
   list(options?: ListLinksOptions): Promise<LinkProjection[]>
   get(id: number, fields?: LinkField[]): Promise<LinkProjection | null>
   history(id: number): Promise<LinkHistoryEntry[]>
+  /**
+   * Patch user-editable link fields (title, note, tags). Returns the
+   * updated link, or null when the id is unknown. State changes never go
+   * through here — they are FSM events.
+   */
+  patchLink(id: number, patch: LinkPatch): Promise<Link | null>
+  /** One `runs` journal row by id (null when unknown). */
+  getRun(id: number): Promise<Run | null>
+  /**
+   * Delta read of the link_events log: the resumable cursor stream behind
+   * `GET /api/events`. `since` is the last seen event id.
+   */
+  listEvents(since?: number, limit?: number): Promise<LinkHistoryEntry[]>
+  /**
+   * Read one artifact stored for a link (screenshots/snapshots land under
+   * <artifactsDir>/<linkId>/<name>). Null when absent or the name escapes
+   * the link's directory.
+   */
+  readArtifact(linkId: number, name: string): Promise<ArtifactContent | null>
+  /**
+   * Re-extract one link: RETRY it back to the `created` queue when its FSM
+   * state allows, then run the extract stage scoped to that link only.
+   * `adapter` forces one browser adapter through the wired extract fn.
+   */
+  reextractLink(id: number, options?: ReextractOptions): Promise<ReextractResult>
   triage(ids: number[], action: TriageAction): Promise<TriageResult>
   restore(ids: number[], now?: Date): Promise<{ requested: number[]; updated: number; missing: number[]; blocked: number[] }>
   retryHeadless(ids: number[], now?: Date): Promise<RetryHeadlessResult>
@@ -418,6 +499,28 @@ export interface Linkinbox extends LinkinboxOps {
   close(): Promise<void>
 }
 
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+/** Content type for an artifact file name, by extension. */
+function artifactContentType(name: string): string {
+  const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
+  switch (ext) {
+    case 'png': return 'image/png'
+    case 'jpg':
+    case 'jpeg': return 'image/jpeg'
+    case 'webp': return 'image/webp'
+    case 'gif': return 'image/gif'
+    case 'svg': return 'image/svg+xml'
+    case 'pdf': return 'application/pdf'
+    case 'json': return 'application/json; charset=utf-8'
+    case 'txt':
+    case 'md': return 'text/plain; charset=utf-8'
+    default: return 'application/octet-stream'
+  }
+}
+
 interface ResolvedConfig {
   ttl: TtlConfig
   limits: LimitsConfig
@@ -426,6 +529,7 @@ interface ResolvedConfig {
   media: MediaConfig
   capture: CaptureConfig
   share: ShareConfig
+  server: ServerConfig
   browser: BrowserConfig
   profilesDir: string
   dir: string
@@ -442,6 +546,7 @@ function resolveConfig(config: LinkinboxConfig): ResolvedConfig {
     media: config.media ?? DEFAULT_MEDIA_CONFIG,
     capture: config.capture ?? DEFAULT_CAPTURE_CONFIG,
     share: config.share ?? DEFAULT_SHARE_CONFIG,
+    server: config.server ?? DEFAULT_SERVER_CONFIG,
     browser: normalizeBrowserConfig(config.browser ?? DEFAULT_BROWSER_CONFIG),
     profilesDir: config.profilesDir ?? '',
     dir: config.dir ?? '',
@@ -487,6 +592,12 @@ export function createLinkinboxOps(
       : cfg.dbPath !== undefined
         ? join(dirname(cfg.dbPath), 'exports')
         : join(tmpdir(), 'linkinbox-exports')
+  const artifactsDir =
+    cfg.dir !== ''
+      ? join(cfg.dir, 'artifacts')
+      : cfg.dbPath !== undefined
+        ? join(dirname(cfg.dbPath), 'artifacts')
+        : join(tmpdir(), 'linkinbox-artifacts')
 
   // Lazily built, memoized adapter functions.
   let extractFnPromise: Promise<ExtractFn> | undefined
@@ -522,28 +633,32 @@ export function createLinkinboxOps(
     }
   }
 
+  /** The createExtractFn options shared by the memoized and forced fns. */
+  function extractFnOptions(forceAdapterId?: string) {
+    return {
+      profilesDir: cfg.profilesDir,
+      limits: cfg.limits,
+      login: cfg.login,
+      pacing: cfg.pacing,
+      browserConfig: cfg.browser,
+      store,
+      ...(forceAdapterId !== undefined ? { forceAdapterId } : {}),
+    }
+  }
+
   const ops: LinkinboxOps = {
     store,
     config: cfg,
     logger,
     spoolDir,
     exportsDir,
+    artifactsDir,
     llmKey: LLM_KEY,
 
     extractFn() {
       extractFnPromise ??= (async () => {
         await ensureBrowserProfiles()
-        return (
-          deps.extractFn ??
-          createExtractFn({
-            profilesDir: cfg.profilesDir,
-            limits: cfg.limits,
-            login: cfg.login,
-            pacing: cfg.pacing,
-            browserConfig: cfg.browser,
-            store,
-          })
-        )
+        return deps.extractFn ?? createExtractFn(extractFnOptions())
       })()
       return extractFnPromise
     },
@@ -684,6 +799,7 @@ export function createLinkinboxOps(
         extract: fn,
         limit: options.limit,
         host: options.host,
+        ...(options.linkIds !== undefined ? { linkIds: options.linkIds } : {}),
         guard,
         maxBatch: options.maxBatch ?? cfg.limits.maxBatch,
         ...(options.maxAttempts !== undefined ? { maxAttempts: options.maxAttempts } : {}),
@@ -702,6 +818,7 @@ export function createLinkinboxOps(
         extract: fn,
         limit: options.limit,
         host: options.host,
+        ...(options.linkIds !== undefined ? { linkIds: options.linkIds } : {}),
         guard,
         maxBatch: options.maxBatch ?? cfg.limits.maxBatch,
         ...(options.maxAttempts !== undefined ? { maxAttempts: options.maxAttempts } : {}),
@@ -851,6 +968,101 @@ export function createLinkinboxOps(
 
     history(id) {
       return linkHistory(store, id)
+    },
+
+    async patchLink(id, patch) {
+      const existing = await store.getLink(id)
+      if (!existing) return null
+      // Only the user-editable columns: anything else in the patch is a
+      // caller bug, not a write.
+      const allowed: LinkPatch = {}
+      if (patch.title !== undefined) allowed.title = patch.title
+      if (patch.note !== undefined) allowed.note = patch.note
+      if (patch.tags !== undefined) allowed.tags = patch.tags
+      await store.patchLink(id, allowed)
+      return store.getLink(id)
+    },
+
+    getRun(id) {
+      return store.getRun(id)
+    },
+
+    listEvents(since, limit) {
+      return store.listLinkEvents(since ?? 0, limit)
+    },
+
+    async readArtifact(linkId, name) {
+      // Artifact names are single file names: no separators, no dotfiles
+      // tricks, no traversal. Anything else is simply absent.
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) || name.includes('..')) return null
+      const dir = resolve(artifactsDir, String(linkId))
+      const path = resolve(dir, name)
+      if (!path.startsWith(dir + sep)) return null
+      try {
+        if (!(await stat(path)).isFile()) return null
+        return { name, contentType: artifactContentType(name), body: await readFile(path) }
+      } catch {
+        return null
+      }
+    },
+
+    async reextractLink(id, options = {}) {
+      const link = await store.getLink(id)
+      if (!link) return { ok: false, reason: 'not_found' } as const
+      const stateName = link.state as LinkStateName
+      if (stateName === 'deleted') {
+        return { ok: false, reason: 'deleted', state: stateName } as const
+      }
+      // Requeue through the FSM: RETRY sends extracted/needs_browser/
+      // deferred/errored/inbox links back to `created`. States without a
+      // RETRY edge (scheduled, archived, discarded, leased) refuse.
+      if (stateName !== 'created') {
+        const retry = await store.applyEvent(id, {
+          type: 'RETRY',
+          stage: 'extract',
+          at: new Date().toISOString(),
+        })
+        if (!retry.ok) {
+          return {
+            ok: false,
+            reason: 'illegal_state',
+            state: stateName,
+            message: retry.error.message,
+          } as const
+        }
+      }
+      // An explicit adapter builds a fresh forced-adapter fn (the memoized
+      // one cannot switch engines per call). An injected extractFn dep
+      // cannot honour adapter ids and is used as-is.
+      let extract: ExtractFn | undefined
+      if (options.adapter !== undefined && deps.extractFn === undefined) {
+        try {
+          await ensureBrowserProfiles()
+          extract = createExtractFn(extractFnOptions(options.adapter))
+        } catch (err) {
+          return {
+            ok: false,
+            reason: 'error',
+            state: stateName,
+            message: errMsg(err),
+          } as const
+        }
+      }
+      const result = await ops.extract({
+        linkIds: [id],
+        ...(extract !== undefined ? { extract } : {}),
+        ...(options.limit !== undefined ? { limit: options.limit } : {}),
+      })
+      if (result.busy) {
+        return { ok: false, reason: 'busy', busy: result.busy } as const
+      }
+      const after = await store.getLink(id)
+      return {
+        ok: true,
+        linkId: id,
+        outcome: result.outcomes.find((o) => o.linkId === id),
+        state: after?.state ?? null,
+      } as const
     },
 
     triage(ids, action) {

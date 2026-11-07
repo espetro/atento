@@ -5,8 +5,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { openStore, type SqliteStore } from '@linkinbox/db'
 import {
   createCollectingLogger,
@@ -29,7 +28,7 @@ export interface TestHarness {
   cleanup(): Promise<void>
 }
 
-export async function createHarness(options: {
+export interface TestDepsOptions {
   extractFn?: ExtractFn
   enrichFn?: EnrichFn
   ttl?: Partial<TtlConfig>
@@ -37,12 +36,23 @@ export async function createHarness(options: {
   share?: ShareConfig
   /** The injected read primitive for browse_read. */
   browseFn?: BrowseFn
-} = {}): Promise<TestHarness> {
-  const dir = mkdtempSync(join(tmpdir(), 'linkinbox-mcp-'))
-  const store = await openStore({ path: join(dir, 'links.db') })
+  spoolDir?: string
+}
+
+/** Build the McpDeps a transport test or the stdio bin would use. */
+export function createTestDeps(
+  store: SqliteStore,
+  options: TestDepsOptions = {},
+): { deps: McpDeps; context: McpContext } {
   const logger = createCollectingLogger()
   const ttl: TtlConfig = { ...DEFAULT_TTL_CONFIG, ...options.ttl }
-  const context: McpContext = { store, ttl, logger, share: options.share ?? { hosts: [] } }
+  const context: McpContext = {
+    store,
+    ttl,
+    logger,
+    share: options.share ?? { hosts: [] },
+    ...(options.spoolDir !== undefined ? { spoolDir: options.spoolDir } : {}),
+  }
 
   const deps: McpDeps = {
     ctx: async () => context,
@@ -57,17 +67,25 @@ export async function createHarness(options: {
     browseFn: options.browseFn !== undefined ? async () => options.browseFn! : undefined,
     hasProfile: async (host) => (await store.getProfile(host)) !== null,
   }
+  return { deps, context }
+}
+
+export async function createHarness(options: TestDepsOptions = {}): Promise<TestHarness> {
+  const dir = mkdtempSync(join(tmpdir(), 'linkinbox-mcp-'))
+  const store = await openStore({ path: join(dir, 'links.db') })
+  const { deps } = createTestDeps(store, options)
 
   const server = createMcpServer(deps)
   const client = new Client({ name: 'test-client', version: '0.0.1' })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
 
+  const context = await deps.ctx()
   return {
     client,
     store,
-    ttl,
-    logger,
+    ttl: context.ttl,
+    logger: context.logger as ReturnType<typeof createCollectingLogger>,
     async cleanup() {
       await client.close()
       await server.close()

@@ -152,6 +152,10 @@ const TABLE: StateTable = {
 
   // inbox: triage moves a link to its action-mapped state.
   inbox: {
+    // An explicit re-extract (`POST /api/links/:id/reextract`, the Metadata
+    // tab's "Re-extract with adapter…"): back to the extraction queue. The
+    // link re-enters the pipeline and is enriched again on the next pass.
+    RETRY: () => ({ state: 'created' }),
     // An inbox link without enrichment can still be enriched later.
     ENRICH_STARTED: (_s, e, at) => ({
       state: 'enriching',

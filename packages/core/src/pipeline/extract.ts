@@ -74,6 +74,11 @@ export interface ExtractOptions extends StageOptions {
   /** Only process links of this host (canary runs, one site at a time). */
   host?: string
   /**
+   * Only process these link ids (re-extract one link). Intersected with the
+   * `created` queue, so ids in any other state are ignored.
+   */
+  linkIds?: number[]
+  /**
    * How long a lease may be held before another runner reclaims it. Leases
    * older than this are returned to the `created` queue before the batch is
    * selected. Default: 30 minutes.
@@ -242,11 +247,15 @@ async function extractPass(
     })
   }
 
-  const queued = options.host
+  let queued = options.host
     ? (await store.listByStates(['created'])).filter(
         (link) => hostOf(link.url) === hostFilter(options.host as string),
       )
     : await store.listByStates(['created'])
+  if (options.linkIds !== undefined) {
+    const wanted = new Set(options.linkIds)
+    queued = queued.filter((link) => wanted.has(link.id))
+  }
   // Fair selection: round-robin across hosts so a host with many links cannot
   // fill every batch, skipping hosts whose persisted limiter state says they
   // are not contactable right now (spacing wait, rate limit, daily cap,
