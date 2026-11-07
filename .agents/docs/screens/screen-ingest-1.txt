@@ -2,6 +2,7 @@ screen: ingest-1
 name: Ingest dialog
 route: dialog over any view — ?dialog=ingest (also ⊕ ingest in the rail)
 file: packages/ui/src/views/IngestDialog.svelte (proposed)
+Priority: SECONDARY — a dialog over any view, not a destination.
 
 Adds links to the pipeline. Three input kinds matching POST /api/ingest:
 file upload (multipart), pasted text (text/plain or JSON kind:'text'),
@@ -11,7 +12,7 @@ warnings}` — never link arrays. The dialog must never imply it received
 links back; progress comes from GET /api/ingest/{jobId} and SSE
 `ingest` events.
 
-```DIALOG (Bits UI Dialog, ~560px)```
+```DIALOG (dialog primitive per INDEX Q1, ~560px)```
 
 ┌──────────────────────────────────────────────────────────────┐
 │  Ingest links                                             ✕  │
@@ -64,6 +65,26 @@ SUBMITTED → progress state (same dialog, content swaps):
 | Failed state | conditional | `status:'failed'`: `error` string verbatim + retry button (re-POSTs the same input; jobs are idempotent on url_hash so retry is safe) |
 | Job link | action | "view job" opens a small job detail popover: status timeline from GET /api/ingest/{jobId} (createdAt/updatedAt/finishedAt, cursor, runId) |
 
+## Validation (decided stack)
+
+- formisch + valibot (add both to @linkinbox/ui deps in M4b). One
+  valibot schema per mode, composed in a formisch form:
+  - urls mode: `v.pipe(v.string(), v.trim(), v.minLength(1),
+    v.check(<=500 detected urls))` — client count must match server
+    INGEST_URLS_MAX; per-line failures surface as warnings, not
+    schema errors (the server is the parser of record).
+  - text mode: non-empty after trim, size-capped at the ingest body
+    limit.
+  - file mode: file presence + extension allowlist (.md .txt .html
+    .json .csv) as a fast client check; server stays authoritative.
+  - note/tags: optional strings; tags split on comma, trimmed,
+    empties dropped.
+- Validation errors render inline under the field (formisch `$errors`
+  / issues), never as toasts; submit stays disabled until the schema
+  passes AND at least one url/item is detected.
+- The valibot schemas live in `src/lib/validation.ts` so the same
+  rules are unit-testable without mounting the dialog.
+
 ## Behavior
 
 - Submit mapping (must match server exactly):
@@ -92,7 +113,7 @@ SUBMITTED → progress state (same dialog, content swaps):
   more" expands.
 - Keyboard: `Esc` closes (even mid-job — job continues server-side);
   `Cmd/Ctrl+Enter` submits; focus lands in the textarea on open.
-- Accessibility: dialog is modal (Bits UI), focus trapped, labelled;
+- Accessibility: dialog is modal (chosen primitive), focus trapped, labelled;
   progress bar has `role="progressbar"` with aria-valuenow=done/total;
   file dropzone is a real `<input type=file>` fallback for keyboard/AT.
 - Demo mode: works identically against the seeded LINKINBOX_HOME —

@@ -53,8 +53,11 @@ C2. Tokens honored: off-light ground, one accent, state colors only
     shadow recipe on floating layers (references/tokens.md).
 C3. Type mix: bold display titles + light body per tokens.md; ≤2
     weights per region.
-C4. Bits UI primitives used for dialog/popover/tabs — no bespoke
-    modal/focus-trap implementations.
+C4. One dialog/popover primitive library used consistently for
+    dialog/popover/tabs/drawer — no bespoke modal/focus-trap
+    implementations. (Library TBD: daisyUI is installed today, Bits UI
+    was the earlier proposal — see SPEC-SUMMARY Q1; grade against
+    whichever is decided.)
 
 ---------------------------------------------------------------
 D. STATES & EDGE CASES (gate)
@@ -69,6 +72,8 @@ D2. Degradation is honest: Live tab falls back to snapshot + "Open
 D3. Attention collections explain remediation (per-collection
     banner copy); needs_login shows exact `linkinbox login <host>`
     commands; review collection states it is manual-by-design.
+D3b. Forms validate with the decided stack: formisch + valibot
+    schemas (src/lib/validation.ts); errors inline, submit gated.
 D4. Long-content safety: URLs/titles/reasons truncate with tooltip;
     markdown renders sanitized; artifact 404s don't error the tab.
 
@@ -79,8 +84,9 @@ E1. Three-column → icon rail → sheet collapse works at all three
     UILOOP viewports with no horizontal scroll.
 E2. Focus order sane; dialogs trap focus; counts/status announced;
     state never color-only; kbd hints reachable.
-E3. prefers-reduced-motion respected; virtualized or paged lists
-    keep DOM bounded at 1k+ links.
+E3. prefers-reduced-motion respected; the link list uses
+    @tanstack/svelte-virtual (or equivalent) so DOM stays bounded at
+    1k+ links; j/k selection works against the virtual row model.
 
 ---------------------------------------------------------------
 F. LIVE DATA (warning, not gate)

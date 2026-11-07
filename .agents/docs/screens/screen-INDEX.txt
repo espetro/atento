@@ -1,57 +1,109 @@
 screen INDEX
+revised: 2026-11-06 (M4 spec revision — read-first hierarchy per review)
 generated: 2026-11-06 (M4 design-gate specs — proposed UI, not yet implemented)
-scope: packages/ui (Svelte 5 SPA served by @linkinbox/server) + HTTP API contract
+scope: packages/ui (@linkinbox/ui — the EXISTING Svelte 5 package; the
+       harness serves its vite build output) + HTTP API contract
 
 NOTE: these are SPECIFICATIONS for the M4 design gate, not descriptions of
 rendered screens. Routes named `/?view=...` are proposed URL state
-(URLSearchParams, no router — same convention as packages/ui today). Every
-screen lists the API endpoints it consumes; where an endpoint does not exist
-yet the spec marks it `[gap]` and the gap is collected in SPEC-SUMMARY.md.
+(URLSearchParams, no router — same convention as packages/ui today:
+src/lib/urlState.ts, src/App.svelte). Every screen lists the API endpoints
+it consumes; where an endpoint does not exist yet the spec marks it
+`[gap]` and the gap is collected in SPEC-SUMMARY.md with the milestone
+that owns it.
+
+priority model (revised per review — READ-FIRST)
+  The workflow is driven by an agent or deterministic tool; the UI is
+  primarily a READ surface plus a small set of deliberate write actions.
+
+  CORE (daily surface, read-mostly):
+    triage        - the daily loop: pick a collection, scan the list,
+                    preview a link, act (archive / schedule / discard /
+                    re-extract / open)
+    needs-login   - "only you can fix this": parked links grouped by
+                    remediation; makes the login process (which blocks
+                    ingestion) trackable
+    collections   - navigation spine (chrome of the core views)
+
+  SECONDARY (chrome/dialogs, not standalone destinations):
+    ingest        - dialog over any view (?dialog=ingest); a write action
+    run status    - shell-level status chip + detail drawer; a write
+                    action ("run a pass") with a read surface
+    settings      - READ-ONLY config display + pairing; no editable
+                    settings UI anywhere
 
 user flows
-  triage       - the daily loop: pick a collection, scan the list, act on the
-                 selected link (archive / schedule / discard / re-extract),
-                 read it in the preview pane
-  attention    - surfaces that need the human: needs_login + blocked + errored
-                 collections, run results that ended "needs you"
-  ingest       - add links (file / pasted text / URL list) via dialog; returns
-                 a job summary, never link payloads
-  ops          - run status, metrics-adjacent run journal, settings
-                 (browsers, sources, schedule, extension pairing)
+  triage       - pick a collection, scan the list, act on the selected
+                 link, read it in the preview pane
+  attention    - folded into needs-login: needs_login + blocked +
+                 errored + review collections, each with remediation
+  ingest       - add links (file / pasted text / URL list) via dialog;
+                 returns a job summary, never link payloads
+  ops          - run a pass / watch it (shell chip + drawer), check
+                 config + health (read-only settings), pair the
+                 extension
 
 screen list
-  triage-1       Triage workspace           /?view=triage&collection=<name>&selected=<id>&tab=<t>
-                 packages/ui (proposed: views/Triage.svelte + PreviewPane.svelte)
-  collections-1  Collections sidebar        (chrome of every triage view;
-                 collapsible rail on desktop, sheet on mobile)
-                 packages/ui (proposed: views/CollectionsRail.svelte)
-  needs-login-1  Needs-login / blocked view /?view=attention&collection=needs_login|blocked|errored|review
-                 packages/ui (proposed: views/Attention.svelte)
-  ingest-1       Ingest dialog              (dialog over any view;
-                 ?dialog=ingest)
-                 packages/ui (proposed: views/IngestDialog.svelte)
-  run-1          Run status                 /?view=run
-                 packages/ui (proposed: views/RunStatus.svelte)
-  settings-1     Settings                   /?view=settings
-                 packages/ui (proposed: views/Settings.svelte)
+  triage-1        Triage workspace          /?view=triage&collection=<name>&selected=<id>&tab=<t>
+                  packages/ui/src/views/Triage.svelte (proposed; reshapes
+                  existing views/Inbox.svelte + Pipeline.svelte)
+  collections-1   Collections rail           (chrome of every core view;
+                  collapsible rail on desktop, sheet on mobile)
+                  packages/ui/src/views/CollectionsRail.svelte (proposed)
+  needs-login-1   Needs-login view          /?view=needs-login&collection=needs_login|blocked|errored|review
+                  packages/ui/src/views/NeedsLogin.svelte (proposed;
+                  reuses the triage shell)
+  ingest-1        Ingest dialog             (dialog over any view;
+                  ?dialog=ingest — SECONDARY chrome, not a screen)
+                  packages/ui/src/views/IngestDialog.svelte (proposed)
+  run-1           Run status                (shell status chip + popover;
+                  detail drawer on demand — SECONDARY chrome)
+                  packages/ui/src/components/RunChip.svelte +
+                  views/RunDrawer.svelte (proposed)
+  settings-1      Settings (READ-ONLY)      /?view=settings
+                  packages/ui/src/views/Settings.svelte (proposed)
 
 layout shells
-  app shell        collections rail | link list | preview pane (three columns;
-                   collapses to list -> detail on narrow viewports)
-  dialog layer     Bits UI dialogs (ingest, re-extract adapter picker,
-                   schedule date picker, triage confirm) over any view
+  app shell        collections rail | link list | preview pane (three
+                   columns on core views; collapses to list -> detail on
+                   narrow viewports) + top bar carrying the run chip,
+                   ingest button and settings link
+  dialog layer     dialog/popover primitives over any view: ingest,
+                   re-extract adapter picker, schedule confirm,
+                   triage undo toast, run detail drawer
 
-component roots (proposed)
+component roots (proposed — packages/ui/src/)
   views/Triage.svelte, views/PreviewPane.svelte, views/CollectionsRail.svelte,
-  views/Attention.svelte, views/IngestDialog.svelte, views/RunStatus.svelte,
-  views/Settings.svelte, components/StateChip.svelte, components/KeyHint.svelte
+  views/NeedsLogin.svelte, views/IngestDialog.svelte, views/Settings.svelte,
+  views/RunDrawer.svelte, components/RunChip.svelte, components/StateChip.svelte,
+  components/KeyHint.svelte
+  (existing: views/Inbox.svelte, Pipeline.svelte, Sweep.svelte, Metrics.svelte,
+   Dock.svelte, DetailDrawer.svelte, LinkCard.svelte, StateBadge.svelte —
+   Inbox/Pipeline fold into Triage; Sweep/Metrics/Dock disposition is an
+   M4b implementation detail, not spec'd here)
 
-styling (decided — M4 gate)
-  Svelte 5 + Bits UI 2.20 + Tailwind v4. Semantic classes only, defined in the
-  ui stylesheet (`@theme` tokens `--color-surface/ink/accent` plus state
-  colors): `.btn`, `.chip`, `.chip-state-*`, `.pane`, `.list-row`, `.kbd`.
-  NO daisyUI, no raw Tailwind palette utilities for surfaces. Type mix:
-  bold display + light body (user's stated taste; see references/tokens.md).
+data stack (DECIDED — M4 gate)
+  - @tanstack/svelte-query v6 for ALL server-side state (already a
+    devDependency; src/lib/api.ts createQueryClient is the pattern).
+    SSE events invalidate/patch queries; no hand-rolled fetch state.
+  - @tanstack/svelte-virtual for the link list (already a
+    devDependency) — DOM stays bounded at 1k+ links.
+  - formisch + valibot for form validation — the ingest dialog inputs
+    (urls/text/file) and any remaining forms. NOT yet installed; add as
+    devDependencies+dependencies of @linkinbox/ui in M4b.
+  - Server payloads stay zod-typed at the API boundary
+    (packages/server/src/schemas.ts); the UI validates FORM input with
+    valibot schemas, it does not re-validate API responses.
+
+styling (partially decided — see SPEC-SUMMARY open questions)
+  Svelte 5 + Tailwind v4. Semantic classes only, defined in the ui
+  stylesheet: `.btn`, `.chip`, `.chip-state-*`, `.pane`, `.list-row`,
+  `.kbd`. State colors via `.chip-state-*` tokens only.
+  REALITY CHECK: packages/ui currently ships daisyUI 5 as the theme
+  layer (@plugin 'daisyui' in src/app.css) and Bits UI is NOT installed.
+  The earlier "Bits UI 2.20, no daisyUI" decision predates the package;
+  confirm direction before M4b (open question Q1). Type mix: bold
+  display + light body (user's stated taste; see references/tokens.md).
 
 API surface the specs consume (all exist unless marked [gap])
   GET  /api/collections/summary           counts per collection + needsLoginHosts
@@ -60,6 +112,8 @@ API surface the specs consume (all exist unless marked [gap])
   GET  /api/links/{id}                    detail projection (markdown, enrichment)
   PATCH /api/links/{id}                   title / note / tags only
   POST /api/links/triage                  { ids[], action } -> { updated }
+                                          (action=schedule carries NO date —
+                                          see scheduling note below)
   POST /api/links/{id}/reextract          { adapter?, limit? } -> outcome | 409
   GET  /api/links/{id}/artifacts/{name}   screenshot/snapshot bytes
   POST /api/ingest                        file | text/plain | json kind -> job summary
@@ -70,27 +124,58 @@ API surface the specs consume (all exist unless marked [gap])
   GET  /api/events                        SSE; evt:{"l","r","i"} composite cursors,
                                          Last-Event-ID / ?since= resume
   GET  /api/metrics?last=                 per-stage + daily token/cost buckets
+  GET  /api/pair/code                     [M5, unmerged] -> { code, expiresAt }
+                                         (5-min single-use code; bearer-gated
+                                         on non-loopback binds, open on loopback)
+  POST /api/pair                          [M5, unmerged] { code } ->
+                                         { captureToken, serverToken } —
+                                         redeemed by the EXTENSION, never by
+                                         the UI; the UI only displays the code
   [gap] GET  /api/browsers                adapter kinds/caps/health (CLI-only today:
-                                         `linkinbox browsers`)
-  [gap] POST /api/pairing                 mint one-time extension pairing token
-                                         (today: manual token_env config)
+                                         `linkinbox browsers`) — M4b
+  [gap] config-read                        current config values for the
+                                         read-only settings view — M4b
+  [gap] state_data.frameable writer        extractor records frameability —
+                                         extractor milestone (post-M4)
+  [gap] artifact/snapshot writer           snapshot.png capture — extractor
+                                         milestone (post-M4)
+  [gap] pairing-status read                "paired? last capture?" — needs a
+                                         server read; M4b or later
 
-keyboard contract (all views, when no input/dialog is focused)
+scheduling (DECIDED — out of scope for this UI)
+  Recurrence is a HARNESS feature (apps/harness harness.toml:
+  `schedule = "<cron>"`, `on_ingest = true`) — NOT an API/MCP/service
+  concern. There is NO scheduledFor API change, NO date picker writing
+  to the API, NO scheduling endpoints in these specs.
+  The triage `s` key fires the existing schedule action:
+  POST /api/links/triage { action: 'schedule' } with no date — the FSM
+  accepts optional scheduledFor (packages/core/src/fsm/events.ts) but
+  the wire schema (packages/server/src/schemas.ts TriageBody) does not
+  carry it, so scheduledFor lands as null. A date/requeue picker is
+  harness-UI future work, explicitly out of scope for M4.
+
+keyboard contract (all core views, when no input/dialog is focused)
   j / k        move selection in the link list
   /            focus search
   a / s / d    archive / schedule / discard the selected link(s)
+               (s = schedule with no date — see scheduling note)
   r            re-extract the selected link (opens adapter picker when >1 adapter)
   o            open the selected link's URL in the system browser
   1 - 4        switch preview tabs: Reader / Metadata / Snapshot / Live
   ?            show the keymap overlay
 
-known gaps (to resolve during M4 implementation, not in this docs pass)
+known gaps (collected in SPEC-SUMMARY.md; milestone owners noted)
   - state_data.frameable does not exist yet; Live tab falls back to
     snapshot + "Open in browser" until the extractor records it.
+    Owner: extractor milestone (post-M4).
   - No artifact writer ships yet; Snapshot tab renders only when
-    /api/links/{id}/artifacts/<name> returns bytes (convention: snapshot.png).
+    /api/links/{id}/artifacts/<name> returns bytes (convention:
+    snapshot.png). Owner: extractor milestone (post-M4).
+  - GET /api/browsers, config-read, pairing-status read: small M4b API
+    additions — flagged [gap] per screen.
+  - Pairing endpoints exist on feat/m5 (unmerged at spec time); the UI
+    spec targets the real contract, so pairing UI lands after M5 merges.
   - Saved filters have no server persistence story yet; v1 keeps them in
     localStorage keyed by collection.
-  - `schedule` triage action takes no date in the current API
-    (TriageBody = { ids, action }); the date picker needs either a
-    scheduledFor field or a follow-up PATCH — open question for the user.
+  - Dialog primitive library undecided (daisyUI present, Bits UI proposed)
+    — see SPEC-SUMMARY Q1.

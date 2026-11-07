@@ -1,18 +1,40 @@
 screen: settings-1
-name: Settings
+name: Settings (READ-ONLY)
 route: /?view=settings
 file: packages/ui/src/views/Settings.svelte (proposed)
+Priority: SECONDARY — reachable from the rail/top bar; displays config
+and health, pairs the extension. NO editable settings UI: config.toml
+is the source of truth and the UI never writes it.
 
-Four sections: Browser adapters, Sources, Schedule, Extension pairing.
-Honest-scope rule: the UI displays pipeline configuration and health;
-it does not pretend to edit TOML it cannot write back. Where no read
-endpoint exists the section renders the config-file path + the exact
-CLI command instead of a fake form [gap — see SPEC-SUMMARY].
+Read-only rule (per review): every section shows CURRENT config values
+plus where to change them. The config file path is shown per section
+and is LINKINBOX_HOME/LINKINBOX_CONFIG_DIR-aware — resolved server-side
+as `<configDir>/config.toml` where configDir = $LINKINBOX_CONFIG_DIR,
+else $LINKINBOX_HOME/.linkinbox, else ~/.linkinbox
+(packages/app/src/config.ts configDir()). Harness recurrence lives in
+`<configDir>/harness.toml` (apps/harness). "Open config file" is NOT
+feasible from a plain HTTP-served page (browsers block file:// and
+shell-open); v1 shows the absolute path + a copy button. If the
+harness later exposes a file-open affordance it can slot into the same
+row — harness concern, out of scope here.
+
+Honest-scope rule: where no read endpoint exists the section renders
+the config-file path + the exact CLI command (`linkinbox browsers`,
+`linkinbox config`) instead of a fake form — never fabricate values
+[gap — see SPEC-SUMMARY].
 
 ```DESKTOP```
 
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  Settings                                                                 │
+│  Settings                                          read-only — edit in    │
+│                                                    config.toml            │
+│                                                                          │
+│  ┌─ CONFIG FILE ──────────────────────────────────────────────────────┐  │
+│  │  ~/.linkinbox/config.toml   [ copy path ]                          │  │
+│  │  recurrence: ~/.linkinbox/harness.toml  (owned by the harness)      │  │
+│  │  resolved via LINKINBOX_CONFIG_DIR / LINKINBOX_HOME — this UI      │  │
+│  │  shows the path the SERVER resolved, not a client-side guess       │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
 │                                                                          │
 │  ┌─ BROWSER ADAPTERS ──────────────────────────────────────────────────┐  │
 │  │  id          kind          caps                    roles  health    │  │
@@ -23,40 +45,41 @@ CLI command instead of a fake form [gap — see SPEC-SUMMARY].
 │  │                                                                    │  │
 │  │  host overrides: x.com → stealth · linkedin.com → headless          │  │
 │  │  escalate: headless → stealth on block                              │  │
-│  │  [ re-check health ]   config: ~/.linkinbox/config.toml [browser]   │  │
+│  │  config: config.toml [browser]   CLI: linkinbox browsers            │  │
 │  └────────────────────────────────────────────────────────────────────┘  │
 │                                                                          │
 │  ┌─ SOURCES ──────────────────────────────────────────────────────────┐  │
 │  │  configured in [sources] paths of config.toml:                     │  │
 │  │   ~/exports/stash.md · ~/Documents/links.txt                       │  │
 │  │  last ingest: 3 jobs · 87 accepted (run-9f3c, 14:02)                │  │
-│  │  [ edit config.toml ]  (opens file location hint; no in-app edit)  │  │
+│  │  edit: config.toml [sources]  ·  CLI: linkinbox ingest --help       │  │
 │  └────────────────────────────────────────────────────────────────────┘  │
 │                                                                          │
 │  ┌─ SCHEDULE ─────────────────────────────────────────────────────────┐  │
 │  │  Recurrence is owned by your harness (cron / launchd / CI), not    │  │
 │  │  by linkinbox — the app never sleeps or self-schedules.            │  │
 │  │                                                                    │  │
-│  │  suggested:  linkinbox run   (exit 0 done · 2 needs-you ·          │  │
-│  │              1 failure · 3 busy)                                   │  │
-│  │  last run:   run-9f3c · 14:02 · exit 2 · 38s   [ view run ]         │  │
-│  │  next run:   unknown — set it in your scheduler                    │  │
-│  │  [ copy suggested crontab line ]                                   │  │
+│  │  harness.toml:  schedule = "0 6 * * *"   on_ingest = true           │  │
+│  │                (file shown read-only; edit harness.toml to change) │  │
+│  │  last run:   run-9f3c · 14:02 · exit 2 · 38s   [ view run drawer ]  │  │
+│  │  next run:   unknown — the harness owns the schedule               │  │
 │  └────────────────────────────────────────────────────────────────────┘  │
 │                                                                          │
 │  ┌─ EXTENSION PAIRING ────────────────────────────────────────────────┐  │
 │  │  Pair the browser extension with this server.                      │  │
 │  │                                                                    │  │
 │  │  server URL   http://127.0.0.1:4173   [ copy ]                     │  │
-│  │  pairing code [ Generate one-time code ]  →  shows once, 10 min    │  │
-│  │  status       not paired · last capture —                        │  │
-│  │  [ how pairing works ]  (token → chrome.storage.local, never logged)│  │
+│  │  pairing code [ Show pairing code ]  →  GET /api/pair/code         │  │
+│  │               displays { code, expiresAt } once — 8-char code,     │  │
+│  │               single-use, 5-minute TTL                             │  │
+│  │  status       paired? / last capture —  [gap: pairing-status read] │  │
+│  │  [ how pairing works ]                                             │  │
 │  └────────────────────────────────────────────────────────────────────┘  │
 │                                                                          │
 │  ┌─ SERVER ───────────────────────────────────────────────────────────┐  │
 │  │  bind 127.0.0.1:4173 · api token: not required (loopback)           │  │
 │  │  capture endpoint: disabled (LINKINBOX_CAPTURE_TOKEN unset)         │  │
-│  │  data dir: ~/.linkinbox  [ open ]                                   │  │
+│  │  data dir: ~/.linkinbox  [ copy path ]                              │  │
 │  └────────────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
@@ -65,54 +88,61 @@ CLI command instead of a fake form [gap — see SPEC-SUMMARY].
 
 | Element | State | Description |
 |---------|-------|-------------|
-| Section cards | required | Five `.pane`-style cards stacked single-column (max-w-3xl); each has a title + one-line purpose |
-| Adapters table | required | Mirrors `linkinbox browsers` output exactly: id, kind (agent-browser/patchright/cdp-attach/external), caps (stealth/headless/profile as chips), roles (reader/login/default), escalate flag, health ok/FAIL + detail verbatim |
-| Health re-check | action | Re-runs the health probe — needs GET /api/browsers or a POST recheck [gap]; until then the button is absent and the table carries a "refresh page to re-check" caption |
-| Host overrides list | static | `[browser.hosts]` mappings + `escalate` chain, rendered read-only from config [gap: needs config read endpoint] |
+| Read-only banner | required | Header line "read-only — edit in config.toml" so the page never implies editability |
+| Config file card | required | Absolute config.toml path (server-resolved, LINKINBOX_HOME-aware) + harness.toml path + copy buttons; this is the "where do I change things" answer for the whole page |
+| Section cards | required | Five `.pane`-style cards stacked single-column (max-w-3xl); each has a title + one-line purpose + its config.toml table name |
+| Adapters table | required | Mirrors `linkinbox browsers` output exactly: id, kind (agent-browser/patchright/cdp-attach/external), caps (stealth/headless/profile as chips), roles (reader/login/default), escalate flag, health ok/FAIL + detail verbatim — needs GET /api/browsers [gap, M4b]; until then the card shows the CLI command + "refresh page to re-check" caption, no fabricated rows |
+| Host overrides list | static | `[browser.hosts]` mappings + `escalate` chain, rendered read-only from config [gap: needs config read endpoint, M4b] |
 | Login hint per adapter | static | FAIL rows show `detail` (e.g. "connect chrome --remote-debugging-port=9222 first") plus, for login-role adapters, the `linkinbox login <host>` pointer |
-| Sources list | static | `[sources] paths` entries + last-ingest summary (from run journal / collections summary); "edit" is a hint to open config.toml, not an editor |
-| Schedule card | required | Explains harness-owned recurrence; shows last run verdict (links to run-1) and "next run: unknown"; "copy suggested crontab line" copies `0 * * * * linkinbox run` style hint (exact cadence is the user's choice — do not prescribe) |
+| Sources list | static | `[sources] paths` entries + last-ingest summary (from run journal / collections summary); "edit" points at config.toml `[sources]`, not an editor |
+| Schedule card | required | Explains harness-owned recurrence; shows harness.toml keys read-only (schedule cron, on_ingest) when the config-read gap closes; last run verdict links to the run drawer (`?drawer=run`); "next run: unknown" is the honest default — the harness owns the schedule and reports nothing back yet |
 | Exit-code legend | static | The 0/2/1/3 table miniaturized — same strings as run-1 |
 | Server URL row | required | The origin the UI is actually served from (window.location.origin — never a hardcoded guess); copy button |
-| Generate pairing code | action | POST /api/pairing (proposed [gap]) → shows a one-time code ONCE with a 10-minute expiry caption and a copy button; regenerating invalidates the previous code |
-| Pairing status | static | "not paired" / "paired <date>" / "last capture <relative time>" — capture recency comes from link `source`/capture events [gap: needs a pairing-status read] |
-| How-pairing-works | action | Expandable explainer: code → paste into extension options → stored in chrome.storage.local → sent as Bearer on /capture; token never logged, CORS origin must be in `[capture] allowed_origins` |
-| Server card | static | bind address, whether api token is required (loopback vs not — derivable from the UI's own auth experience), capture enabled/disabled, data dir path with "open" (shell open via a link is out of scope — show path + copy) |
+| Show pairing code | action | GET /api/pair/code (real M5 contract) → displays `{code, expiresAt}` ONCE in a `role="status"` region with a copy button; code is 8 chars, single-use, 5-min TTL; re-issuing evicts older codes server-side (max 10 outstanding). On non-loopback binds this call is bearer-gated — the UI must surface 401 as "pairing requires the server token" rather than retrying silently |
+| Pairing status | static | "paired? / last capture?" — needs a pairing-status read [gap: M4b or later]; until then show "status unavailable — check the extension" honestly, never a guessed state |
+| How-pairing-works | action | Expandable explainer of the REAL flow (packages/server/src/pairing.ts + docs/capture.md on feat/m5): UI displays a one-time code → user pastes it into the extension → extension POSTs /api/pair {code} → receives `{captureToken, serverToken}` → stores them locally → sends captureToken as Bearer on POST /capture. The UI NEVER calls POST /api/pair — redemption is the client's job. Note the loopback trust tradeoff the server documents: on loopback the code endpoint is unauthenticated by design (bounded: 39-bit codes, single-use, 5-min TTL, rate-limited) |
+| Server card | static | bind address, whether api token is required (loopback vs not — derivable from the UI's own auth experience), capture enabled/disabled (LINKINBOX_CAPTURE_TOKEN set?), data dir path with copy |
 | Config path hints | ambient | Every section names its config.toml table so a user who wants to edit knows exactly where |
 
 ## Behavior
 
-- Read-mostly by design. The only mutations in v1: pairing-code
-  generation (POST /api/pairing) and copy buttons. Everything else is
-  display + deep links. This is deliberate: config.toml is the source
-  of truth and hand-editing beats a half-editor that drifts from the
-  parser (smol-toml, additive sections).
-- [gap] Most sections need a config-read endpoint that does not exist.
-  Interim: sections that can't read config show the file path +
-  `linkinbox browsers --json` / `linkinbox config` style commands to
-  run in a terminal, clearly labeled "CLI". Do NOT fabricate values.
+- Strictly read-mostly. The ONLY mutations in v1: GET /api/pair/code
+  (issues a code — technically a POST-free read-shaped call, but it
+  mutates server state by minting a code; label the button accordingly
+  and treat it as the single write-ish action on the page) and copy
+  buttons. Everything else is display + deep links. This is deliberate:
+  config.toml/harness.toml are the source of truth and hand-editing
+  beats a half-editor that drifts from the parser (smol-toml,
+  additive sections).
+- The pairing contract is the REAL M5 one — no speculative
+  POST /api/pairing. GET /api/pair/code returns `{code, expiresAt}`;
+  POST /api/pair {code} → `{captureToken, serverToken}` is redeemed by
+  the extension only (either token may be null when the corresponding
+  env var is unset — the explainer should say so). Both endpoints ship
+  on feat/m5; until M5 merges the button renders disabled with
+  "pairing endpoint not available in this build".
+- [gap] Most config sections need a config-read endpoint that does not
+  exist (M4b). Interim: sections that can't read config show the file
+  path + `linkinbox browsers --json` / `linkinbox config` style
+  commands to run in a terminal, clearly labeled "CLI". Do NOT
+  fabricate values.
 - Browser adapters section is the highest-value gap to close:
   `linkinbox browsers` already computes kinds/caps/roles/health —
-  exposing it as GET /api/browsers (or serving a cached snapshot the
-  CLI refreshes) is a small server change and makes this section real.
-- Pairing flow contract (proposed, needs server work): generate →
-  one-time code, single-use, ≤10 min TTL, shown once; extension
-  exchanges code+server URL for the capture bearer token (or the code
-  IS the short-lived bootstrap that mints a capture token). Until the
-  endpoint exists the button renders disabled with "pairing endpoint
-  not available in this build".
+  exposing it as GET /api/browsers is a small server change (M4b) and
+  makes this section real.
 - Schedule section never shows a next-run time it can't know — the
-  harness owns recurrence. "unknown — set it in your scheduler" is the
-  honest default; if a harness later reports schedule metadata it can
-  slot into the same row.
+  harness owns recurrence (harness.toml `schedule`/`on_ingest`). If a
+  harness later reports schedule metadata it can slot into the same
+  row; until then "unknown — set it in harness.toml" is honest.
 - Server card derives auth state from the client's own experience:
   if the UI loaded without a token prompt on a non-loopback bind it
   knows auth passed; it must not claim "no token required" for a
   non-loopback bind it wasn't told about — show "loopback" only when
   the server reports the bind (needs [gap] server-info in /api or
-  openapi).
+  openapi, M4b).
 - Accessibility: tables use real `<table>` semantics; copy buttons
   announce "copied" via aria-live; the pairing code is in a
-  `role="status"` region so its one-time nature is announced.
+  `role="status"` region so its one-time nature is announced; expiry
+  is text, not just a countdown color.
 - Mobile: cards stack full-width; the adapters table becomes a
   definition-list per adapter (id/kind/caps/roles/health) under 760px.
