@@ -342,6 +342,48 @@ describe('createOutbox', () => {
     expect(outbox.items()).toHaveLength(1)
   })
 
+  it('revives a dead-lettered item when the same key is re-enqueued', async () => {
+    const { fetch, calls } = scriptedFetch([{ status: 401 }, { status: 201 }])
+    const outbox = makeOutbox({ fetch, now: () => 0 })
+    await enqueueCapture(outbox)
+    await outbox.drain()
+    expect(outbox.deadItems()).toHaveLength(1)
+
+    // The user re-captures the same page: same key, fresh payload.
+    const revived = await outbox.enqueue({
+      idempotencyKey: 'capture:https://example.com/a:2026-01-01T00:00:00.000Z',
+      kind: 'capture',
+      url: 'https://example.com/a',
+      payload: '{"url":"https://example.com/a","body":"newer"}',
+    })
+    expect(revived.accepted).toBe(true)
+    expect(revived.revived).toBe(true)
+    expect(revived.duplicate).toBeUndefined()
+    expect(outbox.deadItems()).toHaveLength(0)
+    expect(outbox.items()).toHaveLength(1)
+    expect(outbox.items()[0]?.attempts).toBe(0)
+    expect(outbox.items()[0]?.payload).toContain('newer')
+
+    // And it is retried, not stuck dead.
+    const result = await outbox.drain()
+    expect(result.sent).toBe(1)
+    expect(calls).toHaveLength(2)
+    expect(outbox.items()).toHaveLength(0)
+  })
+
+  it('still dedupes a re-enqueue against a LIVE item', async () => {
+    const { fetch, calls } = scriptedFetch([{ throws: true }])
+    const outbox = makeOutbox({ fetch, now: () => 0 })
+    await enqueueCapture(outbox)
+    await outbox.drain() // fails retryable, stays live
+    const again = await enqueueCapture(outbox)
+    expect(again.accepted).toBe(true)
+    expect(again.duplicate).toBe(true)
+    expect(again.revived).toBeUndefined()
+    expect(outbox.items()).toHaveLength(1)
+    expect(calls).toHaveLength(1) // no extra send happened
+  })
+
   it('removes an acked item from storage, not just memory', async () => {
     const storage = memoryStorage()
     const outbox = makeOutbox({ storage, fetch: async () => new Response('', { status: 200 }), now: () => 0 })

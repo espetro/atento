@@ -69,8 +69,10 @@ export interface EnqueueInput {
 
 export interface EnqueueResult {
   accepted: boolean
-  /** True when an item with the same idempotency key already exists. */
+  /** True when a live item with the same idempotency key already exists. */
   duplicate?: boolean
+  /** True when a dead-lettered item was revived for retry. */
+  revived?: boolean
   /** Why the enqueue was refused (queue_full). */
   reason?: string
 }
@@ -272,13 +274,31 @@ export function createOutbox(options: OutboxOptions) {
      * Persist one request and queue it for delivery. Dedupes on the
      * idempotency key: enqueueing the same key twice is a no-op that still
      * reports accepted, so a capture retried after a worker restart never
-     * doubles.
+     * doubles. A DEAD item with the same key is revived instead — the user
+     * re-capturing a failed ingest batch (its key is a deterministic hash
+     * of the url set) means "try again", not "silently ignore forever".
      */
     enqueue(input: EnqueueInput): Promise<EnqueueResult> {
       return serialized(async () => {
         await ready
         const existing = items.find((i) => i.idempotencyKey === input.idempotencyKey)
-        if (existing !== undefined) return { accepted: true, duplicate: true }
+        if (existing !== undefined) {
+          if (existing.dead === true) {
+            // Revive: fresh attempts, due immediately, error cleared. The
+            // payload is replaced too — a re-enqueue may carry newer content
+            // under the same key (e.g. a re-extracted page).
+            existing.kind = input.kind
+            existing.url = input.url
+            existing.payload = input.payload
+            existing.attempts = 0
+            existing.nextRetryAt = clock.now()
+            delete existing.lastError
+            delete existing.dead
+            await persist()
+            return { accepted: true, revived: true }
+          }
+          return { accepted: true, duplicate: true }
+        }
         const live = items.filter((i) => i.dead !== true).length
         if (live >= maxSize) return { accepted: false, reason: 'queue_full' }
         const now = clock.now()
