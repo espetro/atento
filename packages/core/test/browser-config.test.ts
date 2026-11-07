@@ -6,6 +6,8 @@ import {
   isStealthHost,
   resolveBrowserAdapter,
   browserEscalation,
+  normalizeBrowserConfig,
+  type BrowserConfig,
 } from '../src/browser-config.js'
 
 describe('browser config', () => {
@@ -230,5 +232,117 @@ engine = "patchright"
     expect(browser.reader).toBe('stealth')
     expect(browser.login).toBe('stealth')
     expect(browser.escalate).toEqual([])
+  })
+})
+
+describe('mixed legacy keys + explicit adapters', () => {
+  it('engine = patchright keeps a patchright reader next to a cdp adapter', () => {
+    const browser = parseBrowserConfig(`
+[browser]
+engine = "patchright"
+
+[browser.adapters.cdp]
+kind = "cdp-attach"
+endpoint = "http://127.0.0.1:9222"
+`)
+    // The legacy engine demand synthesizes the stealth adapter; it — not
+    // the alphabetically-first cdp adapter — stays the reader/login.
+    expect(browser.adapters['stealth']?.kind).toBe('patchright')
+    expect(browser.reader).toBe('stealth')
+    expect(browser.login).toBe('stealth')
+    expect(browser.adapters['cdp']?.kind).toBe('cdp-attach')
+  })
+
+  it('engine = patchright prefers an explicit patchright adapter over cdp', () => {
+    const browser = parseBrowserConfig(`
+[browser]
+engine = "patchright"
+
+[browser.adapters.cdp]
+kind = "cdp-attach"
+[browser.adapters.ghost]
+kind = "patchright"
+`)
+    expect(browser.reader).toBe('ghost')
+    expect(browser.login).toBe('ghost')
+  })
+
+  it('stealth_hosts map to the patchright-kind adapter, not only a literal stealth id', () => {
+    const browser = parseBrowserConfig(`
+[browser]
+stealth_hosts = ["app.devin.ai"]
+
+[browser.adapters.cdp]
+kind = "cdp-attach"
+[browser.adapters.ghost]
+kind = "patchright"
+`)
+    expect(browser.hosts['app.devin.ai']).toBe('ghost')
+    expect(resolveBrowserAdapter(browser, 'reader', 'app.devin.ai')).toBe('ghost')
+    // The default reader stays the agent-browser side: no agent-browser
+    // adapter exists, so the first configured one wins.
+    expect(resolveBrowserAdapter(browser, 'reader', 'example.com')).toBe('cdp')
+  })
+
+  it('an explicit reader/login/hosts entry always wins over legacy fill', () => {
+    const browser = parseBrowserConfig(`
+[browser]
+engine = "patchright"
+reader = "cdp"
+
+[browser.adapters.cdp]
+kind = "cdp-attach"
+[browser.hosts]
+"app.devin.ai" = "cdp"
+`)
+    expect(browser.reader).toBe('cdp')
+    expect(browser.hosts['app.devin.ai']).toBe('cdp')
+  })
+})
+
+describe('normalizeBrowserConfig', () => {
+  it('keeps a fully-specified adapters table unchanged', () => {
+    const config = parseBrowserConfig(`
+[browser]
+reader = "cdp"
+login = "cdp"
+escalate = []
+
+[browser.adapters.cdp]
+kind = "cdp-attach"
+endpoint = "http://127.0.0.1:9222"
+
+[browser.hosts]
+"x.com" = "cdp"
+`)
+    const normalized = normalizeBrowserConfig(config)
+    expect(normalized.adapters).toEqual(config.adapters)
+    expect(normalized.reader).toBe('cdp')
+    expect(normalized.login).toBe('cdp')
+    expect(normalized.escalate).toEqual([])
+    expect(normalized.hosts).toEqual(config.hosts)
+  })
+
+  it('fills missing registry fields on a hand-built legacy literal', () => {
+    const normalized = normalizeBrowserConfig({
+      engine: 'agent-browser',
+      stealthHosts: ['x.com'],
+    } as unknown as BrowserConfig)
+    expect(normalized.adapters['headless']?.kind).toBe('agent-browser')
+    expect(normalized.adapters['stealth']?.kind).toBe('patchright')
+    expect(normalized.hosts['x.com']).toBe('stealth')
+    expect(normalized.escalate).toEqual(['stealth'])
+  })
+
+  it('honours engine = patchright on a hand-built literal with a cdp adapter', () => {
+    const normalized = normalizeBrowserConfig({
+      engine: 'patchright',
+      stealthHosts: [],
+      adapters: { cdp: { kind: 'cdp-attach', options: {} } },
+    } as unknown as BrowserConfig)
+    expect(normalized.adapters['stealth']?.kind).toBe('patchright')
+    expect(normalized.adapters['cdp']?.kind).toBe('cdp-attach')
+    expect(normalized.reader).toBe('stealth')
+    expect(normalized.login).toBe('stealth')
   })
 })

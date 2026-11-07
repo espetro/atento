@@ -216,18 +216,47 @@ export function browserFromToml(toml: Record<string, unknown>): BrowserConfig {
       out.hosts[pattern] = LEGACY_STEALTH_ADAPTER
     }
   } else {
-    // Explicit adapters: legacy keys fill the gaps only.
-    if (!str(table['reader']) && !out.adapters[out.reader]) {
-      out.reader = firstAdapterId(out.adapters)
+    // Explicit adapters: legacy keys fill the gaps only — but they still
+    // mean what they meant before: engine picks the default reader/login
+    // engine and stealth_hosts names hosts that need the stealth engine.
+    const kindId = (kind: BrowserAdapterKind): string | undefined =>
+      Object.keys(out.adapters).find((id) => out.adapters[id]!.kind === kind)
+
+    // Legacy stealth demand (engine = "patchright" or any stealth_hosts
+    // entry) requires a patchright-kind adapter. When the explicit table
+    // provides none, synthesize the migrated stealth adapter so old keys
+    // keep working next to new ones.
+    const wantsStealth = out.engine === 'patchright' || out.stealthHosts.length > 0
+    let stealthId = kindId('patchright')
+    if (wantsStealth && stealthId === undefined && !(LEGACY_STEALTH_ADAPTER in out.adapters)) {
+      out.adapters[LEGACY_STEALTH_ADAPTER] = {
+        kind: 'patchright',
+        options: out.executablePath ? { executablePath: out.executablePath } : {},
+      }
+      stealthId = LEGACY_STEALTH_ADAPTER
     }
-    if (!str(table['login']) && !out.adapters[out.login]) {
-      out.login = firstAdapterId(out.adapters)
+
+    // The engine's preferred adapter: the migrated id for the engine
+    // ('stealth'/'headless') when present, else any adapter of the
+    // engine's kind, else the first configured adapter.
+    const engineKind: BrowserAdapterKind =
+      out.engine === 'patchright' ? 'patchright' : 'agent-browser'
+    const migratedId = out.engine === 'patchright' ? LEGACY_STEALTH_ADAPTER : LEGACY_HEADLESS_ADAPTER
+    const preferred =
+      (out.adapters[migratedId] !== undefined ? migratedId : undefined) ?? kindId(engineKind)
+    const fallback = firstAdapterId(out.adapters)
+    if (!str(table['reader'])) {
+      out.reader = preferred ?? fallback
+    }
+    if (!str(table['login'])) {
+      out.login = preferred ?? fallback
     }
     for (const pattern of out.stealthHosts) {
-      // stealth_hosts keeps meaning "the stealth adapter"; only fill hosts
-      // the new-style table did not already claim.
-      if (!(pattern in out.hosts) && LEGACY_STEALTH_ADAPTER in out.adapters) {
-        out.hosts[pattern] = LEGACY_STEALTH_ADAPTER
+      // stealth_hosts keeps meaning "the stealth adapter" — whichever
+      // patchright-kind adapter that is — and never overrides an explicit
+      // [browser.hosts] entry.
+      if (!(pattern in out.hosts) && stealthId !== undefined) {
+        out.hosts[pattern] = stealthId
       }
     }
     // executable_path applies to adapters that understand it and have none.
@@ -358,48 +387,54 @@ export function browserAdapterConfig(
 
 /**
  * Normalize a BrowserConfig that may have been built by hand (tests,
- * programmatic callers) instead of `browserFromToml`: when the registry
- * fields are missing, synthesize the same adapter pair the TOML migration
- * shim produces. Already-normalized configs pass through untouched.
+ * programmatic callers) instead of `browserFromToml`: registry fields
+ * that are missing are filled with the same rules the TOML migration shim
+ * uses, but an explicitly supplied `adapters` table is never dropped —
+ * only gaps are filled. Idempotent on already-normalized configs.
  */
 export function normalizeBrowserConfig(config: BrowserConfig): BrowserConfig {
-  if (
-    config.adapters &&
-    Object.keys(config.adapters).length > 0 &&
-    typeof config.reader === 'string' &&
-    config.reader !== '' &&
-    typeof config.login === 'string' &&
-    config.login !== '' &&
-    Array.isArray(config.escalate) &&
-    config.hosts
-  ) {
-    return config
-  }
+  const engine = config.engine ?? DEFAULT_BROWSER_ENGINE
   const executablePath = config.executablePath
   const adapterOptions = executablePath ? { executablePath } : {}
-  const adapters: Record<string, BrowserAdapterConfig> = {
-    [LEGACY_HEADLESS_ADAPTER]: { kind: 'agent-browser', options: { ...adapterOptions } },
-    [LEGACY_STEALTH_ADAPTER]: { kind: 'patchright', options: { ...adapterOptions } },
+  const adapters: Record<string, BrowserAdapterConfig> = { ...(config.adapters ?? {}) }
+
+  const kindId = (kind: BrowserAdapterKind): string | undefined =>
+    Object.keys(adapters).find((id) => adapters[id]!.kind === kind)
+
+  if (Object.keys(adapters).length === 0) {
+    // No adapters at all: the legacy pair, exactly like the TOML shim.
+    adapters[LEGACY_HEADLESS_ADAPTER] = { kind: 'agent-browser', options: { ...adapterOptions } }
+    adapters[LEGACY_STEALTH_ADAPTER] = { kind: 'patchright', options: { ...adapterOptions } }
   }
+
+  // Legacy stealth demand needs a patchright-kind adapter; synthesize the
+  // migrated stealth one when the table does not provide any.
+  const stealthHosts = config.stealthHosts ?? []
+  const wantsStealth = engine === 'patchright' || stealthHosts.length > 0
+  let stealthId = kindId('patchright')
+  if (wantsStealth && stealthId === undefined && !(LEGACY_STEALTH_ADAPTER in adapters)) {
+    adapters[LEGACY_STEALTH_ADAPTER] = { kind: 'patchright', options: { ...adapterOptions } }
+    stealthId = LEGACY_STEALTH_ADAPTER
+  }
+
+  const engineKind: BrowserAdapterKind = engine === 'patchright' ? 'patchright' : 'agent-browser'
+  const migratedId = engine === 'patchright' ? LEGACY_STEALTH_ADAPTER : LEGACY_HEADLESS_ADAPTER
+  const preferred =
+    (adapters[migratedId] !== undefined ? migratedId : undefined) ?? kindId(engineKind)
+  const fallback = firstAdapterId(adapters)
+
   const hosts: Record<string, string> = { ...(config.hosts ?? {}) }
-  for (const pattern of config.stealthHosts ?? []) {
-    if (!(pattern in hosts)) hosts[pattern] = LEGACY_STEALTH_ADAPTER
+  for (const pattern of stealthHosts) {
+    if (!(pattern in hosts) && stealthId !== undefined) hosts[pattern] = stealthId
   }
-  if (config.engine === 'patchright') {
-    return {
-      ...config,
-      reader: config.reader || LEGACY_STEALTH_ADAPTER,
-      login: config.login || LEGACY_STEALTH_ADAPTER,
-      escalate: config.escalate ?? [],
-      adapters,
-      hosts,
-    }
-  }
+
   return {
     ...config,
-    reader: config.reader || LEGACY_HEADLESS_ADAPTER,
-    login: config.login || LEGACY_HEADLESS_ADAPTER,
-    escalate: config.escalate ?? [LEGACY_STEALTH_ADAPTER],
+    engine,
+    stealthHosts,
+    reader: config.reader || preferred || fallback,
+    login: config.login || preferred || fallback,
+    escalate: config.escalate ?? (engine === 'patchright' ? [] : [stealthId ?? LEGACY_STEALTH_ADAPTER]),
     adapters,
     hosts,
   }
