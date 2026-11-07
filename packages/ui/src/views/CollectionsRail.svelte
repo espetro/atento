@@ -127,13 +127,14 @@
     }
   }
 
+  // The default collection alone is not a "filter" — don't offer to save it.
   const filtersActive = $derived(
-    url.q !== '' ||
+    (url.collection !== '' && url.collection !== 'enriched') ||
+      url.q !== '' ||
       url.state !== '' ||
       url.category !== '' ||
       url.host !== '' ||
-      url.stale ||
-      url.collection !== '',
+      url.stale,
   )
 
   function filterLabel(f: SavedFilter): string {
@@ -147,8 +148,10 @@
   }
 
   function applyFilter(f: SavedFilter) {
+    // Preserve the current surface — a saved filter applies wherever the
+    // rail is visible (triage list or attention collections).
     go({
-      view: 'triage',
+      view: url.view,
       collection: f.collection,
       q: f.q,
       state: f.state,
@@ -164,7 +167,7 @@
     if (name === '') return
     const f: SavedFilter = {
       name,
-      collection: url.collection,
+      collection: url.collection === 'enriched' ? '' : url.collection,
       q: url.q,
       state: url.state,
       category: url.category,
@@ -178,6 +181,49 @@
 
   function deleteFilter(name: string) {
     writeSaved(savedFilters.filter((s) => s.name !== name))
+    if (renaming === name) renaming = null
+    if (menuFor === name) menuFor = null
+  }
+
+  // ---- rename + context menu -------------------------------------------------
+  let renaming = $state<string | null>(null)
+  let renameValue = $state('')
+  let menuFor = $state<string | null>(null)
+  let menuPos = $state({ x: 0, y: 0 })
+
+  function openMenu(e: MouseEvent, name: string) {
+    e.preventDefault()
+    menuPos = { x: e.clientX, y: e.clientY }
+    menuFor = name
+  }
+
+  function startRename(name: string) {
+    renaming = name
+    renameValue = name
+    menuFor = null
+  }
+
+  $effect(() => {
+    if (menuFor == null) return
+    const close = () => (menuFor = null)
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close()
+    window.addEventListener('click', close)
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('blur', close)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('blur', close)
+    }
+  })
+
+  function commitRename() {
+    const name = renaming
+    const next = renameValue.trim()
+    renaming = null
+    if (name == null || next === '' || next === name) return
+    if (savedFilters.some((f) => f.name === next)) return
+    writeSaved(savedFilters.map((f) => (f.name === name ? { ...f, name: next } : f)))
   }
 
   // Refresh counts when the window regains focus (SSE also invalidates).
@@ -295,19 +341,53 @@
       {#if savedFilters.length > 0}
         <div class="rail-group">saved filters</div>
         {#each savedFilters as f (f.name)}
-          <div class="rail-row saved-row">
-            <button type="button" class="saved-apply" onclick={() => applyFilter(f)}>
-              <span class="rail-label">⌁ {f.name}</span>
-              <span class="meta-faint saved-sub">{filterLabel(f)}</span>
-            </button>
+          <div
+            class="rail-row saved-row"
+            role="group"
+            aria-label="Saved filter {f.name}"
+            oncontextmenu={(e) => openMenu(e, f.name)}
+          >
+            {#if renaming === f.name}
+              <input
+                class="input save-input"
+                bind:value={renameValue}
+                aria-label="Rename filter"
+                onkeydown={(e) => {
+                  if (e.key === 'Enter') commitRename()
+                  if (e.key === 'Escape') renaming = null
+                }}
+                onblur={commitRename}
+              />
+            {:else}
+              <button type="button" class="saved-apply" onclick={() => applyFilter(f)}>
+                <span class="rail-label">⌁ {f.name}</span>
+                <span class="meta-faint saved-sub">{filterLabel(f)}</span>
+              </button>
+            {/if}
             <button
               type="button"
               class="saved-delete"
-              aria-label="Delete filter {f.name}"
-              onclick={() => deleteFilter(f.name)}
-            >✕</button>
+              aria-label="Filter options for {f.name}"
+              aria-haspopup="menu"
+              onclick={(e) => {
+                e.stopPropagation()
+                menuPos = { x: e.clientX, y: e.clientY }
+                menuFor = menuFor === f.name ? null : f.name
+              }}
+            >⋯</button>
           </div>
         {/each}
+        {#if menuFor}
+          <div
+            class="filter-menu"
+            role="menu"
+            style:left={`${menuPos.x}px`}
+            style:top={`${menuPos.y}px`}
+          >
+            <button type="button" role="menuitem" onclick={() => startRename(menuFor!)}>rename</button>
+            <button type="button" role="menuitem" onclick={() => deleteFilter(menuFor!)}>delete</button>
+          </div>
+        {/if}
       {/if}
 
       {#if filtersActive}
@@ -484,6 +564,30 @@
   }
   .saved-delete:hover {
     color: var(--color-state-blocked);
+  }
+  .filter-menu {
+    position: fixed;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    min-width: 96px;
+    padding: 4px;
+    border-radius: 8px;
+    border: 1px solid var(--color-line);
+    background: var(--color-surface-raised);
+    box-shadow: var(--shadow-pop, 0 8px 24px rgba(0, 0, 0, 0.12));
+  }
+  .filter-menu button {
+    text-align: left;
+    padding: 6px 10px;
+    font-size: 12.5px;
+    border-radius: 6px;
+    background: none;
+    color: var(--color-ink);
+    cursor: pointer;
+  }
+  .filter-menu button:hover {
+    background: var(--color-surface-sunken, rgba(0, 0, 0, 0.04));
   }
   .save-filter {
     display: flex;

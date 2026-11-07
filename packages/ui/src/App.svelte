@@ -12,6 +12,7 @@
   import IngestDialog from './views/IngestDialog.svelte'
   import Dialog from './components/Dialog.svelte'
   import LiveSync from './components/LiveSync.svelte'
+  import { sseConnected } from './lib/events'
 
   const queryClient = createQueryClient()
 
@@ -56,6 +57,9 @@
     </main>
     {#if url.dialog === 'ingest'}
       <IngestDialog open={true} {setUrl} />
+    {/if}
+    {#if !$sseConnected}
+      <div class="sse-chip" role="status" data-testid="sse-reconnecting">reconnecting…</div>
     {/if}
   </div>
 </QueryClientProvider>
@@ -107,5 +111,18 @@
   }
   .keymap-table td:last-child {
     color: var(--color-ink-soft);
+  }
+  .sse-chip {
+    position: fixed;
+    right: 14px;
+    bottom: 14px;
+    z-index: 70;
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--color-ink-soft);
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-line);
+    box-shadow: var(--shadow-pop, 0 4px 14px rgba(0, 0, 0, 0.1));
   }
 </style>

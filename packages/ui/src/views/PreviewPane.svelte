@@ -92,8 +92,12 @@
 
   type MetaSchema = typeof metaSchema
   let metaForm = $state<FormStore<MetaSchema> | null>(null)
+  // Recreate the form only when the selected link changes — an SSE-driven
+  // detail refetch must not wipe in-progress edits.
+  let metaFormLinkId: number | null = null
   $effect(() => {
-    if (!detail) return
+    if (!detail || id == null || id === metaFormLinkId) return
+    metaFormLinkId = id
     metaForm = createForm({
       schema: metaSchema,
       initialInput: {
