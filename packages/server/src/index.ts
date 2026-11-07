@@ -3,9 +3,22 @@
  * layer's use cases (@linkinbox/app): no business logic lives here. The REST
  * contract mirrors the UI's types and mock layer exactly
  * (packages/ui/src/lib/types.ts, packages/ui/src/mock).
+ *
+ * M3 additions:
+ *  - every route carries a `describeRoute` spec; `GET /openapi.json` serves
+ *    the generated OpenAPI 3.1 document (packages/client is generated from it).
+ *  - new endpoints: POST /api/run, GET /api/runs/:id,
+ *    POST /api/links/:id/reextract, PATCH /api/links/:id,
+ *    GET /api/links/:id/artifacts/:name, GET /api/events (SSE).
+ *  - bearer auth: loopback binds are open; any other bind requires
+ *    `Authorization: Bearer <token>` on /api/*, /mcp and /openapi.json.
+ *    The token comes from `[server] token_env` (see core/server-config).
+ *    /capture keeps its own token check; static ui assets stay open (they
+ *    carry no data).
  */
-import { Hono } from 'hono'
+import { Hono, type MiddlewareHandler } from 'hono'
 import { serve, type ServerType } from '@hono/node-server'
+import { describeRoute, openAPIRouteHandler } from 'hono-openapi'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -29,11 +42,14 @@ import {
   DEFAULT_TTL_CONFIG,
   parseRange,
   DEFAULT_CAPTURE_CONFIG,
+  DEFAULT_SERVER_CONFIG,
   captureToken,
   parseCapture,
+  serverToken,
   tokensEqual,
   LINK_STATES,
   type CaptureConfig,
+  type ServerConfig,
 } from '@linkinbox/core'
 import type {
   Store,
@@ -43,7 +59,33 @@ import type {
   LinkStateName,
   LinkProjection,
   LinkField,
+  LinkPatch,
 } from '@linkinbox/core'
+import { createEventsResponse } from './events.js'
+import {
+  CollectionsSummaryBody,
+  CollectionExportBody,
+  CollectionReadResponse,
+  errorResponses,
+  IngestInputBody,
+  IngestJobResponse,
+  IngestJobSummaryBody,
+  JsonObject,
+  LinkListResponse,
+  LinkPatchBody,
+  LinkResponse,
+  LinkRow,
+  MetricsResponse,
+  PipelineOverviewResponse,
+  ReextractBody,
+  ReextractResponse,
+  resolverOf,
+  RunJournalBody,
+  RunResultBody,
+  SweepApplyResponse,
+  SweepResponse,
+  TriageBody,
+} from './schemas.js'
 
 export const DEFAULT_PORT = 4173
 
@@ -62,8 +104,20 @@ export interface ServerOptions {
   hostname?: string
   /** Capture endpoint config. Default: token from LINKINBOX_CAPTURE_TOKEN. */
   capture?: CaptureConfig
-  /** Env the capture token is read from. Default process.env (tests inject). */
+  /**
+   * `[server]` config: names the env var holding the bearer token for
+   * non-loopback binds. Default LINKINBOX_SERVER_TOKEN.
+   */
+  server?: ServerConfig
+  /** Env the capture/server tokens are read from. Default process.env. */
   env?: NodeJS.ProcessEnv
+  /**
+   * MCP streamable-HTTP handler mounted at /mcp (fetch-shaped, e.g. from
+   * `createMcpHttpHandler` in @linkinbox/mcp). Absent = no /mcp route.
+   */
+  mcpFetch?: (request: Request) => Promise<Response>
+  /** SSE poll interval for /api/events. Default 500ms. */
+  eventsPollMs?: number
 }
 
 const STATUSES: readonly string[] = ['inbox', 'scheduled', 'archived', 'discarded']
@@ -101,6 +155,27 @@ function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+/** Loopback bind hostnames: no bearer token required on these. */
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', '::1', 'localhost'])
+
+const jsonContent = (schema: Parameters<typeof resolverOf>[0]) => ({
+  'application/json': { schema: resolverOf(schema) },
+})
+
+const okJson = (
+  description: string,
+  schema: Parameters<typeof resolverOf>[0],
+) => ({
+  200: { description, content: jsonContent(schema) },
+})
+
+const ID_PARAM = {
+  name: 'id',
+  in: 'path',
+  required: true,
+  schema: { type: 'integer' },
+} as const
+
 /**
  * The api routes. Split from static serving so tests can drive the contract
  * directly with app.request().
@@ -108,12 +183,40 @@ function errMsg(err: unknown): string {
 export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store'>> = {}): Hono {
   const ttl = opts.ttl ?? DEFAULT_TTL_CONFIG
   const capture = opts.capture ?? DEFAULT_CAPTURE_CONFIG
+  const serverCfg = opts.server ?? DEFAULT_SERVER_CONFIG
   const env = opts.env ?? process.env
   const ops =
     opts.ops ?? createLinkinboxOps({ ttl }, { store, env })
   const app = new Hono()
 
   app.onError((err, c) => c.json({ error: errMsg(err) }, 500))
+
+  // ---- auth ------------------------------------------------------------
+  //
+  // Loopback binds (127.0.0.1, ::1, localhost — the default) need no token.
+  // Any other bind requires `Authorization: Bearer <token>` on /api/*,
+  // /mcp and /openapi.json; the token comes from `[server] token_env` and
+  // is read per request. An unset token env on a non-loopback bind fails
+  // closed: every protected route answers 401. /capture has its own token
+  // check; static ui assets stay open (no data).
+  const bindHost = opts.hostname ?? '127.0.0.1'
+  const loopback = LOOPBACK_HOSTNAMES.has(bindHost)
+
+  const bearerAuth: MiddlewareHandler = async (c, next) => {
+    if (loopback) return next()
+    const expected = serverToken(serverCfg, env)
+    if (expected === null) return c.json({ error: 'unauthorized' }, 401)
+    const auth = c.req.header('authorization') ?? ''
+    const presented = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
+    if (presented === '' || !tokensEqual(presented, expected)) {
+      return c.json({ error: 'unauthorized' }, 401)
+    }
+    await next()
+  }
+  app.use('/api/*', bearerAuth)
+  app.use('/mcp', bearerAuth)
+  app.use('/mcp/*', bearerAuth)
+  app.use('/openapi.json', bearerAuth)
 
   // ---- capture endpoint ----------------------------------------------
   //
@@ -137,47 +240,68 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
     await next()
   })
 
-  app.post('/capture', async (c) => {
-    const token = captureToken(capture, env)
-    if (token === null) {
-      // Refuse to serve when the token is unset: the endpoint is disabled.
-      return c.json({ error: 'capture endpoint is disabled (token not configured)' }, 403)
-    }
-    const auth = c.req.header('authorization') ?? ''
-    const presented = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
-    if (presented === '' || !tokensEqual(presented, token)) {
-      return c.json({ error: 'unauthorized' }, 401)
-    }
-
-    const raw = await c.req.arrayBuffer()
-    if (raw.byteLength > capture.maxBodyBytes) {
-      return c.json({ error: `body too large (max ${capture.maxBodyBytes} bytes)` }, 413)
-    }
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(new TextDecoder().decode(raw))
-    } catch {
-      return c.json({ error: 'body must be valid JSON' }, 400)
-    }
-    let captureBody
-    try {
-      captureBody = parseCapture(parsed)
-    } catch (err) {
-      return c.json(
-        { error: errMsg(err), issues: (err as { issues?: string[] }).issues ?? [] },
-        400,
-      )
-    }
-    const result = await ops.captureIngest(captureBody)
-    return c.json(
-      {
-        id: result.link.id,
-        url: result.link.url,
-        outcome: result.outcome,
+  app.post(
+    '/capture',
+    describeRoute({
+      tags: ['capture'],
+      summary: 'Ingest one client capture (browser extension / script)',
+      description:
+        'Bearer-token authenticated capture endpoint. Only enabled when the ' +
+        'capture token env var is set; CORS is restricted to configured origins.',
+      responses: {
+        200: {
+          description: 'Capture ingested (duplicate url)',
+          content: jsonContent(LinkRow),
+        },
+        201: {
+          description: 'Capture ingested (new link)',
+          content: jsonContent(LinkRow),
+        },
+        ...errorResponses,
       },
-      result.outcome === 'created' ? 201 : 200,
-    )
-  })
+    }),
+    async (c) => {
+      const token = captureToken(capture, env)
+      if (token === null) {
+        // Refuse to serve when the token is unset: the endpoint is disabled.
+        return c.json({ error: 'capture endpoint is disabled (token not configured)' }, 403)
+      }
+      const auth = c.req.header('authorization') ?? ''
+      const presented = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
+      if (presented === '' || !tokensEqual(presented, token)) {
+        return c.json({ error: 'unauthorized' }, 401)
+      }
+
+      const raw = await c.req.arrayBuffer()
+      if (raw.byteLength > capture.maxBodyBytes) {
+        return c.json({ error: `body too large (max ${capture.maxBodyBytes} bytes)` }, 413)
+      }
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(new TextDecoder().decode(raw))
+      } catch {
+        return c.json({ error: 'body must be valid JSON' }, 400)
+      }
+      let captureBody
+      try {
+        captureBody = parseCapture(parsed)
+      } catch (err) {
+        return c.json(
+          { error: errMsg(err), issues: (err as { issues?: string[] }).issues ?? [] },
+          400,
+        )
+      }
+      const result = await ops.captureIngest(captureBody)
+      return c.json(
+        {
+          id: result.link.id,
+          url: result.link.url,
+          outcome: result.outcome,
+        },
+        result.outcome === 'created' ? 201 : 200,
+      )
+    },
+  )
 
   // ---- bulk ingest ------------------------------------------------------
   //
@@ -187,98 +311,152 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
   //   application/json     -> { kind: 'urls' | 'remote' | 'file' | 'text', ... }
   // The response is always the job summary — never the links.
 
-  app.post('/api/ingest', async (c) => {
-    const contentType = c.req.header('content-type') ?? ''
-    try {
-      if (contentType.includes('multipart/form-data')) {
-        const body = await c.req.parseBody()
-        const file = body['file']
-        if (!(file instanceof File)) {
-          return c.json({ error: 'multipart body must carry a "file" part' }, 400)
-        }
-        const dir = await mkdtemp(join(tmpdir(), 'linkinbox-ingest-'))
-        try {
-          const name = file.name === '' ? 'upload' : basename(file.name)
-          // A crafted multipart filename must never escape the temp dir.
-          const safe = name === '.' || name === '..' || name.includes('/') || name.includes('\\')
-            ? 'upload'
-            : name
-          const path = join(dir, safe)
-          await writeFile(path, Buffer.from(await file.arrayBuffer()))
-          const summary = await ops.ingest({ kind: 'file', path })
-          return c.json(summary, summary.status === 'busy' ? 409 : 200)
-        } finally {
-          await rm(dir, { recursive: true, force: true }).catch(() => {})
-        }
-      }
-      if (contentType.includes('text/plain')) {
-        const text = await c.req.text()
-        const summary = await ops.ingest({ kind: 'text', text })
-        return c.json(summary, summary.status === 'busy' ? 409 : 200)
-      }
-      const body = (await c.req.json().catch(() => null)) as
-        | { kind?: string; path?: string; text?: string; urls?: unknown; url?: string; note?: string; tags?: unknown }
-        | null
-      if (!body || typeof body.kind !== 'string') {
-        return c.json(
-          { error: 'json body must be { kind: "urls"|"remote"|"file"|"text", ... }' },
-          400,
-        )
-      }
-      switch (body.kind) {
-        case 'urls': {
-          if (!Array.isArray(body.urls) || !body.urls.every((u) => typeof u === 'string')) {
-            return c.json({ error: 'urls must be an array of strings' }, 400)
+  app.post(
+    '/api/ingest',
+    describeRoute({
+      tags: ['ingest'],
+      summary: 'Bulk-ingest links (multipart file, text/plain, or JSON kind)',
+      requestBody: {
+        required: false,
+        content: {
+          'application/json': { schema: resolverOf(IngestInputBody) },
+          'text/plain': { schema: { type: 'string' } },
+          'multipart/form-data': {
+            schema: {
+              type: 'object',
+              properties: { file: { type: 'string', format: 'binary' } },
+              required: ['file'],
+            },
+          },
+        },
+      },
+      responses: {
+        200: {
+          description: 'Job accepted (or already running — check status "busy")',
+          content: jsonContent(IngestJobSummaryBody),
+        },
+        409: {
+          description: 'Another ingest run holds the lock (status "busy")',
+          content: jsonContent(IngestJobSummaryBody),
+        },
+        ...errorResponses,
+      },
+    }),
+    async (c) => {
+      const contentType = c.req.header('content-type') ?? ''
+      try {
+        if (contentType.includes('multipart/form-data')) {
+          const body = await c.req.parseBody()
+          const file = body['file']
+          if (!(file instanceof File)) {
+            return c.json({ error: 'multipart body must carry a "file" part' }, 400)
           }
-          const summary = await ops.ingest({
-            kind: 'urls',
-            urls: body.urls,
-            ...(typeof body.note === 'string' ? { note: body.note } : {}),
-            ...(Array.isArray(body.tags) && body.tags.every((t) => typeof t === 'string')
-              ? { tags: body.tags as string[] }
-              : {}),
-          })
+          const dir = await mkdtemp(join(tmpdir(), 'linkinbox-ingest-'))
+          try {
+            const name = file.name === '' ? 'upload' : basename(file.name)
+            // A crafted multipart filename must never escape the temp dir.
+            const safe = name === '.' || name === '..' || name.includes('/') || name.includes('\\')
+              ? 'upload'
+              : name
+            const path = join(dir, safe)
+            await writeFile(path, Buffer.from(await file.arrayBuffer()))
+            const summary = await ops.ingest({ kind: 'file', path })
+            return c.json(summary, summary.status === 'busy' ? 409 : 200)
+          } finally {
+            await rm(dir, { recursive: true, force: true }).catch(() => {})
+          }
+        }
+        if (contentType.includes('text/plain')) {
+          const text = await c.req.text()
+          const summary = await ops.ingest({ kind: 'text', text })
           return c.json(summary, summary.status === 'busy' ? 409 : 200)
         }
-        case 'remote': {
-          if (typeof body.url !== 'string') return c.json({ error: 'url must be a string' }, 400)
-          const summary = await ops.ingest({ kind: 'remote', url: body.url })
-          return c.json(summary, summary.status === 'busy' ? 409 : 200)
+        const body = (await c.req.json().catch(() => null)) as
+          | { kind?: string; path?: string; text?: string; urls?: unknown; url?: string; note?: string; tags?: unknown }
+          | null
+        if (!body || typeof body.kind !== 'string') {
+          return c.json(
+            { error: 'json body must be { kind: "urls"|"remote"|"file"|"text", ... }' },
+            400,
+          )
         }
-        case 'file': {
-          if (typeof body.path !== 'string') return c.json({ error: 'path must be a string' }, 400)
-          const summary = await ops.ingest({ kind: 'file', path: body.path })
-          return c.json(summary, summary.status === 'busy' ? 409 : 200)
+        switch (body.kind) {
+          case 'urls': {
+            if (!Array.isArray(body.urls) || !body.urls.every((u) => typeof u === 'string')) {
+              return c.json({ error: 'urls must be an array of strings' }, 400)
+            }
+            const summary = await ops.ingest({
+              kind: 'urls',
+              urls: body.urls,
+              ...(typeof body.note === 'string' ? { note: body.note } : {}),
+              ...(Array.isArray(body.tags) && body.tags.every((t) => typeof t === 'string')
+                ? { tags: body.tags as string[] }
+                : {}),
+            })
+            return c.json(summary, summary.status === 'busy' ? 409 : 200)
+          }
+          case 'remote': {
+            if (typeof body.url !== 'string') return c.json({ error: 'url must be a string' }, 400)
+            const summary = await ops.ingest({ kind: 'remote', url: body.url })
+            return c.json(summary, summary.status === 'busy' ? 409 : 200)
+          }
+          case 'file': {
+            if (typeof body.path !== 'string') return c.json({ error: 'path must be a string' }, 400)
+            const summary = await ops.ingest({ kind: 'file', path: body.path })
+            return c.json(summary, summary.status === 'busy' ? 409 : 200)
+          }
+          case 'text': {
+            if (typeof body.text !== 'string') return c.json({ error: 'text must be a string' }, 400)
+            const summary = await ops.ingest({ kind: 'text', text: body.text })
+            return c.json(summary, summary.status === 'busy' ? 409 : 200)
+          }
+          default:
+            return c.json({ error: `unknown ingest kind "${body.kind}"` }, 400)
         }
-        case 'text': {
-          if (typeof body.text !== 'string') return c.json({ error: 'text must be a string' }, 400)
-          const summary = await ops.ingest({ kind: 'text', text: body.text })
-          return c.json(summary, summary.status === 'busy' ? 409 : 200)
+      } catch (err) {
+        const message = errMsg(err)
+        // Input problems (missing file, bad url, too many urls, fetch failure)
+        // are client errors, not server faults.
+        if (
+          message.includes('at most') ||
+          message.includes('could not fetch') ||
+          message.includes('fetch of') ||
+          message.includes('exceeds')
+        ) {
+          return c.json({ error: message }, 400)
         }
-        default:
-          return c.json({ error: `unknown ingest kind "${body.kind}"` }, 400)
+        throw err
       }
-    } catch (err) {
-      const message = errMsg(err)
-      // Input problems (missing file, bad url, too many urls, fetch failure)
-      // are client errors, not server faults.
-      if (
-        message.includes('at most') ||
-        message.includes('could not fetch') ||
-        message.includes('fetch of') ||
-        message.includes('exceeds')
-      ) {
-        return c.json({ error: message }, 400)
-      }
-      throw err
-    }
-  })
+    },
+  )
 
-  app.get('/api/ingest/:jobId', async (c) => {
-    const job = await ops.ingestStatus(c.req.param('jobId'))
-    if (!job) return c.json({ error: 'not found' }, 404)
-    return c.json({ job })
-  })
+  app.get(
+    '/api/ingest/:jobId',
+    describeRoute({
+      tags: ['ingest'],
+      summary: 'Progress of one ingest job',
+      parameters: [
+        {
+          name: 'jobId',
+          in: 'path',
+          required: true,
+          schema: { type: 'string' },
+        },
+      ],
+      responses: {
+        200: {
+          description: 'Job status',
+          content: jsonContent(IngestJobResponse),
+        },
+        ...errorResponses,
+      },
+    }),
+    async (c) => {
+      const job = await ops.ingestStatus(c.req.param('jobId'))
+      if (!job) return c.json({ error: 'not found' }, 404)
+      return c.json({ job })
+    },
+  )
 
   // ---- collections -------------------------------------------------------
   //
@@ -286,238 +464,654 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
   // a fields projection and tsv/jsonl streaming, plus file exports. The
   // `since` parameter is the link_events cursor returned by earlier reads.
 
-  app.get('/api/collections/summary', async (c) => {
-    return c.json(await ops.collectionsSummary())
-  })
+  app.get(
+    '/api/collections/summary',
+    describeRoute({
+      tags: ['collections'],
+      summary: 'Counts per pipeline collection plus needs_login per host',
+      responses: okJson('Collection summary', CollectionsSummaryBody),
+    }),
+    async (c) => {
+      return c.json(await ops.collectionsSummary())
+    },
+  )
 
-  app.get('/api/collections/:name', async (c) => {
-    const name = c.req.param('name')
-    if (!isCollectionName(name)) {
-      return c.json({ error: `unknown collection "${name}"; expected one of: ${COLLECTION_NAMES.join(', ')}` }, 400)
-    }
-    const q = c.req.query()
-    const rawSince = q['since'] ?? q['cursor']
-    const since = rawSince !== undefined ? Number(rawSince) : undefined
-    if (since !== undefined && (!Number.isInteger(since) || since < 0)) {
-      return c.json({ error: 'since/cursor must be a non-negative integer cursor' }, 400)
-    }
-    const format = q['format'] ?? 'json'
-    const fields =
-      q['fields'] !== undefined && q['fields'] !== ''
-        ? q['fields'].split(',').map((f) => f.trim()).filter(Boolean)
-        : undefined
-    const limit = q['limit'] !== undefined ? Number(q['limit']) : undefined
-    const offset = q['offset'] !== undefined ? Number(q['offset']) : undefined
+  app.get(
+    '/api/collections/:name',
+    describeRoute({
+      tags: ['collections'],
+      summary:
+        'Read one collection: json (default), tsv, or streaming jsonl/md. ' +
+        '`since`/`cursor` resume a delta; the cursor comes back in the body ' +
+        'or the x-linkinbox-cursor header.',
+      parameters: [
+        {
+          name: 'name',
+          in: 'path',
+          required: true,
+          schema: { type: 'string', enum: [...COLLECTION_NAMES] },
+        },
+        { name: 'since', in: 'query', required: false, schema: { type: 'integer' } },
+        { name: 'cursor', in: 'query', required: false, schema: { type: 'integer' } },
+        {
+          name: 'format',
+          in: 'query',
+          required: false,
+          schema: { type: 'string', enum: ['json', 'tsv', 'jsonl', 'md'] },
+        },
+        { name: 'fields', in: 'query', required: false, schema: { type: 'string' } },
+        { name: 'limit', in: 'query', required: false, schema: { type: 'integer' } },
+        { name: 'offset', in: 'query', required: false, schema: { type: 'integer' } },
+      ],
+      responses: {
+        200: {
+          description: 'Collection rows (json) or a serialized stream (tsv/jsonl/md)',
+          content: {
+            'application/json': { schema: resolverOf(CollectionReadResponse) },
+            'text/tab-separated-values': { schema: { type: 'string' } },
+            'application/x-ndjson': { schema: { type: 'string' } },
+            'text/markdown': { schema: { type: 'string' } },
+          },
+        },
+        ...errorResponses,
+      },
+    }),
+    async (c) => {
+      const name = c.req.param('name')
+      if (!isCollectionName(name)) {
+        return c.json({ error: `unknown collection "${name}"; expected one of: ${COLLECTION_NAMES.join(', ')}` }, 400)
+      }
+      const q = c.req.query()
+      const rawSince = q['since'] ?? q['cursor']
+      const since = rawSince !== undefined ? Number(rawSince) : undefined
+      if (since !== undefined && (!Number.isInteger(since) || since < 0)) {
+        return c.json({ error: 'since/cursor must be a non-negative integer cursor' }, 400)
+      }
+      const format = q['format'] ?? 'json'
+      const fields =
+        q['fields'] !== undefined && q['fields'] !== ''
+          ? q['fields'].split(',').map((f) => f.trim()).filter(Boolean)
+          : undefined
+      const limit = q['limit'] !== undefined ? Number(q['limit']) : undefined
+      const offset = q['offset'] !== undefined ? Number(q['offset']) : undefined
 
-    // Export-style formats stream EVERY matching row (no inline cap) — the
-    // same data collection_export writes to a file.
-    if (format === 'jsonl' || format === 'md') {
-      const scan = await ops.collectionScan(name as CollectionName, {
+      // Export-style formats stream EVERY matching row (no inline cap) — the
+      // same data collection_export writes to a file.
+      if (format === 'jsonl' || format === 'md') {
+        const scan = await ops.collectionScan(name as CollectionName, {
+          ...(since !== undefined ? { since } : {}),
+          ...(fields !== undefined ? { fields } : {}),
+        })
+        const body = serializeCollection(scan.rows, fields ?? DEFAULT_COLLECTION_FIELDS, format)
+        return new Response(body, {
+          headers: {
+            'content-type': format === 'jsonl' ? 'application/x-ndjson; charset=utf-8' : 'text/markdown; charset=utf-8',
+            'x-linkinbox-cursor': String(scan.cursor),
+          },
+        })
+      }
+      if (format !== 'json' && format !== 'tsv') {
+        return c.json({ error: `unknown format "${format}"; expected json, tsv, jsonl or md` }, 400)
+      }
+      const result = await ops.collectionRead(name as CollectionName, {
         ...(since !== undefined ? { since } : {}),
         ...(fields !== undefined ? { fields } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+        ...(offset !== undefined ? { offset } : {}),
       })
-      const body = serializeCollection(scan.rows, fields ?? DEFAULT_COLLECTION_FIELDS, format)
-      return new Response(body, {
-        headers: {
-          'content-type': format === 'jsonl' ? 'application/x-ndjson; charset=utf-8' : 'text/markdown; charset=utf-8',
-          'x-linkinbox-cursor': String(scan.cursor),
-        },
-      })
-    }
-    if (format !== 'json' && format !== 'tsv') {
-      return c.json({ error: `unknown format "${format}"; expected json, tsv, jsonl or md` }, 400)
-    }
-    const result = await ops.collectionRead(name as CollectionName, {
-      ...(since !== undefined ? { since } : {}),
-      ...(fields !== undefined ? { fields } : {}),
-      ...(limit !== undefined ? { limit } : {}),
-      ...(offset !== undefined ? { offset } : {}),
-    })
-    if (format === 'tsv') {
-      // TSV carries its cursor as a trailing `# cursor:` line — the same
-      // convention the CLI and MCP surfaces use.
-      const body = tsvWithCursor(
-        result.rows,
-        fields ?? DEFAULT_COLLECTION_FIELDS,
-        result.cursor,
-      )
-      return new Response(body, {
-        headers: {
-          'content-type': 'text/tab-separated-values; charset=utf-8',
-          'x-linkinbox-cursor': String(result.cursor),
-        },
-      })
-    }
-    return c.json(result)
-  })
-
-  app.post('/api/collections/export', async (c) => {
-    const body = (await c.req.json().catch(() => null)) as
-      | { name?: unknown; since?: unknown; fields?: unknown; format?: unknown }
-      | null
-    if (!body || typeof body.name !== 'string' || !isCollectionName(body.name)) {
-      return c.json({ error: `name must be one of: ${COLLECTION_NAMES.join(', ')}` }, 400)
-    }
-    const format = body.format ?? 'jsonl'
-    if (format !== 'jsonl' && format !== 'md' && format !== 'tsv') {
-      return c.json({ error: 'format must be jsonl, md or tsv' }, 400)
-    }
-    const fields =
-      Array.isArray(body.fields) && body.fields.every((f) => typeof f === 'string')
-        ? (body.fields as string[])
-        : undefined
-    const result = await ops.collectionExport(body.name as CollectionName, {
-      ...(typeof body.since === 'number' ? { since: body.since } : {}),
-      ...(fields !== undefined ? { fields } : {}),
-      format: format as CollectionExportFormat,
-    })
-    return c.json(result)
-  })
-
-  app.get('/api/links', async (c) => {
-    const q = c.req.query()
-    const status = q['status'] || undefined
-    if (status && !STATUSES.includes(status)) {
-      return c.json({ error: `invalid status "${status}"` }, 400)
-    }
-    const stale = q['stale'] === '1' || q['stale'] === 'true'
-    const limit = q['limit'] !== undefined ? Number(q['limit']) : 50
-    const offset = q['offset'] !== undefined ? Number(q['offset']) : 0
-    // The pipeline filters (additive): `state` filters on the FSM
-    // discriminant, `host` on the host of the url.
-    let state: LinkStateName | undefined
-    if (q['state'] !== undefined && q['state'] !== '') {
-      if (!LINK_STATES.includes(q['state'] as LinkStateName)) {
-        return c.json({ error: `invalid state "${q['state']}"` }, 400)
+      if (format === 'tsv') {
+        // TSV carries its cursor as a trailing `# cursor:` line — the same
+        // convention the CLI and MCP surfaces use.
+        const body = tsvWithCursor(
+          result.rows,
+          fields ?? DEFAULT_COLLECTION_FIELDS,
+          result.cursor,
+        )
+        return new Response(body, {
+          headers: {
+            'content-type': 'text/tab-separated-values; charset=utf-8',
+            'x-linkinbox-cursor': String(result.cursor),
+          },
+        })
       }
-      state = q['state'] as LinkStateName
-    }
-    const filter = {
-      status: status as Status | undefined,
-      state,
-      category: q['category'] || undefined,
-      host: q['host'] || undefined,
-      staleAsOf: stale ? new Date() : undefined,
-    }
-    const items = await ops.list({
-      ...filter,
-      q: q['q'] || undefined,
-      limit,
-      offset,
-      fields: PIPELINE_SUMMARY_FIELDS,
-    })
-    // The free-text match (and the host filter) live in ops (over url/title),
-    // so for those the total is the filtered length, not the raw store count.
-    // The store count handles the state filter on the FSM discriminant.
-    const storeFilter = {
-      status: (state ?? status) as Status | undefined,
-      byState: state !== undefined,
-      category: filter.category,
-      staleAsOf: filter.staleAsOf,
-    }
-    const total = q['q'] || filter.host
-      ? (await ops.list({ ...filter, q: q['q'] || undefined })).length
-      : await store.countLinks(storeFilter)
-    return c.json({ items: items.map(shapePipelineRow), total })
-  })
+      return c.json(result)
+    },
+  )
+
+  app.post(
+    '/api/collections/export',
+    describeRoute({
+      tags: ['collections'],
+      summary: 'Export one collection (or its delta) to a file',
+      requestBody: {
+        required: true,
+        content: { 'application/json': { schema: resolverOf(CollectionExportBody) } },
+      },
+      responses: {
+        200: {
+          description: 'Export handle { path, uri, count, bytes }',
+          content: jsonContent(JsonObject),
+        },
+        ...errorResponses,
+      },
+    }),
+    async (c) => {
+      const body = (await c.req.json().catch(() => null)) as
+        | { name?: unknown; since?: unknown; fields?: unknown; format?: unknown }
+        | null
+      if (!body || typeof body.name !== 'string' || !isCollectionName(body.name)) {
+        return c.json({ error: `name must be one of: ${COLLECTION_NAMES.join(', ')}` }, 400)
+      }
+      const format = body.format ?? 'jsonl'
+      if (format !== 'jsonl' && format !== 'md' && format !== 'tsv') {
+        return c.json({ error: 'format must be jsonl, md or tsv' }, 400)
+      }
+      const fields =
+        Array.isArray(body.fields) && body.fields.every((f) => typeof f === 'string')
+          ? (body.fields as string[])
+          : undefined
+      const result = await ops.collectionExport(body.name as CollectionName, {
+        ...(typeof body.since === 'number' ? { since: body.since } : {}),
+        ...(fields !== undefined ? { fields } : {}),
+        format: format as CollectionExportFormat,
+      })
+      return c.json(result)
+    },
+  )
+
+  // ---- links -------------------------------------------------------------
+
+  app.get(
+    '/api/links',
+    describeRoute({
+      tags: ['links'],
+      summary: 'List links (UI projection plus pipeline state fields)',
+      parameters: [
+        { name: 'q', in: 'query', required: false, schema: { type: 'string' } },
+        {
+          name: 'status',
+          in: 'query',
+          required: false,
+          schema: { type: 'string', enum: [...STATUSES] },
+        },
+        { name: 'state', in: 'query', required: false, schema: { type: 'string' } },
+        { name: 'category', in: 'query', required: false, schema: { type: 'string' } },
+        { name: 'host', in: 'query', required: false, schema: { type: 'string' } },
+        { name: 'stale', in: 'query', required: false, schema: { type: 'string' } },
+        { name: 'limit', in: 'query', required: false, schema: { type: 'integer' } },
+        { name: 'offset', in: 'query', required: false, schema: { type: 'integer' } },
+      ],
+      responses: okJson('Links page', LinkListResponse),
+    }),
+    async (c) => {
+      const q = c.req.query()
+      const status = q['status'] || undefined
+      if (status && !STATUSES.includes(status)) {
+        return c.json({ error: `invalid status "${status}"` }, 400)
+      }
+      const stale = q['stale'] === '1' || q['stale'] === 'true'
+      const limit = q['limit'] !== undefined ? Number(q['limit']) : 50
+      const offset = q['offset'] !== undefined ? Number(q['offset']) : 0
+      // The pipeline filters (additive): `state` filters on the FSM
+      // discriminant, `host` on the host of the url.
+      let state: LinkStateName | undefined
+      if (q['state'] !== undefined && q['state'] !== '') {
+        if (!LINK_STATES.includes(q['state'] as LinkStateName)) {
+          return c.json({ error: `invalid state "${q['state']}"` }, 400)
+        }
+        state = q['state'] as LinkStateName
+      }
+      const filter = {
+        status: status as Status | undefined,
+        state,
+        category: q['category'] || undefined,
+        host: q['host'] || undefined,
+        staleAsOf: stale ? new Date() : undefined,
+      }
+      const items = await ops.list({
+        ...filter,
+        q: q['q'] || undefined,
+        limit,
+        offset,
+        fields: PIPELINE_SUMMARY_FIELDS,
+      })
+      // The free-text match (and the host filter) live in ops (over url/title),
+      // so for those the total is the filtered length, not the raw store count.
+      // The store count handles the state filter on the FSM discriminant.
+      const storeFilter = {
+        status: (state ?? status) as Status | undefined,
+        byState: state !== undefined,
+        category: filter.category,
+        staleAsOf: filter.staleAsOf,
+      }
+      const total = q['q'] || filter.host
+        ? (await ops.list({ ...filter, q: q['q'] || undefined })).length
+        : await store.countLinks(storeFilter)
+      return c.json({ items: items.map(shapePipelineRow), total })
+    },
+  )
 
   // The pipeline overview: every state with its count, every park reason
   // with its parked-link count, plus the busiest hosts. Read-only: it reads
   // the link rows once.
-  app.get('/api/pipeline', async (c) => {
-    const overview = await ops.overview()
-    return c.json({
-      byState: overview.byState,
-      byParkReason: overview.byParkReason,
-      byHost: overview.byHost.map((h) => ({
-        host: h.host,
-        total: h.total,
-        byState: h.byState,
-        byParkReason: h.byParkReason,
-      })),
-    })
-  })
+  app.get(
+    '/api/pipeline',
+    describeRoute({
+      tags: ['pipeline'],
+      summary: 'Pipeline overview: state counts, park reasons, busiest hosts',
+      responses: okJson('Pipeline overview', PipelineOverviewResponse),
+    }),
+    async (c) => {
+      const overview = await ops.overview()
+      return c.json({
+        byState: overview.byState,
+        byParkReason: overview.byParkReason,
+        byHost: overview.byHost.map((h) => ({
+          host: h.host,
+          total: h.total,
+          byState: h.byState,
+          byParkReason: h.byParkReason,
+        })),
+      })
+    },
+  )
 
-  app.post('/api/links/triage', async (c) => {
-    const body = (await c.req.json().catch(() => null)) as
-      | { ids?: unknown; action?: unknown }
-      | null
-    if (!body || !Array.isArray(body.ids) || !body.ids.every((n) => typeof n === 'number')) {
-      return c.json({ error: 'ids must be an array of numbers' }, 400)
-    }
-    if (typeof body.action !== 'string' || !ACTIONS.includes(body.action)) {
-      return c.json({ error: `action must be one of: ${ACTIONS.join(', ')}` }, 400)
-    }
-    const result = await ops.triage(body.ids, body.action as TriageAction)
-    return c.json({ updated: result.updated })
-  })
-
-  app.get('/api/links/:id{[0-9]+}', async (c) => {
-    const link = await ops.get(Number(c.req.param('id')), UI_DETAIL_FIELDS)
-    if (!link) return c.json({ error: 'not found' }, 404)
-    // The detail type keeps the raw enrichment blob alongside the flattened
-    // summary fields.
-    return c.json(shapeForUi(link, { keepEnrichment: true }))
-  })
-
-  app.get('/api/sweep', async (c) => {
-    const plan = await ops.sweepPlan(ttl)
-    const groups: { category: string; links: Record<string, unknown>[] }[] = []
-    for (const g of plan.groups) {
-      const links: Record<string, unknown>[] = []
-      for (const item of g.items) {
-        const link = await ops.get(item.linkId, UI_SUMMARY_FIELDS)
-        if (link) links.push(shapeForUi(link))
+  app.post(
+    '/api/links/triage',
+    describeRoute({
+      tags: ['links'],
+      summary: 'Apply one triage action to many link ids',
+      requestBody: {
+        required: true,
+        content: { 'application/json': { schema: resolverOf(TriageBody) } },
+      },
+      responses: {
+        200: {
+          description: 'Triage result',
+          content: jsonContent(JsonObject),
+        },
+        ...errorResponses,
+      },
+    }),
+    async (c) => {
+      const body = (await c.req.json().catch(() => null)) as
+        | { ids?: unknown; action?: unknown }
+        | null
+      if (!body || !Array.isArray(body.ids) || !body.ids.every((n) => typeof n === 'number')) {
+        return c.json({ error: 'ids must be an array of numbers' }, 400)
       }
-      groups.push({ category: g.category, links })
-    }
-    return c.json({ groups })
-  })
+      if (typeof body.action !== 'string' || !ACTIONS.includes(body.action)) {
+        return c.json({ error: `action must be one of: ${ACTIONS.join(', ')}` }, 400)
+      }
+      const result = await ops.triage(body.ids, body.action as TriageAction)
+      return c.json({ updated: result.updated })
+    },
+  )
+
+  app.get(
+    '/api/links/:id{[0-9]+}',
+    describeRoute({
+      tags: ['links'],
+      summary: 'Get one link (detail projection)',
+      parameters: [ID_PARAM],
+      responses: {
+        200: { description: 'Link detail', content: jsonContent(LinkResponse) },
+        ...errorResponses,
+      },
+    }),
+    async (c) => {
+      const link = await ops.get(Number(c.req.param('id')), UI_DETAIL_FIELDS)
+      if (!link) return c.json({ error: 'not found' }, 404)
+      // The detail type keeps the raw enrichment blob alongside the flattened
+      // summary fields.
+      return c.json(shapeForUi(link, { keepEnrichment: true }))
+    },
+  )
+
+  // Patch user-editable fields only (title, note, tags); FSM state changes
+  // never go through this route.
+  app.patch(
+    '/api/links/:id{[0-9]+}',
+    describeRoute({
+      tags: ['links'],
+      summary: 'Patch user-editable link fields (title, note, tags)',
+      parameters: [ID_PARAM],
+      requestBody: {
+        required: true,
+        content: { 'application/json': { schema: resolverOf(LinkPatchBody) } },
+      },
+      responses: {
+        200: { description: 'Updated link', content: jsonContent(LinkRow) },
+        ...errorResponses,
+      },
+    }),
+    async (c) => {
+      const body = (await c.req.json().catch(() => null)) as
+        | { title?: unknown; note?: unknown; tags?: unknown }
+        | null
+      if (body === null) return c.json({ error: 'body must be a JSON object' }, 400)
+      const patch: LinkPatch = {}
+      if (body.title !== undefined) {
+        if (body.title !== null && typeof body.title !== 'string') {
+          return c.json({ error: 'title must be a string or null' }, 400)
+        }
+        patch.title = body.title as string | null
+      }
+      if (body.note !== undefined) {
+        if (body.note !== null && typeof body.note !== 'string') {
+          return c.json({ error: 'note must be a string or null' }, 400)
+        }
+        patch.note = body.note as string | null
+      }
+      if (body.tags !== undefined) {
+        if (body.tags !== null && (!Array.isArray(body.tags) || !body.tags.every((t) => typeof t === 'string'))) {
+          return c.json({ error: 'tags must be an array of strings or null' }, 400)
+        }
+        patch.tags = body.tags as string[] | null
+      }
+      const link = await ops.patchLink(Number(c.req.param('id')), patch)
+      if (!link) return c.json({ error: 'not found' }, 404)
+      return c.json(link)
+    },
+  )
+
+  // Re-extract one link through the FSM RETRY path; `adapter` forces one
+  // browser adapter through the wired extract fn.
+  app.post(
+    '/api/links/:id{[0-9]+}/reextract',
+    describeRoute({
+      tags: ['links'],
+      summary: 'Re-extract one link (FSM RETRY + scoped extract run)',
+      parameters: [ID_PARAM],
+      requestBody: {
+        required: false,
+        content: { 'application/json': { schema: resolverOf(ReextractBody) } },
+      },
+      responses: {
+        200: {
+          description: 'Re-extract outcome',
+          content: jsonContent(ReextractResponse),
+        },
+        409: {
+          description: 'Illegal state or another extract run is busy',
+          content: jsonContent(ReextractResponse),
+        },
+        ...errorResponses,
+      },
+    }),
+    async (c) => {
+      const body = (await c.req.json().catch(() => null)) as
+        | { adapter?: unknown; limit?: unknown }
+        | null
+      if (body !== null) {
+        if (body.adapter !== undefined && typeof body.adapter !== 'string') {
+          return c.json({ error: 'adapter must be a string' }, 400)
+        }
+        if (body.limit !== undefined && (typeof body.limit !== 'number' || !Number.isInteger(body.limit) || body.limit <= 0)) {
+          return c.json({ error: 'limit must be a positive integer' }, 400)
+        }
+      }
+      const result = await ops.reextractLink(Number(c.req.param('id')), {
+        ...(body?.adapter !== undefined ? { adapter: body.adapter as string } : {}),
+        ...(body?.limit !== undefined ? { limit: body.limit as number } : {}),
+      })
+      if (!result.ok) {
+        const status = result.reason === 'not_found' || result.reason === 'deleted' ? 404 : 409
+        return c.json(result, status as 404 | 409)
+      }
+      return c.json(result)
+    },
+  )
+
+  // One stored artifact for a link (screenshot, snapshot, ...). Names are
+  // single file names — traversal is rejected by the app layer.
+  app.get(
+    '/api/links/:id{[0-9]+}/artifacts/:name',
+    describeRoute({
+      tags: ['links'],
+      summary: 'Read one stored artifact for a link',
+      parameters: [
+        ID_PARAM,
+        { name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+      ],
+      responses: {
+        200: {
+          description: 'Artifact bytes',
+          content: { '*/*': { schema: { type: 'string', format: 'binary' } } },
+        },
+        ...errorResponses,
+      },
+    }),
+    async (c) => {
+      const artifact = await ops.readArtifact(
+        Number(c.req.param('id')),
+        c.req.param('name'),
+      )
+      if (!artifact) return c.json({ error: 'not found' }, 404)
+      return new Response(artifact.body as unknown as BodyInit, {
+        headers: {
+          'content-type': artifact.contentType,
+          'content-length': String(artifact.body.byteLength),
+          'content-disposition': `inline; filename="${artifact.name}"`,
+        },
+      })
+    },
+  )
+
+  // ---- run journal ---------------------------------------------------------
+
+  app.post(
+    '/api/run',
+    describeRoute({
+      tags: ['run'],
+      summary:
+        'Run one full pipeline pass: ingest configured sources, extract ' +
+        'until empty, enrich until empty, sweep. Returns cursors bracketing ' +
+        'the pass and a per-stage summary.',
+      responses: {
+        200: {
+          description: 'Run result',
+          content: jsonContent(RunResultBody),
+        },
+        ...errorResponses,
+      },
+    }),
+    async (c) => {
+      return c.json(await ops.run())
+    },
+  )
+
+  app.get(
+    '/api/runs/:id{[0-9]+}',
+    describeRoute({
+      tags: ['run'],
+      summary: 'One run-journal row by id (stage, status, counters, tokens)',
+      parameters: [ID_PARAM],
+      responses: {
+        200: { description: 'Run journal row', content: jsonContent(RunJournalBody) },
+        ...errorResponses,
+      },
+    }),
+    async (c) => {
+      const run = await ops.getRun(Number(c.req.param('id')))
+      if (!run) return c.json({ error: 'not found' }, 404)
+      return c.json({
+        id: run.id,
+        stage: run.stage,
+        status: run.status ?? null,
+        pid: run.pid ?? null,
+        startedAt: run.startedAt.toISOString(),
+        heartbeatAt: run.heartbeatAt?.toISOString() ?? null,
+        finishedAt: run.finishedAt?.toISOString() ?? null,
+        inputCount: run.inputCount,
+        okCount: run.okCount,
+        errorCount: run.errorCount,
+        durationMs: run.durationMs,
+        tokensIn: run.tokensIn,
+        tokensOut: run.tokensOut,
+        costUsd: run.costUsd,
+      })
+    },
+  )
+
+  // ---- events (SSE) ---------------------------------------------------------
+
+  app.get(
+    '/api/events',
+    describeRoute({
+      tags: ['events'],
+      summary:
+        'Server-sent events: link state transitions (id = link_events.id), ' +
+        'run start/finish (id = run:<runs.id>) and ingest job progress ' +
+        '(id = ingest:<jobId>). Resume with Last-Event-ID or ?since=.',
+      parameters: [
+        {
+          name: 'since',
+          in: 'query',
+          required: false,
+          schema: { type: 'string' },
+        },
+      ],
+      responses: {
+        200: {
+          description: 'SSE stream (text/event-stream)',
+          content: { 'text/event-stream': { schema: { type: 'string' } } },
+        },
+        ...errorResponses,
+      },
+    }),
+    (c) => {
+      const resume =
+        c.req.header('last-event-id') ?? c.req.query('since') ?? undefined
+      return createEventsResponse(
+        { store, ...(opts.eventsPollMs !== undefined ? { pollMs: opts.eventsPollMs } : {}) },
+        resume,
+      )
+    },
+  )
+
+  // ---- sweep / metrics ------------------------------------------------------
+
+  app.get(
+    '/api/sweep',
+    describeRoute({
+      tags: ['sweep'],
+      summary: 'Dry-run sweep plan grouped by category',
+      responses: okJson('Sweep plan', SweepResponse),
+    }),
+    async (c) => {
+      const plan = await ops.sweepPlan(ttl)
+      const groups: { category: string; links: Record<string, unknown>[] }[] = []
+      for (const g of plan.groups) {
+        const links: Record<string, unknown>[] = []
+        for (const item of g.items) {
+          const link = await ops.get(item.linkId, UI_SUMMARY_FIELDS)
+          if (link) links.push(shapeForUi(link))
+        }
+        groups.push({ category: g.category, links })
+      }
+      return c.json({ groups })
+    },
+  )
 
   // Sweep applies the plan: archive only, never delete.
-  app.post('/api/sweep/apply', async (c) => {
-    const plan = await ops.sweepPlan(ttl)
-    const archived = await ops.applySweepPlan(plan)
-    return c.json({ archived })
-  })
+  app.post(
+    '/api/sweep/apply',
+    describeRoute({
+      tags: ['sweep'],
+      summary: 'Apply the sweep plan (archive only, never delete)',
+      responses: okJson('Apply result', SweepApplyResponse),
+    }),
+    async (c) => {
+      const plan = await ops.sweepPlan(ttl)
+      const archived = await ops.applySweepPlan(plan)
+      return c.json({ archived })
+    },
+  )
 
-  app.get('/api/metrics', async (c) => {
-    const last = c.req.query('last') ?? '7d'
-    try {
-      parseRange(last)
-    } catch (err) {
-      return c.json({ error: errMsg(err) }, 400)
-    }
-    const summary = await ops.metrics(last)
-    const stages = summary.stages.map((s) => ({
-      stage: s.stage,
-      runs: s.runs,
-      ok: s.ok,
-      errors: s.errors,
-      p50_ms: Math.round(s.avgDurationMs),
-      p95_ms: Math.round(s.avgDurationMs * 2),
-      tokens_in: s.tokensIn,
-      tokens_out: s.tokensOut,
-      cost_usd: s.costUsd,
-    }))
-    // Daily buckets come from the same metric rows the summary aggregates.
-    const rows = await store.listMetrics({ since: new Date(summary.since) })
-    const dailyMap = new Map<string, { tokens: number; cost_usd: number }>()
-    for (const row of rows) {
-      const date = row.timestamp.toISOString().slice(0, 10)
-      let entry = dailyMap.get(date)
-      if (!entry) {
-        entry = { tokens: 0, cost_usd: 0 }
-        dailyMap.set(date, entry)
+  app.get(
+    '/api/metrics',
+    describeRoute({
+      tags: ['metrics'],
+      summary: 'Per-stage metrics summary plus daily token/cost buckets',
+      parameters: [
+        {
+          name: 'last',
+          in: 'query',
+          required: false,
+          schema: { type: 'string', enum: ['24h', '7d', '2w', '30d'] },
+        },
+      ],
+      responses: okJson('Metrics', MetricsResponse),
+    }),
+    async (c) => {
+      const last = c.req.query('last') ?? '7d'
+      try {
+        parseRange(last)
+      } catch (err) {
+        return c.json({ error: errMsg(err) }, 400)
       }
-      if (row.key === 'tokens_in' || row.key === 'tokens_out') entry.tokens += row.value
-      if (row.key === 'cost_usd') entry.cost_usd += row.value
-    }
-    const daily = [...dailyMap.entries()]
-      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
-      .map(([date, v]) => ({ date, tokens: v.tokens, cost_usd: v.cost_usd }))
-    return c.json({ stages, daily })
-  })
+      const summary = await ops.metrics(last)
+      const stages = summary.stages.map((s) => ({
+        stage: s.stage,
+        runs: s.runs,
+        ok: s.ok,
+        errors: s.errors,
+        p50_ms: Math.round(s.avgDurationMs),
+        p95_ms: Math.round(s.avgDurationMs * 2),
+        tokens_in: s.tokensIn,
+        tokens_out: s.tokensOut,
+        cost_usd: s.costUsd,
+      }))
+      // Daily buckets come from the same metric rows the summary aggregates.
+      const rows = await store.listMetrics({ since: new Date(summary.since) })
+      const dailyMap = new Map<string, { tokens: number; cost_usd: number }>()
+      for (const row of rows) {
+        const date = row.timestamp.toISOString().slice(0, 10)
+        let entry = dailyMap.get(date)
+        if (!entry) {
+          entry = { tokens: 0, cost_usd: 0 }
+          dailyMap.set(date, entry)
+        }
+        if (row.key === 'tokens_in' || row.key === 'tokens_out') entry.tokens += row.value
+        if (row.key === 'cost_usd') entry.cost_usd += row.value
+      }
+      const daily = [...dailyMap.entries()]
+        .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+        .map(([date, v]) => ({ date, tokens: v.tokens, cost_usd: v.cost_usd }))
+      return c.json({ stages, daily })
+    },
+  )
+
+  // ---- MCP (streamable HTTP) -------------------------------------------------
+  //
+  // Mounted only when the caller supplies the fetch-shaped handler (the
+  // composition root builds it from @linkinbox/mcp's createMcpHttpHandler).
+  // Auth above already covers /mcp on non-loopback binds.
+
+  if (opts.mcpFetch) {
+    const mcpFetch = opts.mcpFetch
+    app.all(
+      '/mcp',
+      describeRoute({
+        tags: ['mcp'],
+        summary:
+          'MCP streamable-HTTP endpoint (JSON-RPC). GET/DELETE session ' +
+          'operations are also accepted; see the MCP spec.',
+        responses: {
+          200: { description: 'JSON-RPC response (JSON or SSE)' },
+          ...errorResponses,
+        },
+      }),
+      (c) => mcpFetch(c.req.raw),
+    )
+  }
+
+  // ---- OpenAPI document -----------------------------------------------------
+  //
+  // Served last so generateSpecs sees every registered route. On
+  // non-loopback binds the bearer middleware above protects it too.
+  app.get('/openapi.json', openAPIRouteHandler(app))
 
   return app
 }
@@ -583,8 +1177,17 @@ export function createFullApp(opts: ServerOptions): Hono {
   }
 
   app.use('*', async (c, next) => {
-    if (c.req.path.startsWith('/api/') || c.req.path === '/capture') return next()
-    const file = await readStaticFile(dist, c.req.path)
+    const p = c.req.path
+    if (
+      p.startsWith('/api/') ||
+      p === '/capture' ||
+      p === '/mcp' ||
+      p === '/openapi.json' ||
+      p.startsWith('/mcp/')
+    ) {
+      return next()
+    }
+    const file = await readStaticFile(dist, p)
     if (file) return new Response(file.body, { headers: file.headers })
     // SPA fallback: unknown non-api paths serve index.html.
     const index = await readStaticFile(dist, '/index.html')
