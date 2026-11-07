@@ -206,9 +206,10 @@ describe('createNotifier', () => {
       if (file === 'terminal-notifier') throw new Error('ENOENT')
     }
     const notifier = createNotifier({ platform: 'darwin', exec })
-    await notifier.notify({ title: 'my "title"', body: 'b' })
+    await notifier.notify({ title: 'my "title"', body: 'b', url: 'http://ui' })
     expect(calls.map((c) => c[0])).toEqual(['terminal-notifier', 'osascript'])
     expect(calls[1]![1][1]).toContain('my \\"title\\"')
+    expect(calls[1]![1][1]).toContain('b — http://ui')
   })
 
   it('uses notify-send on linux with the url in the body', async () => {

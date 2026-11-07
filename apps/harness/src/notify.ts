@@ -47,8 +47,10 @@ async function notifyDarwin(
   } catch {
     // not installed or failed — try osascript
   }
+  // osascript notifications can't deep-link; the UI URL rides in the body.
+  const body = req.url !== undefined ? `${req.body} — ${req.url}` : req.body
   const script =
-    `display notification "${applescriptQuote(req.body)}" ` +
+    `display notification "${applescriptQuote(body)}" ` +
     `with title "${applescriptQuote(req.title)}"`
   await exec('osascript', ['-e', script])
 }
