@@ -118,6 +118,14 @@ Loopback only works for clients on the same machine. A mobile client needs a sta
 
 In both cases add the origin the mobile client presents (or none, if it is a native app using plain fetch) to `allowed_origins` as needed, and keep `token_env` set.
 
+## Pairing a client without typing tokens
+
+Clients that can reach the server (the browser extension, a script on another machine) can exchange a one-time code for the bearer tokens instead of copying them by hand:
+
+1. `GET /api/pair/code` → `{"code": "ABCDEFGH", "expiresAt": "<iso>"}`. On non-loopback binds this route is bearer-gated like the rest of `/api/*`; on loopback it is open (the web UI calls it same-origin).
+2. The user copies the code into the client.
+3. `POST /api/pair` with `{"code": "..."}` → `{"captureToken": "..."|null, "serverToken": "..."|null}`. This route is deliberately NOT bearer-gated — the code is the credential. Codes are single-use, expire after 5 minutes, and live in memory: a server restart just means pairing again. `captureToken` is the `[capture] token_env` value for `POST /capture`; `serverToken` is the `[server] token_env` value for `/api/*`. Either is null when the env var is unset.
+
 ## iOS today
 
 Safari on iOS cannot run this extension path today. The Reading List plist import (`linkinbox import <plist>`) remains the iOS route. An iOS Shortcut that POSTs to `/capture` is untested and is not claimed to work.
