@@ -173,6 +173,49 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@25.9.9)(jiti@2.7.0)(jsdom@26.1.0(supports-color@10.2.2))(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.23.15)
 
+  apps/harness:
+    dependencies:
+      '@hono/node-server':
+        specifier: ^1.14.0
+        version: 1.19.17(hono@4.13.14)
+      '@linkinbox/app':
+        specifier: workspace:*
+        version: link:../../packages/app
+      '@linkinbox/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@linkinbox/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@linkinbox/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
+      '@linkinbox/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+      commander:
+        specifier: ^15.0.0
+        version: 15.0.0
+      croner:
+        specifier: ^11.0.0
+        version: 11.0.0
+      hono:
+        specifier: ^4.9.0
+        version: 4.13.14
+      smol-toml:
+        specifier: ^1.9.1
+        version: 1.9.1
+    devDependencies:
+      '@types/node':
+        specifier: ^24.10.1
+        version: 24.19.2
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@24.19.2)(jiti@2.7.0)(jsdom@26.1.0(supports-color@10.2.2))(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.23.15)
+
   evals:
     dependencies:
       '@linkinbox/core':
@@ -1835,6 +1878,10 @@ packages:
   commander@15.0.0:
     resolution: {integrity: sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg==}
     engines: {node: '>=22.12.0'}
+
+  croner@11.0.0:
+    resolution: {integrity: sha512-T17ADjdttrVToyzLpLq9Xb9xzcMwpQ/M3Qs9szhh0MVNTbv6NWQ9OFYa2qlzPYXFMn+uoDlnW1IpIv6cAvFtyA==}
+    engines: {node: '>=18.0'}
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -3677,6 +3724,8 @@ snapshots:
   commander@12.1.0: {}
 
   commander@15.0.0: {}
+
+  croner@11.0.0: {}
 
   cross-spawn@7.0.6:
     dependencies:

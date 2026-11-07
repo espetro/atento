@@ -1,0 +1,46 @@
+{
+  "name": "@linkinbox/harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "linkinbox service harness: lifecycle CLI, recurrence scheduler, native notifications and static web serving",
+  "bin": {
+    "linkinbox-harness": "./dist/bin.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.0",
+    "@linkinbox/app": "workspace:*",
+    "@linkinbox/core": "workspace:*",
+    "@linkinbox/db": "workspace:*",
+    "@linkinbox/mcp": "workspace:*",
+    "@linkinbox/server": "workspace:*",
+    "commander": "^15.0.0",
+    "croner": "^11.0.0",
+    "hono": "^4.9.0",
+    "smol-toml": "^1.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
