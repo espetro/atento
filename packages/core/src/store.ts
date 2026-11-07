@@ -6,6 +6,9 @@ import type {
   Enrichment,
   Status,
   Run,
+  RunJournalStatus,
+  IngestJob,
+  IngestJobStatus,
   Metric,
   Profile,
   ProfileInput,
@@ -49,6 +52,14 @@ export interface Store {
   setMediaReport(id: number, report: MediaReport, updatedAt?: Date): Promise<number>
 
   /**
+   * Atomically patch link columns (one UPDATE). Use this — or the `patch`
+   * argument of `applyEvent` — instead of sequential set* calls whenever the
+   * writes belong together: a crash can then never leave a link half
+   * updated (content stored but still leased, markers set but content not).
+   */
+  patchLink(id: number, patch: LinkPatch, updatedAt?: Date): Promise<number>
+
+  /**
    * Per-day budget counters for the media stage, shared across processes and
    * restarts. Day key format: `YYYY-MM-DD` (UTC).
    */
@@ -64,11 +75,17 @@ export interface Store {
    * FSM: apply one event atomically with a compare-and-set on the current
    * state. All state changes go through here; nothing else writes states.
    * `expected` defaults to the state currently recorded on the link.
+   *
+   * `patch` writes link columns in the SAME transaction as the transition
+   * and the history row — the durable-execution rule that a result and its
+   * FSM event commit together or not at all. When the event is illegal or
+   * the CAS is lost, the patch is discarded with it.
    */
   applyEvent(
     linkId: number,
     event: LinkEvent,
     expected?: LinkStateName,
+    patch?: LinkPatch,
   ): Promise<TransitionOutcome>
 
   /** Append-only event history for one link, oldest first. */
@@ -96,7 +113,93 @@ export interface Store {
    */
   reclaimExpiredLeases(cutoff: Date): Promise<number>
 
+  /**
+   * Return every leased link owned by one of `runIds` to its queue state.
+   * Called right after `reclaimDeadRuns` marks crashed runs: their leases
+   * come back immediately instead of waiting out the lease timeout.
+   */
+  reclaimLeasesForRuns(runIds: number[], at?: Date): Promise<number>
+
+  // run journal (durable execution)
+
+  /**
+   * Single-writer lock for one stage. Atomically inserts a `runs` row with
+   * `status='running'`, the OS pid and a first heartbeat — or reports the
+   * run currently holding the lock. The check-and-insert is one
+   * `BEGIN IMMEDIATE` transaction, so two processes can never both win.
+   */
+  acquireRun(
+    stage: string,
+    opts?: { pid?: number; now?: Date },
+  ): Promise<AcquireRunResult>
+
+  /** Refresh the heartbeat of a running journal row. */
+  heartbeatRun(id: number, at?: Date): Promise<void>
+
+  /** Every journal row still marked `running`. */
+  listRunningRuns(): Promise<RunJournalEntry[]>
+
+  /**
+   * Mark `running` journal rows `crashed` when their owner is gone: the pid
+   * is dead (`pidAlive` says so) or the heartbeat is older than
+   * `heartbeatStaleMs`. Returns the rows it crashed. The lease reclaim for
+   * those runs is `reclaimLeasesForRuns`.
+   */
+  reclaimDeadRuns(opts?: {
+    now?: Date
+    heartbeatStaleMs?: number
+    pidAlive?: (pid: number) => boolean
+  }): Promise<RunJournalEntry[]>
+
+  // ingest jobs (durable bulk ingest)
+
+  /** Insert a new ingest job row (status 'pending'). */
+  createIngestJob(job: NewIngestJob): Promise<IngestJob>
+
+  getIngestJob(id: string): Promise<IngestJob | null>
+
+  /** Patch job fields; `updatedAt` defaults to now. */
+  updateIngestJob(
+    id: string,
+    patch: {
+      status?: IngestJobStatus
+      total?: number
+      done?: number
+      cursor?: number
+      spoolPath?: string | null
+      runId?: number | null
+      error?: string | null
+      finishedAt?: Date | null
+      updatedAt?: Date
+    },
+  ): Promise<void>
+
+  /** Jobs in the given statuses, oldest first. */
+  listIngestJobs(filter?: {
+    status?: IngestJobStatus | IngestJobStatus[]
+    limit?: number
+  }): Promise<IngestJob[]>
+
+  /**
+   * Commit one chunk of spooled input atomically: every link upsert AND the
+   * job's cursor/done advance happen in one transaction, so a crash can
+   * never leave links written past the recorded cursor. Per-item failures
+   * (bad url, store error) are captured in the result, not thrown — the
+   * chunk still commits and the cursor still advances.
+   */
+  commitIngestChunk(
+    jobId: string,
+    raws: RawLink[],
+    opts?: { now?: Date },
+  ): Promise<IngestChunkCommit>
+
   // runs
+  /**
+   * Legacy metrics row — NOT a journal lock. Inserts with a non-'running'
+   * status so it never holds a stage lock, never heartbeats and never gets
+   * reclaimed as crashed. Stage work must use `acquireRun` +
+   * `heartbeatRun`; `finishRun` still closes this row out.
+   */
   startRun(stage: string, inputCount: number, startedAt?: Date): Promise<Run>
   finishRun(
     id: number,
@@ -108,6 +211,10 @@ export interface Store {
       tokensIn?: number | null
       tokensOut?: number | null
       costUsd?: number | null
+      /** Journal: the batch size, when known only after selection. */
+      inputCount?: number
+      /** Journal lifecycle written with the finish: done (default) | failed. */
+      status?: 'done' | 'failed'
     },
   ): Promise<void>
 
@@ -151,6 +258,55 @@ export interface MetricFilter {
   limit?: number
 }
 
+/** Result of Store.acquireRun: the new journal row, or the current holder. */
+export type AcquireRunResult =
+  | { ok: true; run: RunJournalEntry }
+  | { ok: false; busy: RunJournalEntry }
+
+/** The journal view of one runs row. */
+export interface RunJournalEntry {
+  id: number
+  stage: string
+  status: RunJournalStatus
+  pid: number | null
+  startedAt: Date
+  heartbeatAt: Date | null
+  finishedAt: Date | null
+}
+
+export type { RunJournalStatus }
+
+/** Fields needed to create an ingest_jobs row. */
+export interface NewIngestJob {
+  id: string
+  source: string
+  /** Absolute path of the job's spool directory. */
+  spoolPath?: string | null
+  /** Known input size up front (pre-parsed payloads). */
+  total?: number
+}
+
+/** Per-link outcome inside one committed ingest chunk. */
+export interface IngestItemResult {
+  linkId: number
+  url: string
+  ok: boolean
+  /** The url_hash was already known: upsert was a no-op downstream. */
+  duplicate: boolean
+  error?: string
+}
+
+/** Result of one atomic ingest chunk commit. */
+export interface IngestChunkCommit {
+  /** New cursor: old cursor + raws.length (every item is consumed). */
+  cursor: number
+  /** New done count: old done + raws.length. */
+  done: number
+  inserted: number
+  updated: number
+  items: IngestItemResult[]
+}
+
 /** Suggested canonical importer identities. Not enforced here. */
 export const SOURCES = {
   markdown: 'markdown',
@@ -169,6 +325,29 @@ export type {
   Profile,
   ProfileInput,
   MediaReport,
+}
+
+/**
+ * Column writes that ride along with a store write in one transaction.
+ * `undefined` leaves the column alone; `null` clears it.
+ *
+ * When `enrichment` is present the denormalized columns (category,
+ * priority, action, confidence, read_minutes) derive from it exactly like
+ * `setEnrichment`, and `expiresAt`/`expiryReason` default to the
+ * enrichment's own `expires_at`/`expiry_reason` — pass them explicitly to
+ * override (a TTL-derived expiry, a park reason, a cleared expiry).
+ */
+export interface LinkPatch {
+  title?: string | null
+  extractedContent?: string | null
+  extractedAt?: Date | null
+  needsBrowser?: boolean
+  enrichment?: Enrichment | null
+  expiresAt?: Date | null
+  expiryReason?: string | null
+  captured?: boolean
+  capturedAt?: Date | null
+  mediaReport?: MediaReport | null
 }
 
 /** Outcome of Store.applyEvent: the new state, or a typed error. */

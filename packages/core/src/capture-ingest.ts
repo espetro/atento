@@ -6,7 +6,7 @@
  * enrich. Trust and freshness rules decide whether an existing link is
  * updated.
  */
-import type { Store, Link } from './store.js'
+import type { Store, Link, LinkPatch } from './store.js'
 import { normalizeUrl } from './url.js'
 import type { Capture } from './capture.js'
 import {
@@ -74,13 +74,23 @@ export async function captureIngest(
       stateData: {},
     })
     // Apply the content through the FSM so the history shows exactly why the
-    // headless extract step was skipped.
-    await store.setExtractedContent(created.id, capture.body, false, capturedAt)
-    const done = await store.applyEvent(created.id, {
-      type: 'EXTRACTED',
-      chars: capture.body.length,
-      at: now.toISOString(),
-    }, 'created')
+    // headless extract step was skipped. The body, its timestamp and the
+    // transition commit in ONE transaction: an ack is only ever sent for a
+    // fully committed capture.
+    const done = await store.applyEvent(
+      created.id,
+      {
+        type: 'EXTRACTED',
+        chars: capture.body.length,
+        at: now.toISOString(),
+      },
+      'created',
+      {
+        extractedContent: capture.body,
+        needsBrowser: false,
+        extractedAt: capturedAt,
+      },
+    )
     if (!done.ok) {
       // A concurrent runner moved the link first: leave it alone.
       const link = (await store.getLink(created.id)) as Link
@@ -109,20 +119,40 @@ export async function captureIngest(
   }
 
   // Update path: only when the stored content is empty or lower-trust, and
-  // the capture is newer than whatever is stored.
-  await store.setExtractedContent(existing.id, capture.body, false, capturedAt)
-  if (capture.title !== undefined && existing.title === null) {
-    await store.updateTitle(existing.id, capture.title)
+  // the capture is newer than whatever is stored. Body, capture markers and
+  // title fill commit atomically — with the EXTRACTED transition when the
+  // link is still queued, as a plain column patch otherwise.
+  const patch: LinkPatch = {
+    extractedContent: capture.body,
+    needsBrowser: false,
+    extractedAt: capturedAt,
+    captured: true,
+    capturedAt,
   }
-  await store.markCaptured(existing.id, capturedAt)
+  if (capture.title !== undefined && existing.title === null) {
+    patch.title = capture.title
+  }
   // Keep the state consistent: a link still queued for extraction jumps to
   // extracted with the supplied content; anything further along is left as is.
   if (existing.state === 'created') {
-    await store.applyEvent(existing.id, {
-      type: 'EXTRACTED',
-      chars: capture.body.length,
-      at: now.toISOString(),
-    }, 'created')
+    const done = await store.applyEvent(
+      existing.id,
+      {
+        type: 'EXTRACTED',
+        chars: capture.body.length,
+        at: now.toISOString(),
+      },
+      'created',
+      patch,
+    )
+    if (!done.ok) {
+      // The link moved between the read and the write (e.g. a runner claimed
+      // it): the event+patch rolled back together, so land the content as a
+      // plain atomic patch — same guarantee the old unconditional writes gave.
+      await store.patchLink(existing.id, patch)
+    }
+  } else {
+    await store.patchLink(existing.id, patch)
   }
   return { link: (await store.getLink(existing.id)) as Link, outcome: 'updated' }
 }

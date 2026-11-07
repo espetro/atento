@@ -76,10 +76,19 @@ export interface Link {
   updatedAt: Date
 }
 
-/** One pipeline stage execution. */
+/** Journal lifecycle of a runs row (durable execution). */
+export type RunJournalStatus = 'running' | 'done' | 'failed' | 'crashed'
+
+/** One pipeline stage execution, doubling as a run-journal row. */
 export interface Run {
   id: number
   stage: string
+  /** Journal lifecycle; absent on rows written before the journal existed. */
+  status?: RunJournalStatus | null
+  /** OS pid of the process that owns this run. */
+  pid?: number | null
+  /** Last heartbeat write while the run was alive. */
+  heartbeatAt?: Date | null
   startedAt: Date
   finishedAt: Date | null
   inputCount: number
@@ -89,6 +98,36 @@ export interface Run {
   tokensIn: number | null
   tokensOut: number | null
   costUsd: number | null
+}
+
+/** Lifecycle of a durable ingest job (the `ingest_jobs` table). */
+export type IngestJobStatus = 'pending' | 'running' | 'done' | 'failed'
+
+/**
+ * One durable ingest job: bulk input spooled to disk, committed in chunks.
+ * `cursor` is the number of spooled input lines already committed; a crash
+ * resumes exactly there. `done` mirrors the committed count for reporting.
+ */
+export interface IngestJob {
+  id: string
+  /** Importer/pipeline identity, e.g. "import", "capture", "mcp". */
+  source: string
+  status: IngestJobStatus
+  /** Total spooled input lines (0 until the payload is materialized). */
+  total: number
+  /** Lines committed so far (equals cursor after each chunk commit). */
+  done: number
+  /** Read position in the spooled input: lines [0, cursor) are committed. */
+  cursor: number
+  /** Absolute path of the job's spool directory, when spooled. */
+  spoolPath: string | null
+  /** The journal run currently processing the job, when running. */
+  runId: number | null
+  /** Last error message, when the job failed. */
+  error: string | null
+  createdAt: Date
+  updatedAt: Date
+  finishedAt: Date | null
 }
 
 /** A single metric sample. */

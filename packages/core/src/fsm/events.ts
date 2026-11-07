@@ -34,6 +34,8 @@ const baseEvent = z.object({ at: iso })
 export const extractStartedEvent = z.extend(baseEvent, {
   type: z.literal('EXTRACT_STARTED'),
   attempt: z.optional(z.number().check(z.int(), z.minimum(1))),
+  /** The journal run owning the lease, for crash reclaim. */
+  runId: z.optional(z.number().check(z.int(), z.positive())),
 })
 export const extractedEvent = z.extend(baseEvent, {
   type: z.literal('EXTRACTED'),
@@ -65,6 +67,8 @@ export const deferEvent = z.extend(baseEvent, {
 export const enrichStartedEvent = z.extend(baseEvent, {
   type: z.literal('ENRICH_STARTED'),
   attempt: z.optional(z.number().check(z.int(), z.minimum(1))),
+  /** The journal run owning the lease, for crash reclaim. */
+  runId: z.optional(z.number().check(z.int(), z.positive())),
 })
 export const enrichedEvent = z.extend(baseEvent, { type: z.literal('ENRICHED') })
 export const enrichFailedEvent = z.extend(baseEvent, {

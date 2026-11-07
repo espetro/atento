@@ -1,4 +1,6 @@
 import Database from 'better-sqlite3'
+import { mkdir } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { eq, inArray, and, gte, lte, sql } from 'drizzle-orm'
 import {
@@ -11,7 +13,9 @@ import {
   runs,
   hostState,
   mediaBudget,
+  ingestJobs,
   type LinkRow,
+  type IngestJobRow,
 } from './schema.js'
 import { runMigrations } from './migrations.js'
 import type {
@@ -22,10 +26,13 @@ import type {
   MetricFilter,
   Profile,
   ProfileInput,
+  RawLink,
   Run,
   Status,
   Store,
   Enrichment,
+  IngestJob,
+  IngestJobStatus,
   LinkEvent,
   LinkState,
   LinkStateName,
@@ -41,6 +48,17 @@ import {
   isTerminal,
   LINK_STATES,
   LEASED_STATES,
+  normalizeUrl,
+  pidAlive,
+  heartbeatStale,
+  RUN_STALE_MS,
+  type AcquireRunResult,
+  type RunJournalEntry,
+  type RunJournalStatus,
+  type NewIngestJob,
+  type IngestChunkCommit,
+  type IngestItemResult,
+  type LinkPatch,
 } from '@linkinbox/core'
 
 export interface SqliteStoreOptions {
@@ -71,6 +89,8 @@ export class SqliteStore implements Store {
     if (typeof arg === 'object' && 'path' in arg === false && 'exec' in arg) {
       this.sqlite = arg as Database.Database
       this.ownsSqlite = false
+      // Same durability contract as the owned-handle path.
+      this.sqlite.pragma('synchronous = FULL')
       this.db = drizzle(this.sqlite) as unknown as Db
       return
     }
@@ -83,12 +103,28 @@ export class SqliteStore implements Store {
       this.sqlite.pragma('journal_mode = WAL')
     }
     this.sqlite.pragma('foreign_keys = ON')
+    // Durability: every commit is fsynced before it is acknowledged. WAL
+    // stays on for file DBs; synchronous=FULL makes each commit wait for
+    // the WAL frames to hit stable storage.
+    this.sqlite.pragma('synchronous = FULL')
     this.db = drizzle(this.sqlite) as unknown as Db
   }
 
   /** Run a PRAGMA. `simple: true` returns the first row column as a scalar. */
   pragma(source: string, options?: { simple?: boolean }): unknown {
     return this.sqlite.pragma(source, options)
+  }
+
+  /**
+   * Consistent online backup of the database to `destPath` (better-sqlite3's
+   * backup API). Safe while the store is open and serving: the backup is a
+   * snapshot, WAL included. The destination is created/truncated.
+   */
+  async backup(destPath: string): Promise<void> {
+    // better-sqlite3 refuses to create missing directories: make the parent
+    // first so `backup('backups/snap.db')` just works.
+    await mkdir(dirname(destPath), { recursive: true })
+    await this.sqlite.backup(destPath)
   }
 
   /** All run rows, newest first. Convenience for the metrics CLI. */
@@ -101,6 +137,9 @@ export class SqliteStore implements Store {
       .map((r) => ({
         id: r.id,
         stage: r.stage,
+        status: (r.status as RunJournalStatus | null) ?? null,
+        pid: r.pid ?? null,
+        heartbeatAt: r.heartbeatAt ?? null,
         startedAt: r.startedAt,
         finishedAt: r.finishedAt ?? null,
         inputCount: r.inputCount,
@@ -141,7 +180,14 @@ export class SqliteStore implements Store {
   }
 
   async upsertLink(input: LinkInput): Promise<Link> {
-    const now = new Date()
+    return this.upsertLinkSync(input, new Date())
+  }
+
+  /**
+   * Synchronous upsert core, callable inside a better-sqlite3 transaction
+   * (commitIngestChunk). All drizzle calls here are synchronous.
+   */
+  private upsertLinkSync(input: LinkInput, now: Date): Link {
     // FSM: a tombstoned url is never resurrected by a re-import.
     const tombstone = this.db
       .select({ id: links.id })
@@ -369,6 +415,23 @@ export class SqliteStore implements Store {
     return r.changes
   }
 
+  /**
+   * Atomically patch link columns: one UPDATE statement, so the whole patch
+   * commits or none of it does. For writes that belong to an FSM event use
+   * `applyEvent(..., patch)` instead — it lands in the same transaction as
+   * the transition.
+   */
+  async patchLink(id: number, patch: LinkPatch, updatedAt?: Date): Promise<number> {
+    const set = patchColumns(patch)
+    if (Object.keys(set).length === 0) return 0
+    const r = this.db
+      .update(links)
+      .set({ ...set, updatedAt: updatedAt ?? new Date() })
+      .where(eq(links.id, id))
+      .run()
+    return r.changes
+  }
+
   async getMediaBudget(
     day: string,
   ): Promise<{ total: number; byTier: Record<string, number> }> {
@@ -393,12 +456,15 @@ export class SqliteStore implements Store {
   /**
    * FSM: apply one event atomically. The state change is a compare-and-set
    * (`WHERE id = ? AND state = ?`), so two concurrent runners can never take
-   * the same link. The event history row is written in the same transaction.
+   * the same link. The event history row — and any `patch` column writes —
+   * are written in the same transaction: a result and its FSM event commit
+   * together or not at all.
    */
   async applyEvent(
     linkId: number,
     event: LinkEvent,
     expected?: LinkStateName,
+    patch?: LinkPatch,
   ): Promise<TransitionOutcome> {
     const now = new Date()
     // The event carries its own clock, so the recorded lease start (and the
@@ -453,6 +519,9 @@ export class SqliteStore implements Store {
           stateData: payload,
           status: legacyStatus(next),
           updatedAt: now,
+          // The patch lands before the tombstone purge so a DELETE can never
+          // be talked into keeping bulky content: purge wins on `deleted`.
+          ...patchColumns(patch),
           ...purgeForState(next, row),
         })
         .where(and(eq(links.id, linkId), eq(links.state, currentName)))
@@ -556,6 +625,272 @@ export class SqliteStore implements Store {
     return reclaimed
   }
 
+  /**
+   * Return every leased link owned by one of `runIds` to its queue state.
+   * The lease owner lives in the FSM payload (`state_data.runId`), written
+   * by the stage's STARTED event, so the reclaim goes through the same
+   * compare-and-set path as every other transition.
+   */
+  async reclaimLeasesForRuns(runIds: number[], at?: Date): Promise<number> {
+    if (runIds.length === 0) return 0
+    const wanted = new Set(runIds)
+    const rows = this.db
+      .select({ id: links.id })
+      .from(links)
+      .where(inArray(links.state, LEASED_STATES))
+      .all()
+    let reclaimed = 0
+    for (const row of rows) {
+      const state = await this.getState(row.id)
+      if (!state || (state.state !== 'extracting' && state.state !== 'enriching')) continue
+      const owner = state.runId
+      if (owner === undefined || !wanted.has(owner)) continue
+      const outcome = await this.applyEvent(row.id, {
+        type: 'LEASE_EXPIRED',
+        at: (at ?? new Date()).toISOString(),
+      })
+      if (outcome.ok) reclaimed += 1
+    }
+    return reclaimed
+  }
+
+  /**
+   * Single-writer lock for one stage. The check-and-insert runs in one
+   * `BEGIN IMMEDIATE` transaction (better-sqlite3 `.immediate()`), so two
+   * processes can never both observe "no running row" and both insert.
+   */
+  async acquireRun(
+    stage: string,
+    opts: { pid?: number; now?: Date } = {},
+  ): Promise<AcquireRunResult> {
+    const now = opts.now ?? new Date()
+    const pid = opts.pid ?? process.pid
+    const acquire = this.sqlite.transaction(() => {
+      const holder = this.db
+        .select()
+        .from(runs)
+        .where(and(eq(runs.stage, stage), eq(runs.status, 'running')))
+        .orderBy(sql`${runs.id} ASC`)
+        .get()
+      if (holder) return { ok: false as const, busy: journalFromRow(holder) }
+      const row = this.db
+        .insert(runs)
+        .values({
+          stage,
+          status: 'running',
+          pid,
+          heartbeatAt: now,
+          startedAt: now,
+          inputCount: 0,
+        })
+        .returning()
+        .get()
+      return { ok: true as const, run: journalFromRow(row) }
+    })
+    return acquire.immediate()
+  }
+
+  async heartbeatRun(id: number, at?: Date): Promise<void> {
+    this.db
+      .update(runs)
+      .set({ heartbeatAt: at ?? new Date() })
+      .where(and(eq(runs.id, id), eq(runs.status, 'running')))
+      .run()
+  }
+
+  async listRunningRuns(): Promise<RunJournalEntry[]> {
+    return this.db
+      .select()
+      .from(runs)
+      .where(eq(runs.status, 'running'))
+      .orderBy(sql`${runs.id} ASC`)
+      .all()
+      .map(journalFromRow)
+  }
+
+  /**
+   * Mark `running` journal rows `crashed` when their owner is gone: the pid
+   * is dead or the heartbeat is stale. A row with no pid and no heartbeat
+   * falls back to its `started_at` for the staleness check.
+   */
+  async reclaimDeadRuns(
+    opts: {
+      now?: Date
+      heartbeatStaleMs?: number
+      pidAlive?: (pid: number) => boolean
+    } = {},
+  ): Promise<RunJournalEntry[]> {
+    const now = opts.now ?? new Date()
+    const staleMs = opts.heartbeatStaleMs ?? RUN_STALE_MS
+    const alive = opts.pidAlive ?? pidAlive
+    const running = await this.listRunningRuns()
+    const crashed: RunJournalEntry[] = []
+    for (const entry of running) {
+      const pidDead = entry.pid !== null && !alive(entry.pid)
+      const stale = heartbeatStale(entry, now, staleMs)
+      if (!pidDead && !stale) continue
+      this.db
+        .update(runs)
+        .set({ status: 'crashed', finishedAt: now })
+        .where(and(eq(runs.id, entry.id), eq(runs.status, 'running')))
+        .run()
+      crashed.push({ ...entry, status: 'crashed', finishedAt: now })
+    }
+    return crashed
+  }
+
+  // ---- ingest jobs ----
+
+  async createIngestJob(job: NewIngestJob): Promise<IngestJob> {
+    const now = new Date()
+    const row = this.db
+      .insert(ingestJobs)
+      .values({
+        id: job.id,
+        source: job.source,
+        status: 'pending',
+        total: job.total ?? 0,
+        done: 0,
+        cursor: 0,
+        spoolPath: job.spoolPath ?? null,
+        runId: null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()
+      .get()
+    return jobFromRow(row)
+  }
+
+  async getIngestJob(id: string): Promise<IngestJob | null> {
+    const row = this.db.select().from(ingestJobs).where(eq(ingestJobs.id, id)).get()
+    return row ? jobFromRow(row) : null
+  }
+
+  async updateIngestJob(
+    id: string,
+    patch: {
+      status?: IngestJobStatus
+      total?: number
+      done?: number
+      cursor?: number
+      spoolPath?: string | null
+      runId?: number | null
+      error?: string | null
+      finishedAt?: Date | null
+      updatedAt?: Date
+    },
+  ): Promise<void> {
+    const set: Partial<typeof ingestJobs.$inferInsert> = {
+      updatedAt: patch.updatedAt ?? new Date(),
+    }
+    if (patch.status !== undefined) set.status = patch.status
+    if (patch.total !== undefined) set.total = patch.total
+    if (patch.done !== undefined) set.done = patch.done
+    if (patch.cursor !== undefined) set.cursor = patch.cursor
+    if (patch.spoolPath !== undefined) set.spoolPath = patch.spoolPath
+    if (patch.runId !== undefined) set.runId = patch.runId
+    if (patch.error !== undefined) set.error = patch.error
+    if (patch.finishedAt !== undefined) set.finishedAt = patch.finishedAt
+    this.db.update(ingestJobs).set(set).where(eq(ingestJobs.id, id)).run()
+  }
+
+  async listIngestJobs(filter?: {
+    status?: IngestJobStatus | IngestJobStatus[]
+    limit?: number
+  }): Promise<IngestJob[]> {
+    const conds = []
+    if (filter?.status !== undefined) {
+      const statuses = Array.isArray(filter.status) ? filter.status : [filter.status]
+      conds.push(inArray(ingestJobs.status, statuses))
+    }
+    const q = this.db.select().from(ingestJobs)
+    const filtered = conds.length ? q.where(and(...conds)) : q
+    const ordered = filtered.orderBy(sql`${ingestJobs.createdAt} ASC, ${ingestJobs.id} ASC`)
+    const paged = filter?.limit !== undefined ? ordered.limit(filter.limit) : ordered
+    return paged.all().map(jobFromRow)
+  }
+
+  /**
+   * Commit one chunk of spooled input atomically: every link upsert AND the
+   * job's cursor/done advance happen in one BEGIN IMMEDIATE transaction, so
+   * a crash can never leave links written past the recorded cursor. Per-item
+   * failures are captured in the result — the chunk still commits.
+   */
+  async commitIngestChunk(
+    jobId: string,
+    raws: RawLink[],
+    opts: { now?: Date } = {},
+  ): Promise<IngestChunkCommit> {
+    const now = opts.now ?? new Date()
+    const commit = this.sqlite.transaction((): IngestChunkCommit => {
+      const job = this.db
+        .select()
+        .from(ingestJobs)
+        .where(eq(ingestJobs.id, jobId))
+        .get()
+      if (!job) {
+        throw new Error(`ingest job ${jobId} does not exist`)
+      }
+      const items: IngestItemResult[] = []
+      let inserted = 0
+      let updated = 0
+      for (const raw of raws) {
+        try {
+          const { url, hash } = normalizeUrl(raw.url)
+          const existing = this.db
+            .select({ id: links.id })
+            .from(links)
+            .where(eq(links.urlHash, hash))
+            .get()
+          const link = this.upsertLinkSync(
+            {
+              urlHash: hash,
+              url,
+              title: raw.title ?? null,
+              source: raw.source,
+              addedAt: raw.addedAt ?? null,
+              note: raw.note ?? null,
+              tags: raw.tags ?? null,
+              status: 'inbox',
+              needsBrowser: false,
+              captured: false,
+              capturedAt: null,
+              // FSM: a freshly ingested link starts in the `created` state.
+              state: 'created',
+              stateData: {},
+            },
+            now,
+          )
+          if (existing) {
+            updated += 1
+            items.push({ linkId: link.id, url, ok: true, duplicate: true })
+          } else {
+            inserted += 1
+            items.push({ linkId: link.id, url, ok: true, duplicate: false })
+          }
+        } catch (err) {
+          items.push({
+            linkId: -1,
+            url: raw.url,
+            ok: false,
+            duplicate: false,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }
+      const cursor = job.cursor + raws.length
+      const done = job.done + raws.length
+      this.db
+        .update(ingestJobs)
+        .set({ cursor, done, updatedAt: now })
+        .where(eq(ingestJobs.id, jobId))
+        .run()
+      return { cursor, done, inserted, updated, items }
+    })
+    return commit.immediate()
+  }
+
   /** FSM state of one link, zod-validated. */
   async getState(id: number): Promise<LinkState | null> {
     const row = this.db
@@ -590,10 +925,27 @@ export class SqliteStore implements Store {
     return r.changes
   }
 
+  /**
+   * Legacy metrics row: NOT a journal lock. The row is inserted already
+   * `done`-ish (non-'running') so it can never be mistaken for an
+   * `acquireRun` holder, reclaimed as crashed, or block a stage. Stage
+   * work must go through `acquireRun` + `heartbeatRun` instead — a
+   * 'running' row without heartbeat refresh would be reclaimed while
+   * still alive.
+   */
   async startRun(stage: string, inputCount: number, startedAt?: Date): Promise<Run> {
+    const at = startedAt ?? new Date()
     const row = this.db
       .insert(runs)
-      .values({ stage, inputCount, startedAt: startedAt ?? new Date() })
+      .values({
+        stage,
+        // Non-locking status: the journal only guards 'running' rows.
+        status: 'done',
+        pid: process.pid,
+        heartbeatAt: at,
+        startedAt: at,
+        inputCount,
+      })
       .returning()
       .get()
     return {
@@ -621,12 +973,16 @@ export class SqliteStore implements Store {
       tokensIn?: number | null
       tokensOut?: number | null
       costUsd?: number | null
+      inputCount?: number
+      status?: 'done' | 'failed'
     },
   ): Promise<void> {
     this.db
       .update(runs)
       .set({
         finishedAt: result.finishedAt ?? new Date(),
+        status: result.status ?? 'done',
+        ...(result.inputCount !== undefined ? { inputCount: result.inputCount } : {}),
         okCount: result.okCount,
         errorCount: result.errorCount,
         durationMs: result.durationMs,
@@ -753,6 +1109,47 @@ export class SqliteStore implements Store {
 
 // ---- FSM helpers ----
 
+// ---- run journal helpers ----
+
+/** Map an ingest_jobs row to the domain job. */
+function jobFromRow(row: IngestJobRow): IngestJob {
+  return {
+    id: row.id,
+    source: row.source,
+    status: row.status as IngestJobStatus,
+    total: row.total,
+    done: row.done,
+    cursor: row.cursor,
+    spoolPath: row.spoolPath ?? null,
+    runId: row.runId ?? null,
+    error: row.error ?? null,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    finishedAt: row.finishedAt ?? null,
+  }
+}
+
+/** Map a runs row to the journal view (status/pid/heartbeat included). */
+function journalFromRow(row: {
+  id: number
+  stage: string
+  status: string | null
+  pid: number | null
+  heartbeatAt: Date | null
+  startedAt: Date
+  finishedAt: Date | null
+}): RunJournalEntry {
+  return {
+    id: row.id,
+    stage: row.stage,
+    status: (row.status as RunJournalStatus | null) ?? 'done',
+    pid: row.pid ?? null,
+    startedAt: row.startedAt,
+    heartbeatAt: row.heartbeatAt ?? null,
+    finishedAt: row.finishedAt ?? null,
+  }
+}
+
 // ---- host state helpers ----
 
 /** Map a host_state row to the core HostState record. */
@@ -822,6 +1219,43 @@ function dataForLegacyStatus(
     default:
       return {}
   }
+}
+
+/**
+ * Map a LinkPatch to drizzle column values. `undefined` leaves a column
+ * alone; `null` clears it. When `enrichment` is present the denormalized
+ * columns derive from it (same rules as setEnrichment) and expiresAt /
+ * expiryReason default to the enrichment's own values unless the patch
+ * overrides them explicitly.
+ */
+function patchColumns(patch: LinkPatch | undefined): Partial<typeof links.$inferInsert> {
+  if (patch === undefined) return {}
+  const set: Partial<typeof links.$inferInsert> = {}
+  if (patch.title !== undefined) set.title = patch.title
+  if (patch.extractedContent !== undefined) set.extractedContent = patch.extractedContent
+  if (patch.extractedAt !== undefined) set.extractedAt = patch.extractedAt
+  if (patch.needsBrowser !== undefined) set.needsBrowser = patch.needsBrowser
+  if (patch.captured !== undefined) set.captured = patch.captured
+  if (patch.capturedAt !== undefined) set.capturedAt = patch.capturedAt
+  if (patch.mediaReport !== undefined) set.mediaReport = patch.mediaReport
+  if (patch.enrichment !== undefined) {
+    const e = patch.enrichment
+    set.enrichment = e
+    set.category = e?.category ?? null
+    set.priority = e?.priority ?? null
+    set.action = e?.action ?? null
+    set.confidence = e?.confidence ?? null
+    set.readMinutes = e?.read_minutes ?? null
+    if (patch.expiresAt === undefined) {
+      set.expiresAt = e?.expires_at ? new Date(e.expires_at) : null
+    }
+    if (patch.expiryReason === undefined) {
+      set.expiryReason = e?.expiry_reason ?? null
+    }
+  }
+  if (patch.expiresAt !== undefined) set.expiresAt = patch.expiresAt
+  if (patch.expiryReason !== undefined) set.expiryReason = patch.expiryReason
+  return set
 }
 
 class LostRace extends Error {

@@ -1,4 +1,5 @@
 import type { Store } from '../store.js'
+import type { LinkPatch } from '../store.js'
 import type { StageResult, StageOptions, LinkOutcome, EnrichFn } from './types.js'
 import { STAGES, noopLogger } from './types.js'
 import { recordRunMetrics } from './ingest.js'
@@ -6,6 +7,12 @@ import { ttlDaysForCategory, type TtlConfig } from '../ttl.js'
 import { DEFAULT_MAX_BATCH, LLM_KEY, type GuardDeps, guardRun } from '../resilience/index.js'
 import { deferOrError, releaseDueDeferred } from './resilience.js'
 import { DEFAULT_MAX_ATTEMPTS } from './resilience-options.js'
+import {
+  busyRunOf,
+  reclaimCrashedRuns,
+  startRunHeartbeat,
+  type RunJournalEntry,
+} from '../run-journal.js'
 
 export interface EnrichOptions extends StageOptions {
   /** Injected enrichment function (implemented by @linkinbox/enrich). */
@@ -55,6 +62,64 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
   const logger = options.logger ?? noopLogger
   const now = options.now ?? (() => new Date())
   const startedAt = now()
+
+  // Crash recovery first: a dead run's journal row must not hold the lock,
+  // and its leases must come back before this run selects work.
+  await reclaimCrashedRuns(store, { now: startedAt })
+
+  // Single-writer lock for the enrich stage.
+  const acquired = await store.acquireRun(STAGES.enrich, {
+    pid: process.pid,
+    now: startedAt,
+  })
+  if (!acquired.ok) {
+    const holder = acquired.busy
+    logger.warn('enrich is busy: run {runId} holds the lock (pid {pid})', {
+      runId: holder.id,
+      pid: holder.pid,
+    })
+    return {
+      stage: STAGES.enrich,
+      runId: holder.id,
+      busy: busyRunOf(holder),
+      inputCount: 0,
+      okCount: 0,
+      errorCount: 0,
+      skippedCount: 0,
+      durationMs: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      costUsd: 0,
+      outcomes: [],
+      warnings: [],
+      linkIds: [],
+      deferredCount: 0,
+      retryAfter: 0,
+    }
+  }
+  const journal = acquired.run
+  const stopHeartbeat = startRunHeartbeat(store, journal.id, now)
+  try {
+    return await enrichPass(store, options, journal, startedAt)
+  } catch (err) {
+    await store
+      .finishRun(journal.id, { finishedAt: now(), status: 'failed', errorCount: 1 })
+      .catch(() => {})
+    throw err
+  } finally {
+    stopHeartbeat()
+  }
+}
+
+/** The enrich body, run while holding the stage's journal lock. */
+async function enrichPass(
+  store: Store,
+  options: EnrichOptions,
+  journal: RunJournalEntry,
+  startedAt: Date,
+): Promise<EnrichResult> {
+  const logger = options.logger ?? noopLogger
+  const now = options.now ?? (() => new Date())
   const guard = options.guard
   const guardActive = guard !== undefined
   const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS
@@ -80,7 +145,7 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
     .slice(0, options.limit ?? undefined)
   const pending = batch.slice(0, maxBatch)
 
-  const run = await store.startRun(STAGES.enrich, pending.length, startedAt)
+  const run = journal
   logger.info('enrich run {runId} started with {inputCount} links', {
     runId: run.id,
     inputCount: pending.length,
@@ -103,6 +168,7 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
     let modelId = 'unknown'
     const claim = await store.applyEvent(link.id, {
       type: 'ENRICH_STARTED',
+      runId: run.id,
       at: now().toISOString(),
     })
     if (!claim.ok) {
@@ -179,18 +245,25 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
       if (result.ok) {
         modelId = result.modelId
         const enrichment = result.enrichment
-        await store.setEnrichment(link.id, enrichment, now())
-        // When the enrichment carries no expiry, derive one from the ttl
-        // config (by_category first, then default_days).
+        // The enrichment result and the ENRICHED transition commit in ONE
+        // transaction: a crash can never leave the payload stored while the
+        // link is still leased (which would burn a second LLM call on
+        // resume). When the enrichment carries no expiry, derive one from
+        // the ttl config (by_category first, then default_days).
+        const patch: LinkPatch = { enrichment }
         if (!enrichment.expires_at && options.ttl) {
           const days = ttlDaysForCategory(options.ttl, enrichment.category)
-          const expiresAt = new Date(now().getTime() + days * 24 * 60 * 60 * 1000)
-          await store.setExpiry(link.id, expiresAt, enrichment.expiry_reason, now())
+          patch.expiresAt = new Date(now().getTime() + days * 24 * 60 * 60 * 1000)
         }
-        const done = await store.applyEvent(link.id, {
-          type: 'ENRICHED',
-          at: now().toISOString(),
-        })
+        const done = await store.applyEvent(
+          link.id,
+          {
+            type: 'ENRICHED',
+            at: now().toISOString(),
+          },
+          undefined,
+          patch,
+        )
         if (!done.ok) {
           errorCount += 1
           bump(errorsByModel, 'error')
@@ -311,6 +384,7 @@ export async function enrich(store: Store, options: EnrichOptions): Promise<Enri
     okCount,
     errorCount,
     durationMs,
+    inputCount: pending.length,
     tokensIn: tokensIn || null,
     tokensOut: tokensOut || null,
     costUsd: costUsd || null,

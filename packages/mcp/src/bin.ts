@@ -9,6 +9,7 @@
  */
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadConfig, createExtractFn, createEnrichFn, createBrowseFn } from '@linkinbox/cli'
+import { join } from 'node:path'
 import { guardDepsFromStore, pipelineLogger } from '@linkinbox/core'
 import { openStore } from '@linkinbox/db'
 import { createMcpServer } from './server.js'
@@ -25,6 +26,7 @@ const context: McpContext = {
   limits: config.limits,
   login: config.login,
   share: config.share,
+  spoolDir: join(config.dir, 'spool'),
 }
 
 export const deps: McpDeps = {

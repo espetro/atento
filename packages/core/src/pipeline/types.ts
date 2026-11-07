@@ -95,11 +95,27 @@ export interface LinkOutcome {
   costUsd?: number
 }
 
+/** The run currently holding a stage's single-writer lock. */
+export interface BusyRun {
+  /** The runs-row id of the holding run (also StageResult.runId when busy). */
+  runId: number
+  stage: string
+  pid: number | null
+  startedAt: Date
+  heartbeatAt: Date | null
+}
+
 /** Result of running one pipeline stage. */
 export interface StageResult {
   stage: Stage
-  /** The `runs` row id for this execution. */
+  /** The `runs` row id for this execution (the holder's id when busy). */
   runId: number
+  /**
+   * Set when another run holds this stage's single-writer lock: the stage
+   * did no work and every count is zero. Callers surface this as busy,
+   * never as a failure.
+   */
+  busy?: BusyRun
   inputCount: number
   okCount: number
   errorCount: number

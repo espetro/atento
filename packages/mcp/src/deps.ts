@@ -24,6 +24,12 @@ export interface McpContext {
   store: Store
   ttl: TtlConfig
   logger: PipelineLogger
+  /**
+   * Durable-ingest spool root (<config dir>/spool). When set, ingest_run
+   * writes bulk input through ingest_jobs so a crash resumes from the
+   * cursor; when absent the in-memory path runs (tests).
+   */
+  spoolDir?: string
   /** The config limits: the skip list and the review list. */
   limits?: LimitsConfig
   /** Which hosts may be logged in to (`[login] allow`). */

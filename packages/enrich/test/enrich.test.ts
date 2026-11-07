@@ -1,7 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { generateObject } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
-import { EnrichmentSchema } from '@linkinbox/core'
+import {
+  EnrichmentSchema,
+  RUN_STALE_MS,
+  heartbeatStale,
+  pidAlive,
+  type RunJournalEntry,
+  type RunJournalStatus,
+} from '@linkinbox/core'
 import { enrichLink, enrichPending, createModelFromEnv, type EnrichModel } from '../src/run.js'
 import { buildPrompt } from '../src/prompt.js'
 import type { Link, Store, Enrichment } from '@linkinbox/core'
@@ -20,6 +27,26 @@ function mockModel(rawOutput: unknown, modelIdOverride = modelId): EnrichModel {
       request: {},
       response: { id: 'mock-1', timestamp: new Date(), modelId: modelIdOverride },
     }),
+  })
+}
+
+/** A model whose doGenerate blocks on `gate` — for concurrency tests. */
+function gatedModel(gate: Promise<void>, onCall?: () => void): EnrichModel {
+  return new MockLanguageModelV3({
+    provider: 'mock',
+    modelId,
+    doGenerate: async () => {
+      onCall?.()
+      await gate
+      return {
+        finishReason: { unified: 'stop', raw: undefined },
+        content: [{ type: 'text', text: JSON.stringify(validEnrichment) }],
+        warnings: [],
+        usage: { inputTokens: { total: 100 }, outputTokens: { total: 40 } },
+        request: {},
+        response: { id: 'mock-1', timestamp: new Date(), modelId },
+      }
+    },
   })
 }
 
@@ -65,9 +92,34 @@ function makeLink(overrides: Partial<Link> = {}): Link {
   return { ...baseLink, ...overrides }
 }
 
+interface JournalRow {
+  stage: string
+  status: RunJournalStatus
+  pid: number | null
+  startedAt: Date
+  heartbeatAt: Date | null
+}
+
 function makeStore(links: Link[] = [makeLink()]) {
   const state = { links: structuredClone(links) as Link[] }
-  const calls = { setEnrichment: 0, setExpiry: 0 }
+  const calls = { setEnrichment: 0, setExpiry: 0, heartbeat: 0 }
+  // Minimal run journal: acquireRun is the only writer of 'running' rows,
+  // heartbeatRun refreshes them, reclaimDeadRuns mirrors the store rule
+  // (dead pid OR stale heartbeat => crashed).
+  const journal = new Map<number, JournalRow>()
+  let nextRunId = 0
+  const journalEntry = (id: number): RunJournalEntry => {
+    const j = journal.get(id)!
+    return {
+      id,
+      stage: j.stage,
+      status: j.status,
+      pid: j.pid,
+      startedAt: j.startedAt,
+      heartbeatAt: j.heartbeatAt,
+      finishedAt: null,
+    }
+  }
   const store: Store = {
     upsertLink: async () => {
       throw new Error('not implemented')
@@ -99,20 +151,78 @@ function makeStore(links: Link[] = [makeLink()]) {
       return 1
     },
     setExtractedContent: async () => 1,
-    startRun: async (stage, inputCount) => ({
-      id: 1,
-      stage,
-      startedAt: new Date(),
-      finishedAt: null,
-      inputCount,
-      okCount: 0,
-      errorCount: 0,
-      durationMs: null,
-      tokensIn: null,
-      tokensOut: null,
-      costUsd: null,
-    }),
-    finishRun: async () => {},
+    reclaimLeasesForRuns: async () => 0,
+    acquireRun: async (stage, opts = {}) => {
+      const at = opts.now ?? new Date()
+      const pid = opts.pid ?? process.pid
+      const holderId = [...journal.entries()].find(
+        ([, j]) => j.stage === stage && j.status === 'running',
+      )?.[0]
+      if (holderId !== undefined) {
+        return { ok: false as const, busy: journalEntry(holderId) }
+      }
+      nextRunId += 1
+      journal.set(nextRunId, { stage, status: 'running', pid, startedAt: at, heartbeatAt: at })
+      return { ok: true as const, run: journalEntry(nextRunId) }
+    },
+    heartbeatRun: async (id) => {
+      calls.heartbeat += 1
+      const j = journal.get(id)
+      if (j?.status === 'running') j.heartbeatAt = new Date()
+    },
+    listRunningRuns: async () =>
+      [...journal.entries()]
+        .filter(([, j]) => j.status === 'running')
+        .map(([id]) => journalEntry(id)),
+    reclaimDeadRuns: async (opts = {}) => {
+      const at = opts.now ?? new Date()
+      const staleMs = opts.heartbeatStaleMs ?? RUN_STALE_MS
+      const alive = opts.pidAlive ?? pidAlive
+      const crashed: RunJournalEntry[] = []
+      for (const [id, j] of journal) {
+        if (j.status !== 'running') continue
+        const entry = journalEntry(id)
+        const pidDead = entry.pid !== null && !alive(entry.pid)
+        const stale = heartbeatStale(entry, at, staleMs)
+        if (!pidDead && !stale) continue
+        j.status = 'crashed'
+        crashed.push({ ...entry, status: 'crashed' })
+      }
+      return crashed
+    },
+    createIngestJob: async () => { throw new Error('not implemented') },
+    getIngestJob: async () => null,
+    updateIngestJob: async () => {},
+    listIngestJobs: async () => [],
+    commitIngestChunk: async () => { throw new Error('not implemented') },
+    startRun: async (stage, inputCount, startedAt) => {
+      nextRunId += 1
+      // Legacy metrics row: non-'running', never a journal lock.
+      journal.set(nextRunId, {
+        stage,
+        status: 'done',
+        pid: process.pid,
+        startedAt: startedAt ?? new Date(),
+        heartbeatAt: startedAt ?? new Date(),
+      })
+      return {
+        id: nextRunId,
+        stage,
+        startedAt: startedAt ?? new Date(),
+        finishedAt: null,
+        inputCount,
+        okCount: 0,
+        errorCount: 0,
+        durationMs: null,
+        tokensIn: null,
+        tokensOut: null,
+        costUsd: null,
+      }
+    },
+    finishRun: async (id, result) => {
+      const j = journal.get(id)
+      if (j) j.status = result.status ?? 'done'
+    },
     addMetric: async () => {},
     listMetrics: async () => [],
     listProfiles: async () => [],
@@ -240,6 +350,80 @@ describe('enrichPending', () => {
     const summary = await enrichPending(store, { model: mockModel(validEnrichment), now }, { limit: 1 })
     expect(summary.processed).toBe(1)
     expect(calls.setEnrichment).toBe(1)
+  })
+
+  it('holds the enrich journal lock: a concurrent acquireRun reports busy', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let modelCalled = false
+    const { store } = makeStore([makeLink({ id: 1 })])
+    const pending = enrichPending(store, {
+      model: gatedModel(gate, () => {
+        modelCalled = true
+      }),
+      now,
+    })
+    await vi.waitFor(() => expect(modelCalled).toBe(true))
+
+    // While enrichPending works, the stage lock is held.
+    const concurrent = await store.acquireRun('enrich', { pid: process.pid })
+    expect(concurrent.ok).toBe(false)
+    if (!concurrent.ok) expect(concurrent.busy.stage).toBe('enrich')
+
+    // A second enrichPending reports busy instead of overlapping writes.
+    const second = await enrichPending(store, { model: mockModel(validEnrichment), now })
+    expect(second.processed).toBe(0)
+    expect(second.busy?.stage).toBe('enrich')
+
+    release()
+    const summary = await pending
+    expect(summary.processed).toBe(1)
+    expect(summary.busy).toBeUndefined()
+
+    // The lock is released once the run finishes.
+    const after = await store.acquireRun('enrich', { pid: process.pid })
+    expect(after.ok).toBe(true)
+  })
+
+  it('heartbeats the journal row while running so a live run is not reclaimed', async () => {
+    vi.useFakeTimers()
+    try {
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      let modelCalled = false
+      const { store, calls } = makeStore([makeLink({ id: 1 })])
+      const pending = enrichPending(store, {
+        model: gatedModel(gate, () => {
+          modelCalled = true
+        }),
+        now,
+      })
+      // Flush microtasks until the gated model call is in flight.
+      for (let i = 0; i < 50 && !modelCalled; i++) {
+        await vi.advanceTimersByTimeAsync(0)
+      }
+      expect(modelCalled).toBe(true)
+
+      // Well past RUN_STALE_MS: without heartbeat refresh this row would
+      // already be reclaimable as crashed while the run is still alive.
+      await vi.advanceTimersByTimeAsync(RUN_STALE_MS + 1_000)
+      expect(calls.heartbeat).toBeGreaterThan(0)
+      const crashed = await store.reclaimDeadRuns()
+      expect(crashed).toHaveLength(0)
+      const concurrent = await store.acquireRun('enrich', { pid: process.pid })
+      expect(concurrent.ok).toBe(false)
+
+      release()
+      const summary = await pending
+      expect(summary.processed).toBe(1)
+      expect((await store.acquireRun('enrich', { pid: process.pid })).ok).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

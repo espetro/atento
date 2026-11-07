@@ -3,6 +3,7 @@
  * Each is a thin shell over the corresponding core stage.
  */
 import type { Command } from 'commander'
+import { join } from 'node:path'
 import { importFile } from '@linkinbox/importers'
 import {
   enrich,
@@ -13,11 +14,13 @@ import {
   guardDepsFromStore,
   ingest,
   pipelineLogger,
+  resumeIngestJobs,
   DEFAULT_LIMITS,
   type EnrichFn,
   type ExtractFn,
   type GuardDeps,
   type MediaFn,
+  type BusyRun,
 } from '@linkinbox/core'
 import { loadConfig } from '../config.js'
 import type { CliContext } from '../context.js'
@@ -71,9 +74,51 @@ function printStage(outcome: RunOutcome): void {
   )
 }
 
+/**
+ * A stage found its single-writer lock held: report it and exit 3 (the
+ * documented busy code), never as a failure. The holder keeps running.
+ */
+function reportBusy(busy: BusyRun | undefined, stage: string): void {
+  if (!busy) return
+  console.log(
+    `busy: ${stage} is held by run ${busy.runId}` +
+      (busy.pid !== null ? ` (pid ${busy.pid})` : '') +
+      '; try again later',
+  )
+  process.exitCode = 3
+}
+
+/** The durable-ingest spool root: <config dir>/spool ( honours LINKINBOX_HOME ). */
+function spoolDirFor(ctx: CliContext): string {
+  return join(ctx.config.dir, 'spool')
+}
+
+/**
+ * Finish ingest jobs a previous run left behind (crash resume). Returns
+ * true when the ingest lock is held elsewhere — the caller must stop.
+ */
+async function resumePendingIngest(ctx: CliContext): Promise<boolean> {
+  const resumed = await resumeIngestJobs(ctx.store, {
+    logger: pipelineLogger('ingest'),
+  })
+  for (const result of resumed) {
+    if (result.busy) {
+      reportBusy(result.busy, 'ingest')
+      return true
+    }
+    if (result.errorCount > 0 || result.job.status === 'failed') {
+      ctx.logger.warn('resumed ingest job {jobId} finished with errors', {
+        jobId: result.job.id,
+      })
+    }
+  }
+  return false
+}
+
 /** import <file...>: run the matching importer per file, then the ingest stage. */
 export async function runImport(ctx: CliContext, files: string[], limit?: number): Promise<void> {
   const logger = pipelineLogger('ingest')
+  if (await resumePendingIngest(ctx)) return
   const raws = []
   for (const file of files) {
     const result = await importFile(file)
@@ -81,7 +126,15 @@ export async function runImport(ctx: CliContext, files: string[], limit?: number
     raws.push(...result.links)
     console.log(`${file}: ${result.links.length} links via ${result.importer}`)
   }
-  const outcome = await ingest(ctx.store, raws, { logger, limit })
+  const outcome = await ingest(ctx.store, raws, {
+    logger,
+    limit,
+    spoolDir: spoolDirFor(ctx),
+  })
+  if (outcome.busy) {
+    reportBusy(outcome.busy, 'ingest')
+    return
+  }
   printStage(outcome)
   if (outcome.duplicates > 0) console.log(`(${outcome.duplicates} already known, no-op)`)
 }
@@ -106,6 +159,10 @@ export async function runExtract(
       })
     : null
   if (outcome) {
+    if (outcome.busy) {
+      reportBusy(outcome.busy, 'extract')
+      return
+    }
     console.log(formatTotals(outcome))
     if (outcome.hitCap) {
       console.log('(stopped at the 100-batch cap with links still queued; re-run to continue)')
@@ -116,6 +173,10 @@ export async function runExtract(
     return
   }
   const result = await extract(ctx.store, extractOptions(ctx, extractFn, mediaFn, limit, host))
+  if (result.busy) {
+    reportBusy(result.busy, 'extract')
+    return
+  }
   printStage(result)
   if (result.deferredCount > 0) {
     console.log(`(${result.deferredCount} deferred; retry in ${Math.round(result.retryAfter / 1000)}s)`)
@@ -140,6 +201,10 @@ export async function runEnrich(ctx: CliContext, enrichFn: EnrichFn, limit?: num
     ttl: ctx.config.ttl,
     logger: pipelineLogger('enrich'),
   })
+  if (outcome.busy) {
+    reportBusy(outcome.busy, 'enrich')
+    return
+  }
   printStage(outcome)
   if (outcome.deferredCount > 0) {
     console.log(`(${outcome.deferredCount} deferred; retry in ${Math.round(outcome.retryAfter / 1000)}s)`)
@@ -161,6 +226,9 @@ export async function runAll(
   options: { limit?: number; mediaFn?: MediaFn } = {},
 ): Promise<RunAllResult> {
   const result: RunAllResult = {}
+  // Crash resume first: a killed import finishes before new work starts.
+  // Busy only blocks the ingest stage — extract/enrich have own locks.
+  await resumePendingIngest(ctx)
   if (files.length > 0) {
     const logger = pipelineLogger('ingest')
     const raws = []
@@ -171,9 +239,17 @@ export async function runAll(
       }
       raws.push(...imported.links)
     }
-    const outcome = await ingest(ctx.store, raws, { logger, limit: options.limit })
+    const outcome = await ingest(ctx.store, raws, {
+      logger,
+      limit: options.limit,
+      spoolDir: spoolDirFor(ctx),
+    })
     result.import = outcome
-    printStage(outcome)
+    if (outcome.busy) {
+      reportBusy(outcome.busy, 'ingest')
+    } else {
+      printStage(outcome)
+    }
   }
 
   const extractOutcome = await extract(
@@ -181,7 +257,11 @@ export async function runAll(
     extractOptions(ctx, extractFn, options.mediaFn, options.limit),
   )
   result.extract = extractOutcome
-  printStage(extractOutcome)
+  if (extractOutcome.busy) {
+    reportBusy(extractOutcome.busy, 'extract')
+  } else {
+    printStage(extractOutcome)
+  }
 
   const enrichOutcome = await enrich(ctx.store, {
     enrich: enrichFn,
@@ -192,7 +272,11 @@ export async function runAll(
     logger: pipelineLogger('enrich'),
   })
   result.enrich = enrichOutcome
-  printStage(enrichOutcome)
+  if (enrichOutcome.busy) {
+    reportBusy(enrichOutcome.busy, 'enrich')
+  } else {
+    printStage(enrichOutcome)
+  }
   return result
 }
 

@@ -160,6 +160,36 @@ describe('POST /capture: dedupe and skip-extract', () => {
     const created = await store.listByStates(['created'])
     expect(created.find((l) => l.id === id)).toBeUndefined()
   })
+
+  it('a retried POST (timeout replay) is idempotent: one link, duplicate ack', async () => {
+    // The client never saw the first ack and replays the identical payload:
+    // url_hash + capturedAt dedupe must make the retry a no-op, and the ack
+    // only ever describes committed state.
+    const payload = capture({
+      url: 'https://example.com/retry?utm_campaign=launch',
+      capturedAt: '2026-10-30T09:00:00.000Z',
+    })
+    const first = await post(payload, { authorization: `Bearer ${TOKEN}` })
+    const second = await post(payload, { authorization: `Bearer ${TOKEN}` })
+    expect(first.status).toBe(201)
+    expect(second.status).toBe(200)
+    const a = (await first.json()) as { id: number; outcome: string }
+    const b = (await second.json()) as { id: number; outcome: string }
+    expect(a.outcome).toBe('created')
+    expect(b.outcome).toBe('duplicate')
+    expect(b.id).toBe(a.id)
+    // Exactly one link row exists for the normalized url.
+    const { hash } = normalizeUrl(String(payload.url))
+    const link = await store.getLinkByUrlHash(hash)
+    expect(link?.id).toBe(a.id)
+    expect(await store.countLinks({})).toBeGreaterThanOrEqual(1)
+    const all = await store.listLinks({})
+    expect(all.filter((l) => l.urlHash === hash)).toHaveLength(1)
+    // The committed state is what the ack described.
+    expect(link?.state).toBe('extracted')
+    expect(link?.extractedContent).toContain('Body text')
+    expect(link?.capturedAt?.toISOString()).toBe(String(payload.capturedAt))
+  })
 })
 
 describe('POST /capture: trust order', () => {

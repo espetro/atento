@@ -106,14 +106,18 @@ async function discardParkedLink(
   const at = now.toISOString()
   const requeued = await store.applyEvent(link.id, { type: 'RETRY', stage: 'extract', at })
   if (!requeued.ok) return false
-  const discarded = await store.applyEvent(link.id, {
-    type: 'TRIAGE',
-    action: 'discard',
-    at,
-  })
-  if (!discarded.ok) return false
-  await store.setExpiry(link.id, null, SKIP_HOST_REASON, now)
-  return true
+  // The park reason rides along with the transition: one commit.
+  const discarded = await store.applyEvent(
+    link.id,
+    {
+      type: 'TRIAGE',
+      action: 'discard',
+      at,
+    },
+    undefined,
+    { expiresAt: null, expiryReason: SKIP_HOST_REASON },
+  )
+  return discarded.ok
 }
 
 /**

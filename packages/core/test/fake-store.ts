@@ -7,6 +7,7 @@ import type {
   MetricFilter,
   Profile,
   ProfileInput,
+  RawLink,
   Run,
   Status,
   Store,
@@ -16,6 +17,15 @@ import type {
   LinkHistoryEntry,
   HostState,
   MediaReport,
+  RunJournalEntry,
+  RunJournalStatus,
+  AcquireRunResult,
+  NewIngestJob,
+  IngestChunkCommit,
+  IngestItemResult,
+  IngestJob,
+  IngestJobStatus,
+  LinkPatch,
 } from '../src/index.js'
 import {
   normalizeUrl,
@@ -24,6 +34,9 @@ import {
   legacyStatus,
   isTerminal,
   LINK_STATES,
+  pidAlive,
+  heartbeatStale,
+  RUN_STALE_MS,
 } from '../src/index.js'
 
 /**
@@ -45,6 +58,13 @@ export class FakeStore implements Store {
   private nextProfileId = 1
   history: LinkHistoryEntry[] = []
   private nextHistoryId = 1
+  /** Journal fields for each runs row, keyed by run id. */
+  private journal = new Map<
+    number,
+    { status: RunJournalStatus; pid: number | null; heartbeatAt: Date | null }
+  >()
+  /** Ingest jobs, keyed by job id (the ingest_jobs table). */
+  ingestJobRows = new Map<string, IngestJob>()
 
   async upsertLink(input: LinkInput): Promise<Link> {
     const now = new Date()
@@ -155,6 +175,7 @@ export class FakeStore implements Store {
     linkId: number,
     event: LinkEvent,
     expected?: LinkStateName,
+    patch?: LinkPatch,
   ): Promise<TransitionOutcome> {
     const at = new Date()
     const link = this.links.find((l) => l.id === linkId)
@@ -193,25 +214,31 @@ export class FakeStore implements Store {
     const payload = { ...next } as Record<string, unknown>
     delete payload['state']
     const purge = next.state === 'deleted'
-    const updated: Link = {
-      ...link,
-      state: next.state,
-      stateData: payload,
-      status: legacyStatus(next),
-      updatedAt: at,
-      ...(purge
-        ? {
-            extractedContent: null,
-            extractedAt: null,
-            enrichment: null,
-            needsBrowser: false,
-            category: null,
-            priority: null,
-            action: null,
-            confidence: null,
-            readMinutes: null,
-          }
-        : {}),
+    // The patch lands before the tombstone purge (mirroring SqliteStore): a
+    // DELETE can never be talked into keeping bulky content.
+    let updated: Link = applyLinkPatch(
+      {
+        ...link,
+        state: next.state,
+        stateData: payload,
+        status: legacyStatus(next),
+        updatedAt: at,
+      },
+      patch ?? {},
+    )
+    if (purge) {
+      updated = {
+        ...updated,
+        extractedContent: null,
+        extractedAt: null,
+        enrichment: null,
+        needsBrowser: false,
+        category: null,
+        priority: null,
+        action: null,
+        confidence: null,
+        readMinutes: null,
+      }
     }
     this.links[this.links.indexOf(link)] = updated
     this.history.push({
@@ -254,6 +281,23 @@ export class FakeStore implements Store {
       const outcome = await this.applyEvent(link.id, {
         type: 'LEASE_EXPIRED',
         at: new Date().toISOString(),
+      })
+      if (outcome.ok) reclaimed += 1
+    }
+    return reclaimed
+  }
+
+  async reclaimLeasesForRuns(runIds: number[], at?: Date): Promise<number> {
+    const wanted = new Set(runIds)
+    let reclaimed = 0
+    for (const link of this.links) {
+      if (link.state !== 'extracting' && link.state !== 'enriching') continue
+      const state = parseLinkState(link.state, link.stateData)
+      if (state.state !== 'extracting' && state.state !== 'enriching') continue
+      if (state.runId === undefined || !wanted.has(state.runId)) continue
+      const outcome = await this.applyEvent(link.id, {
+        type: 'LEASE_EXPIRED',
+        at: (at ?? new Date()).toISOString(),
       })
       if (outcome.ok) reclaimed += 1
     }
@@ -357,6 +401,14 @@ export class FakeStore implements Store {
     return 1
   }
 
+  async patchLink(id: number, patch: LinkPatch, updatedAt?: Date): Promise<number> {
+    const index = this.links.findIndex((l) => l.id === id)
+    if (index === -1) return 0
+    this.links[index] = applyLinkPatch(this.links[index]!, patch)
+    this.links[index]!.updatedAt = updatedAt ?? new Date()
+    return 1
+  }
+
   async getMediaBudget(day: string): Promise<{ total: number; byTier: Record<string, number> }> {
     return this.mediaBudgets.get(day) ?? { total: 0, byTier: {} }
   }
@@ -369,10 +421,11 @@ export class FakeStore implements Store {
   }
 
   async startRun(stage: string, inputCount: number, startedAt?: Date): Promise<Run> {
+    const at = startedAt ?? new Date()
     const run: Run = {
       id: this.nextRunId++,
       stage,
-      startedAt: startedAt ?? new Date(),
+      startedAt: at,
       finishedAt: null,
       inputCount,
       okCount: 0,
@@ -383,7 +436,206 @@ export class FakeStore implements Store {
       costUsd: null,
     }
     this.runs.push(run)
+    // Mirrors SqliteStore.startRun: a legacy metrics row, NOT a journal
+    // lock — non-'running' so it is never a holder or reclaimable.
+    this.journal.set(run.id, { status: 'done', pid: process.pid, heartbeatAt: at })
     return run
+  }
+
+  async acquireRun(
+    stage: string,
+    opts: { pid?: number; now?: Date } = {},
+  ): Promise<AcquireRunResult> {
+    const at = opts.now ?? new Date()
+    const pid = opts.pid ?? process.pid
+    const holder = this.runs.find(
+      (r) => r.stage === stage && this.journal.get(r.id)?.status === 'running',
+    )
+    if (holder) return { ok: false, busy: this.journalEntry(holder.id) }
+    const run = await this.startRun(stage, 0, at)
+    const j = this.journal.get(run.id)!
+    j.status = 'running'
+    j.pid = pid
+    j.heartbeatAt = at
+    return { ok: true, run: this.journalEntry(run.id) }
+  }
+
+  private journalEntry(id: number): RunJournalEntry {
+    const run = this.runs.find((r) => r.id === id)!
+    const j = this.journal.get(id) ?? {
+      status: 'done' as RunJournalStatus,
+      pid: null,
+      heartbeatAt: null,
+    }
+    return {
+      id: run.id,
+      stage: run.stage,
+      status: j.status,
+      pid: j.pid,
+      startedAt: run.startedAt,
+      heartbeatAt: j.heartbeatAt,
+      finishedAt: run.finishedAt,
+    }
+  }
+
+  async heartbeatRun(id: number, at?: Date): Promise<void> {
+    const j = this.journal.get(id)
+    if (!j || j.status !== 'running') return
+    j.heartbeatAt = at ?? new Date()
+  }
+
+  async listRunningRuns(): Promise<RunJournalEntry[]> {
+    return this.runs
+      .filter((r) => this.journal.get(r.id)?.status === 'running')
+      .map((r) => this.journalEntry(r.id))
+  }
+
+  async reclaimDeadRuns(
+    opts: {
+      now?: Date
+      heartbeatStaleMs?: number
+      pidAlive?: (pid: number) => boolean
+    } = {},
+  ): Promise<RunJournalEntry[]> {
+    const now = opts.now ?? new Date()
+    const staleMs = opts.heartbeatStaleMs ?? RUN_STALE_MS
+    const alive = opts.pidAlive ?? pidAlive
+    const crashed: RunJournalEntry[] = []
+    for (const run of this.runs) {
+      const j = this.journal.get(run.id)
+      if (!j || j.status !== 'running') continue
+      const entry = this.journalEntry(run.id)
+      const pidDead = entry.pid !== null && !alive(entry.pid)
+      const stale = heartbeatStale(entry, now, staleMs)
+      if (!pidDead && !stale) continue
+      j.status = 'crashed'
+      run.finishedAt = now
+      crashed.push(this.journalEntry(run.id))
+    }
+    return crashed
+  }
+
+  // ---- ingest jobs ----
+
+  async createIngestJob(job: NewIngestJob): Promise<IngestJob> {
+    const now = new Date()
+    const row: IngestJob = {
+      id: job.id,
+      source: job.source,
+      status: 'pending',
+      total: job.total ?? 0,
+      done: 0,
+      cursor: 0,
+      spoolPath: job.spoolPath ?? null,
+      runId: null,
+      error: null,
+      createdAt: now,
+      updatedAt: now,
+      finishedAt: null,
+    }
+    this.ingestJobRows.set(job.id, row)
+    return { ...row }
+  }
+
+  async getIngestJob(id: string): Promise<IngestJob | null> {
+    const row = this.ingestJobRows.get(id)
+    return row ? { ...row } : null
+  }
+
+  async updateIngestJob(
+    id: string,
+    patch: {
+      status?: IngestJobStatus
+      total?: number
+      done?: number
+      cursor?: number
+      spoolPath?: string | null
+      runId?: number | null
+      error?: string | null
+      finishedAt?: Date | null
+      updatedAt?: Date
+    },
+  ): Promise<void> {
+    const row = this.ingestJobRows.get(id)
+    if (!row) return
+    if (patch.status !== undefined) row.status = patch.status
+    if (patch.total !== undefined) row.total = patch.total
+    if (patch.done !== undefined) row.done = patch.done
+    if (patch.cursor !== undefined) row.cursor = patch.cursor
+    if (patch.spoolPath !== undefined) row.spoolPath = patch.spoolPath
+    if (patch.runId !== undefined) row.runId = patch.runId
+    if (patch.error !== undefined) row.error = patch.error
+    if (patch.finishedAt !== undefined) row.finishedAt = patch.finishedAt
+    row.updatedAt = patch.updatedAt ?? new Date()
+  }
+
+  async listIngestJobs(filter?: {
+    status?: IngestJobStatus | IngestJobStatus[]
+    limit?: number
+  }): Promise<IngestJob[]> {
+    let out = [...this.ingestJobRows.values()]
+    if (filter?.status !== undefined) {
+      const statuses = Array.isArray(filter.status) ? filter.status : [filter.status]
+      out = out.filter((j) => statuses.includes(j.status))
+    }
+    out.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id))
+    if (filter?.limit !== undefined) out = out.slice(0, filter.limit)
+    return out.map((j) => ({ ...j }))
+  }
+
+  async commitIngestChunk(
+    jobId: string,
+    raws: RawLink[],
+    opts: { now?: Date } = {},
+  ): Promise<IngestChunkCommit> {
+    const job = this.ingestJobRows.get(jobId)
+    if (!job) throw new Error(`ingest job ${jobId} does not exist`)
+    const now = opts.now ?? new Date()
+    const items: IngestItemResult[] = []
+    let inserted = 0
+    let updated = 0
+    for (const raw of raws) {
+      try {
+        const { url, hash } = normalizeUrl(raw.url)
+        const existing = await this.getLinkByUrlHash(hash)
+        const link = await this.upsertLink({
+          urlHash: hash,
+          url,
+          title: raw.title ?? null,
+          source: raw.source,
+          addedAt: raw.addedAt ?? null,
+          note: raw.note ?? null,
+          tags: raw.tags ?? null,
+          status: 'inbox',
+          needsBrowser: false,
+          captured: false,
+          capturedAt: null,
+          state: 'created',
+          stateData: {},
+        })
+        if (existing) {
+          updated += 1
+          items.push({ linkId: link.id, url, ok: true, duplicate: true })
+        } else {
+          inserted += 1
+          items.push({ linkId: link.id, url, ok: true, duplicate: false })
+        }
+      } catch (err) {
+        items.push({
+          linkId: -1,
+          url: raw.url,
+          ok: false,
+          duplicate: false,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
+    const cursor = job.cursor + raws.length
+    const done = job.done + raws.length
+    job.cursor = cursor
+    job.done = done
+    job.updatedAt = now
+    return { cursor, done, inserted, updated, items }
   }
 
   async finishRun(
@@ -396,17 +648,22 @@ export class FakeStore implements Store {
       tokensIn?: number | null
       tokensOut?: number | null
       costUsd?: number | null
+      inputCount?: number
+      status?: 'done' | 'failed'
     },
   ): Promise<void> {
     const run = this.runs.find((r) => r.id === id)
     if (!run) return
     run.finishedAt = result.finishedAt ?? new Date()
+    if (result.inputCount !== undefined) run.inputCount = result.inputCount
     run.okCount = result.okCount ?? run.okCount
     run.errorCount = result.errorCount ?? run.errorCount
     run.durationMs = result.durationMs ?? run.durationMs
     run.tokensIn = result.tokensIn ?? run.tokensIn
     run.tokensOut = result.tokensOut ?? run.tokensOut
     run.costUsd = result.costUsd ?? run.costUsd
+    const j = this.journal.get(id)
+    if (j) j.status = result.status ?? 'done'
   }
 
   async addMetric(metric: Metric): Promise<void> {
@@ -523,6 +780,41 @@ export async function seedLink(store: FakeStore, url: string, overrides: Partial
     needsBrowser: false,
     ...overrides,
   } as LinkInput)
+}
+
+/**
+ * Apply a LinkPatch to an in-memory link, mirroring SqliteStore.patchColumns:
+ * `undefined` leaves a field alone, `null` clears it, and `enrichment`
+ * derives the denormalized columns (expiresAt/expiryReason default to the
+ * enrichment's own values unless overridden).
+ */
+function applyLinkPatch(link: Link, patch: LinkPatch): Link {
+  const out = { ...link }
+  if (patch.title !== undefined) out.title = patch.title
+  if (patch.extractedContent !== undefined) out.extractedContent = patch.extractedContent
+  if (patch.extractedAt !== undefined) out.extractedAt = patch.extractedAt
+  if (patch.needsBrowser !== undefined) out.needsBrowser = patch.needsBrowser
+  if (patch.captured !== undefined) out.captured = patch.captured
+  if (patch.capturedAt !== undefined) out.capturedAt = patch.capturedAt
+  if (patch.mediaReport !== undefined) out.mediaReport = patch.mediaReport
+  if (patch.enrichment !== undefined) {
+    const e = patch.enrichment
+    out.enrichment = e
+    out.category = e?.category ?? null
+    out.priority = e?.priority ?? null
+    out.action = e?.action ?? null
+    out.confidence = e?.confidence ?? null
+    out.readMinutes = e?.read_minutes ?? null
+    if (patch.expiresAt === undefined) {
+      out.expiresAt = e?.expires_at ? new Date(e.expires_at) : null
+    }
+    if (patch.expiryReason === undefined) {
+      out.expiryReason = e?.expiry_reason ?? null
+    }
+  }
+  if (patch.expiresAt !== undefined) out.expiresAt = patch.expiresAt
+  if (patch.expiryReason !== undefined) out.expiryReason = patch.expiryReason
+  return out
 }
 
 function eventForStatus(status: Status, at: Date): import('../src/index.js').LinkEvent {
