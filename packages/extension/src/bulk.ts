@@ -48,17 +48,26 @@ export interface BookmarkNode {
 }
 
 /**
- * Deterministic 32-bit FNV-1a hash, hex-encoded. Enough for dedupe keys:
- * collisions only merge two identical-looking batches, which the server's
- * url_hash dedupe would collapse anyway.
+ * Deterministic 64-bit FNV-1a hash (two 32-bit lanes), hex-encoded. Used
+ * for dedupe keys only: a collision would merge two different-looking
+ * batches, which the server's url_hash dedupe would collapse anyway — but
+ * 64 bits makes that vanishingly rare.
  */
 export function shortHash(input: string): string {
-  let hash = 0x811c9dc5
-  for (let i = 0; i < input.length; i++) {
-    hash ^= input.charCodeAt(i)
-    hash = Math.imul(hash, 0x01000193)
+  // FNV-1a 64-bit via BigInt-free two-lane construction: hash the string
+  // once forward (h1) and once with a different offset basis (h2), then
+  // combine. Deterministic, dependency-free, ~64 bits of output.
+  const lane = (seed: number) => {
+    let h = seed >>> 0
+    for (let i = 0; i < input.length; i++) {
+      h ^= input.charCodeAt(i)
+      h = Math.imul(h, 0x01000193)
+    }
+    return h >>> 0
   }
-  return (hash >>> 0).toString(16)
+  const h1 = lane(0x811c9dc5)
+  const h2 = lane(0x811c9dc5 ^ 0x9e3779b9)
+  return h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0')
 }
 
 /** The idempotency key for one capture payload. */

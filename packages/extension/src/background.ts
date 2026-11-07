@@ -175,7 +175,8 @@ export type BulkScope = 'all-tabs' | 'window-tabs' | 'highlighted' | 'bookmarks'
 
 /**
  * Collect the URLs for one bulk scope and queue them as ingest batches.
- * Never throws: collection failures come back as an error string.
+ * Never throws: collection failures (bookmarks/tabs API errors) come back
+ * as an error string the caller can surface.
  */
 async function handleBulk(scope: BulkScope): Promise<{
   batches: number
@@ -183,18 +184,26 @@ async function handleBulk(scope: BulkScope): Promise<{
   error?: string
 }> {
   let urls: string[]
-  if (scope === 'bookmarks') {
-    const tree = (await chrome.bookmarks.getTree()) as BookmarkNode[]
-    urls = collectBookmarkUrls(tree)
-  } else {
-    const query =
-      scope === 'all-tabs'
-        ? {}
-        : scope === 'window-tabs'
-          ? { currentWindow: true }
-          : { currentWindow: true, highlighted: true }
-    const tabs = (await chrome.tabs.query(query)) as BulkTab[]
-    urls = collectTabUrls(tabs)
+  try {
+    if (scope === 'bookmarks') {
+      const tree = (await chrome.bookmarks.getTree()) as BookmarkNode[]
+      urls = collectBookmarkUrls(tree)
+    } else {
+      const query =
+        scope === 'all-tabs'
+          ? {}
+          : scope === 'window-tabs'
+            ? { currentWindow: true }
+            : { currentWindow: true, highlighted: true }
+      const tabs = (await chrome.tabs.query(query)) as BulkTab[]
+      urls = collectTabUrls(tabs)
+    }
+  } catch (err) {
+    return {
+      batches: 0,
+      urls: 0,
+      error: err instanceof Error ? err.message : String(err),
+    }
   }
   const batches = buildIngestBatches(urls, {
     note: `bulk capture (${scope})`,
@@ -282,11 +291,27 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === DRAIN_ALARM) void drainOutbox()
 })
 
-// A message API for a future popup/options bulk trigger and for status.
+// A message API for a future popup/options bulk trigger, outbox control
+// and status. The options page must NOT write 'linkinbox:outbox' directly:
+// this worker's outbox holds the items in memory and would resurrect them
+// on the next persist — every mutation goes through the outbox itself.
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const msg = message as { type?: string; scope?: BulkScope }
   if (msg?.type === 'linkinbox:bulk' && msg.scope !== undefined) {
     void handleBulk(msg.scope).then(sendResponse)
+    return true
+  }
+  if (msg?.type === 'linkinbox:outbox-clear-dead') {
+    void outbox.clearDead().then((dropped) => sendResponse({ dropped }))
+    return true
+  }
+  if (msg?.type === 'linkinbox:outbox-stats') {
+    void outbox.ready.then(() =>
+      sendResponse({
+        pending: outbox.items().length,
+        dead: outbox.deadItems().length,
+      }),
+    )
     return true
   }
   return false

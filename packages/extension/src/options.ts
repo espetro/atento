@@ -133,11 +133,13 @@ async function refreshOutbox(): Promise<void> {
 }
 
 clearDeadEl?.addEventListener('click', () => {
-  void chrome.storage.local.get(['linkinbox:outbox']).then(async (stored) => {
-    const items = asItems(stored['linkinbox:outbox']).filter((i) => i.dead !== true)
-    await chrome.storage.local.set({ 'linkinbox:outbox': items })
-    await refreshOutbox()
-  })
+  // Route through the service worker: its outbox instance owns the item
+  // list in memory and would resurrect a direct storage write on the next
+  // persist. clearDead drops the dead items and persists once.
+  void chrome.runtime
+    .sendMessage({ type: 'linkinbox:outbox-clear-dead' })
+    .then(() => refreshOutbox())
+    .catch(() => flash('Could not reach the background worker; try again.'))
 })
 
 void refreshOutbox()
