@@ -103,7 +103,7 @@ PREVIEW TABS
   call. Optimistic update with rollback on error. `discard`/`archive`
   offer a 6s undo toast that re-triages back to inbox/scheduled.
 - `r` on a link with >1 configured adapter opens the adapter picker
-  (Bits UI dialog listing `linkinbox browsers` ids + health); on a
+  (Dialog.svelte listing `linkinbox browsers` ids + health); on a
   single-adapter setup it fires POST /api/links/{id}/reextract directly.
   409 responses (illegal state / busy) surface the server's reason
   inline, e.g. "extract is busy — run 41 holds the lock".
