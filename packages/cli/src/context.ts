@@ -6,9 +6,6 @@
  * opening, the config and the adapter wiring all live in the composition
  * root; the CLI only adds its logging sinks on top.
  */
-import { dirname } from 'node:path'
-import { mkdirSync } from 'node:fs'
-import { openStore, type SqliteStore } from '@linkinbox/db'
 import {
   createLinkinbox,
   disposeLogging,
@@ -22,6 +19,7 @@ import {
   type Linkinbox,
   type MediaFn,
   type PipelineLogger,
+  type SqliteStore,
 } from '@linkinbox/app'
 
 export interface CliContext {
@@ -83,9 +81,4 @@ export async function createContext(options: ContextOptions = {}): Promise<CliCo
       disposeLogging()
     },
   }
-}
-
-/** Open only the store (no logging). Used by read-only commands. */
-export async function openStoreFor(config: AppConfig): Promise<SqliteStore> {
-  return openStore({ path: config.dbPath })
 }
