@@ -34,7 +34,7 @@ describe("browser extractor", () => {
       profileExists: () => true,
     });
     const result = await extractor.extract("https://example.dev/article");
-    const profile = join("/tmp/fake-profiles", "example.dev");
+    const profile = join("/tmp/fake-profiles", "example.dev", "headless");
     expect(calls.map((c) => c.file)).toEqual(["agent-browser", "agent-browser"]);
     expect(calls[0]!.args).toEqual(["--profile", profile, "open", "https://example.dev/article"]);
     expect(calls[1]!.args).toEqual(["--profile", profile, "read"]);
@@ -137,7 +137,7 @@ describe("browser extractor: human pacing", () => {
       },
     });
     const result = await extractor.extract("https://x.com/post/3");
-    expect(scrollProfile).toMatch(/x\.com$/);
+    expect(scrollProfile).toMatch(/x\.com\/headless$/);
     expect(result.markdown).toBe("# page\n\ncontent");
     expect(events).toEqual(["open", "dwell:20000", "scroll", "read"]);
     expect(scrolls).toEqual([350]);

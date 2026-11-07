@@ -2,19 +2,22 @@ import { Extractor, ExtractResult } from "./types.js";
 import { createDefuddleExtractor, DefuddleExtractorOptions } from "./defuddle.js";
 import { createReadabilityExtractor, ReadabilityExtractorOptions } from "./readability.js";
 import { createBrowserExtractor, BrowserExtractorOptions } from "./browser.js";
-import { createPatchrightExtractor, PatchrightExtractorOptions } from "./patchright.js";
 import { createYtdlpExtractor, YtdlpExtractorOptions } from "./ytdlp.js";
 import { createPdfExtractor, PdfExtractorOptions } from "./pdf.js";
 
 export { createPatchrightExtractor } from "./patchright.js";
 export type { PatchrightExtractorOptions } from "./patchright.js";
 
-/** Router selection outcome. */
+/**
+ * Router selection outcome. Browser-routed hosts all take the single
+ * `browser` route; WHICH adapter reads the page is carried by the browser
+ * extractor itself (it resolves the adapter id per host) and stamped into
+ * `result.meta.adapter` — there is no separate per-engine route anymore.
+ */
 export type RouteChoice =
   | "ytdlp"
   | "pdf"
   | "browser"
-  | "patchright"
   | "defuddle"
   | "readability";
 
@@ -41,12 +44,6 @@ const VIDEO_HOSTS = new Set([
 export interface HostRoutePolicy {
   /** True when the host must be fetched with a browser extractor. */
   browser?: boolean;
-  /**
-   * True when the browser extractor is the stealth one (Patchright): the
-   * host is in `[browser] stealth_hosts` or the config engine is patchright.
-   * Only meaningful together with `browser`.
-   */
-  stealth?: boolean;
   /** True when the host is skip-listed: its links are never fetched. */
   skipped?: boolean;
 }
@@ -55,7 +52,6 @@ export interface RouterOptions {
   fetch?: DefuddleExtractorOptions["fetch"] & ReadabilityExtractorOptions["fetch"];
   parseHtml?: DefuddleExtractorOptions["parseHtml"];
   browser?: BrowserExtractorOptions;
-  patchright?: PatchrightExtractorOptions;
   ytdlp?: YtdlpExtractorOptions;
   pdf?: PdfExtractorOptions;
   /** Minimum markdown chars for a "good" extraction. Default 200. */
@@ -87,8 +83,6 @@ export function buildRouterDeps(options: RouterOptions = {}): RouterDeps {
       readability: options.extractors?.readability ??
         createReadabilityExtractor({ fetch: fetch! }),
       browser: options.extractors?.browser ?? createBrowserExtractor(options.browser),
-      patchright: options.extractors?.patchright ??
-        createPatchrightExtractor(options.patchright),
       ytdlp: options.extractors?.ytdlp ?? createYtdlpExtractor(options.ytdlp),
       pdf: options.extractors?.pdf ?? createPdfExtractor({ fetch: fetch!, ...options.pdf }),
     },
@@ -137,7 +131,8 @@ export function createRouter(options: RouterOptions = {}) {
     /**
      * Route a URL. When a host policy is injected, a host that must use the
      * browser (a saved profile, a flagged canary, a login gate or a manual
-     * config override) routes to the browser extractor.
+     * config override) routes to the single browser route; the browser
+     * extractor picks the adapter for the host.
      */
     async routeForWithPolicy(url: string): Promise<RouteChoice> {
       const base = routeFor(url);
@@ -150,7 +145,7 @@ export function createRouter(options: RouterOptions = {}) {
       }
       const policy = await deps.hostPolicy(host);
       if (policy?.skipped) return base;
-      if (policy?.browser) return policy.stealth ? "patchright" : "browser";
+      if (policy?.browser) return "browser";
       return base;
     },
     async extract(url: string): Promise<RoutedExtractResult> {
@@ -164,10 +159,10 @@ export function createRouter(options: RouterOptions = {}) {
         const good =
           result.markdown.trim().length >= minChars && !result.needsBrowser;
         if (good) return { route, attempts, ...result };
-        // needsBrowser from a walled-garden route is terminal: the browser
+        // needsBrowser from a browser-routed page is terminal: the browser
         // engine chosen by the policy is the right extractor, a missing
         // profile should surface as-is.
-        if (result.needsBrowser && (route === "browser" || route === "patchright")) {
+        if (result.needsBrowser && route === "browser") {
           return { route, attempts, ...result };
         }
         return null;

@@ -29,12 +29,13 @@
   },
   "dependencies": {
     "@linkinbox/app": "workspace:*",
+    "@linkinbox/browser": "workspace:*",
     "@linkinbox/core": "workspace:*",
     "@linkinbox/db": "workspace:*",
     "@linkinbox/extractors": "workspace:*",
     "@linkinbox/media": "workspace:*",
-    "commander": "^15.0.0",
-    "@linkinbox/server": "workspace:*"
+    "@linkinbox/server": "workspace:*",
+    "commander": "^15.0.0"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

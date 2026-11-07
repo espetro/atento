@@ -7,14 +7,22 @@
  * `hostPolicy` function over the config skip-list, the persisted canary
  * state and the saved browser profiles), so the router and the limiter
  * agree on every host.
+ *
+ * M1: the `browser` and `patchright` routes are merged into ONE `browser`
+ * route. A composite browser extractor resolves the adapter id per host
+ * through the browser registry (`[browser.hosts]` -> reader default) and
+ * delegates to that adapter's Extractor; `result.meta.adapter` records
+ * which adapter ran. Escalation on bot-block/login-wall signals walks the
+ * `[browser] escalate` list in order.
  */
 import {
   DEFAULT_BROWSER_CONFIG,
+  browserHostAdapter,
   emptyHostState,
   hostPolicy,
   isLoginWall,
+  normalizeBrowserConfig,
   isListedStealthHost,
-  isStealthHost,
   limitForHost,
   minIntervalMs,
   pacingGate,
@@ -26,18 +34,20 @@ import {
   type Store,
 } from '@linkinbox/core'
 import {
-  buildRouterDeps,
+  browserAdapterReaders,
+  createBrowserRegistry,
+  type BrowserRegistry,
+} from '@linkinbox/browser'
+import {
+  createBrowserExtractor,
   createRouter,
   type Extractor,
   type RouterOptions,
 } from '@linkinbox/extractors'
 import type { ExtractFn } from '@linkinbox/core'
 
-/** An empty browser config, used when the caller passes none. */
-const EMPTY_BROWSER_CONFIG: BrowserConfig = DEFAULT_BROWSER_CONFIG
-
 export interface RouterExtractOptions extends RouterOptions {
-  /** Directory holding agent-browser login profiles. */
+  /** Directory holding browser login profiles. */
   profilesDir?: string;
   /** Override the underlying fetch (tests). */
   fetchImpl?: (url: string) => Promise<{
@@ -56,10 +66,18 @@ export interface RouterExtractOptions extends RouterOptions {
   /** The store, for the persisted canary state and the saved profiles. */
   store?: Store
   /**
-   * The browser engine config (`[browser]`): which hosts use the stealth
-   * engine and which Chromium binary both engines run.
+   * The browser config (`[browser]`): adapter instances, host mappings,
+   * reader/login defaults and the escalate chain. Legacy engine keys are
+   * migrated into the registry at parse time.
    */
   browserConfig?: BrowserConfig
+  /** A prebuilt registry (tests, or callers that already resolved one). */
+  browserRegistry?: BrowserRegistry
+  /**
+   * Per-adapter Extractor overrides (tests): adapterId -> Extractor. They
+   * replace the port-backed extractor for that adapter id.
+   */
+  browserAdapters?: Record<string, Extractor>
 }
 
 /**
@@ -71,18 +89,33 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
   const limits = options.limits
   const store = options.store
   const pacing = options.pacing
-  const browserConfig = options.browserConfig
-  const executablePath = browserConfig?.executablePath
-  // A direct handle on the patchright extractor for the escalation retry.
-  // Build it the same way the router does: the injected options win.
-  const routerOptions: RouterOptions = {
-    ...options,
-    fetch: options.fetchImpl ? adaptFetch(options.fetchImpl) : defaultFetch,
-    browser: {
+  const browserConfig = normalizeBrowserConfig(options.browserConfig ?? DEFAULT_BROWSER_CONFIG)
+
+  // The adapter registry: which adapter reads which host. Built lazily
+  // here; adapters only spawn a browser when actually opened.
+  const registry =
+    options.browserRegistry ??
+    createBrowserRegistry(browserConfig, { profilesDir: options.profilesDir })
+
+  // Human pacing shared by every port-backed adapter extractor.
+  const dwellMs = options.pacing
+    ? Math.min(options.pacing.dwellMaxS, options.pacing.dwellMedianS) * 1000
+    : undefined
+  const adapterReaders = browserAdapterReaders(registry, {
+    profilesDir: options.profilesDir,
+    // The sleep is the real one; tests inject fakes at the extractor level.
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    ...(dwellMs !== undefined ? { dwellMs } : {}),
+    overrides: options.browserAdapters,
+  })
+
+  // The fallback browser extractor: the pre-M1 agent-browser subprocess
+  // engine, used when the resolved adapter id has no port-backed extractor
+  // (e.g. a hand-built config without adapters).
+  const fallbackBrowser =
+    options.extractors?.browser ??
+    createBrowserExtractor({
       profilesDir: options.profilesDir,
-      // Human pacing: dwell the sampled time and scroll a little before
-      // reading, so a logged-in session does not look like a script. The
-      // sleep is the real one; tests inject fakes at the extractor level.
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       scroll: async (px, profileDir) => {
         const { execFile } = await import('node:child_process')
@@ -95,25 +128,41 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
           )
         })
       },
-      dwellMs: options.pacing
-        ? Math.min(options.pacing.dwellMaxS, options.pacing.dwellMedianS) * 1000
-        : undefined,
-      // The Chromium binary applies to both engines.
-      ...(executablePath ? { executablePath } : {}),
+      ...(dwellMs !== undefined ? { dwellMs } : {}),
+      ...(browserConfig.executablePath ? { executablePath: browserConfig.executablePath } : {}),
       ...options.browser,
+    })
+
+  /**
+   * The single `browser` route: resolve the adapter id for the URL's host
+   * through the registry and delegate. `meta.adapter` records the choice.
+   */
+  const browserRoute: Extractor = options.extractors?.browser ?? {
+    name: 'browser',
+    async extract(url: string) {
+      const host = hostFromUrl(url)
+      const adapterId = registry.resolve('reader', host)
+      const extractor = adapterReaders[adapterId] ?? fallbackBrowser
+      const result = await extractor.extract(url)
+      return {
+        ...result,
+        meta: { ...(result.meta ?? {}), adapter: adapterId },
+      }
     },
-    patchright: {
-      profilesDir: options.profilesDir,
-      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-      dwellMs: options.pacing
-        ? Math.min(options.pacing.dwellMaxS, options.pacing.dwellMedianS) * 1000
-        : undefined,
-      ...(executablePath ? { executablePath } : {}),
-      ...options.patchright,
+  }
+
+  const routerOptions: RouterOptions = {
+    ...options,
+    fetch: options.fetchImpl ? adaptFetch(options.fetchImpl) : defaultFetch,
+    extractors: {
+      ...options.extractors,
+      browser: browserRoute,
     },
     // The host policy: one shared function from the core package. Skipped
     // hosts never reach the router (the pipeline parks them first), but the
-    // browser routing decision is made here.
+    // browser routing decision is made here. A `[browser.hosts]` mapping or
+    // a legacy stealth_hosts entry also forces the browser route: the owner
+    // configured a browser adapter for that host on purpose.
     hostPolicy: limits
       ? async (host) => {
           let hasProfile = false
@@ -137,31 +186,24 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
           // A review-only host is never routed to the browser: no profile is
           // opened for a host the owner reviews by hand.
           return {
-            browser: (policy.browser || isListedStealthHost(browserConfig ?? EMPTY_BROWSER_CONFIG, host)) &&
+            browser:
+              (policy.browser ||
+                isListedStealthHost(browserConfig, host) ||
+                browserHostAdapter(browserConfig, host) !== undefined) &&
               !policy.reviewOnly,
-            // The stealth engine: the host is in stealth_hosts or the config
-            // engine is patchright.
-            stealth:
-              browserConfig !== undefined && isStealthHost(browserConfig, host),
             skipped: policy.skipped,
           }
         }
       : undefined,
   }
   const router = createRouter(routerOptions)
-  // The escalation extractor: the caller's injected patchright options if it
-  // built one, else the router's own (both share the same options table).
-  const escalateExtractor: Extractor =
-    options.extractors?.patchright ??
-    buildRouterDeps(routerOptions).extractors['patchright']!
 
   /**
-   * The normal pacing gate before the escalation retry. The retry is a second
-   * page read on the same host, so it waits like any other read: the walled-
-   * garden pacing profile (working hours, daily cap, breaks, jittered spacing)
-   * when the host is strict, else the host's spacing wait. A throttled wait is
-   * skipped silently: the retry then happens immediately, but it never runs
-   * more than once.
+   * The normal pacing gate before an escalation retry. Every retry is
+   * another page read on the same host, so it waits like any other read:
+   * the walled-garden pacing profile (working hours, daily cap, breaks,
+   * jittered spacing) when the host is strict, else the host's spacing
+   * wait. A throttled wait is skipped silently.
    */
   const pacingWait = async (url: string): Promise<void> => {
     if (!limits || !store) return
@@ -194,21 +236,43 @@ export function createExtractFn(options: RouterExtractOptions = {}): ExtractFn {
     const first = await router.extract(url)
     const firstAdapted = adaptResult(first, url)
     // Auto-escalation: a bot block (Cloudflare, captcha, HTTP 403/429) or a
-    // login wall on a non-stealth route gets ONE retry through the stealth
-    // engine, with no user input. The retry runs after the normal pacing the
-    // patchright extractor applies (dwell, scroll); it never bypasses it.
+    // login wall gets ONE pass through the `[browser] escalate` chain, in
+    // order, with no user input. Each retry runs after the normal pacing
+    // the adapter applies (dwell, scroll); it never bypasses it. An adapter
+    // that cannot run (missing package, no profile) is skipped and the next
+    // one tried; when the chain is exhausted the original outcome stands.
     if (shouldEscalate(first, first.route)) {
-      await pacingWait(url)
-      const patchright = await escalateExtractor.extract(url)
-      // The stealth engine could not run (the package is missing, the
-      // browser is absent, there is no profile): keep the original outcome
-      // instead of reporting a failure the owner cannot act on.
-      if (patchright.meta?.['failed'] === true || patchright.meta?.['missingProfile'] === true) {
-        return firstAdapted
+      const host = hostFromUrl(url)
+      const usedId = first.route === 'browser' ? registry.resolve('reader', host) : undefined
+      for (const adapterId of registry.escalate(host, usedId)) {
+        const extractor = adapterReaders[adapterId]
+        if (!extractor) continue
+        await pacingWait(url)
+        const retried = await extractor.extract(url)
+        // The adapter could not run (the package is missing, the browser
+        // is absent, there is no profile): try the next one in the chain.
+        if (retried.meta?.['failed'] === true || retried.meta?.['missingProfile'] === true) {
+          continue
+        }
+        return adaptResult(
+          {
+            route: 'browser',
+            ...retried,
+            meta: { ...(retried.meta ?? {}), adapter: adapterId },
+          },
+          url,
+        )
       }
-      return adaptResult({ route: 'patchright', ...patchright }, url)
     }
     return firstAdapted
+  }
+}
+
+function hostFromUrl(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^\[(.*)\]$/, '$1').toLowerCase()
+  } catch {
+    return ''
   }
 }
 
@@ -237,14 +301,12 @@ function looksBotBlocked(body?: string): boolean {
 }
 
 /**
- * Decide whether the extract-fn result must escalate to the patchright
- * extractor: a bot-block page (by markers or by status 403/429) or a login
- * wall, coming from a non-stealth route. The stealth route itself never
- * escalates again, so there is exactly one retry, never a loop.
- *
- * The whole attempt chain is scanned: the router falls back from the static
- * route to the browser route, and the fallback attempt (the one that is
- * returned) can hide the challenge page the static route saw.
+ * Decide whether the extract-fn result must escalate through the browser
+ * adapter chain: a bot-block page (by markers or by status 403/429) or a
+ * login wall. The whole attempt chain is scanned: the router falls back
+ * from the static route to the browser route, and the fallback attempt
+ * (the one that is returned) can hide the challenge page the static route
+ * saw.
  */
 function shouldEscalate(
   result: {
@@ -254,7 +316,6 @@ function shouldEscalate(
   },
   route: string,
 ): boolean {
-  if (route === 'patchright') return false
   if (result.gone !== undefined) return false
   const attempts = result.attempts.length > 0 ? result.attempts : []
   return attempts.some((attempt) => {

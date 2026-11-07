@@ -159,8 +159,9 @@ stealth_hosts = ["app.devin.ai"]
       expect(browser.calls[0]?.headless).toBe(false)
       // The profile row points at the patchright profile directory.
       const profile = await db.store.getProfile('app.devin.ai')
+      // The migrated stealth adapter id names the profile directory.
       expect(profile?.path).toBe(
-        join(ctx.config.profilesDir, 'app.devin.ai', 'patchright'),
+        join(ctx.config.profilesDir, 'app.devin.ai', 'stealth'),
       )
       expect(out.stdout).toContain('saved profile for app.devin.ai')
       // The parked links are requeued for the next extract run.
@@ -191,7 +192,7 @@ engine = "patchright"
       expect(browser.calls[0]?.headless).toBe(false)
       const profile = await db.store.getProfile('example.com')
       expect(profile?.path).toBe(
-        join(ctx.config.profilesDir, 'example.com', 'patchright'),
+        join(ctx.config.profilesDir, 'example.com', 'stealth'),
       )
     } finally {
       await db.cleanup()
@@ -213,7 +214,7 @@ engine = "patchright"
       })
       expect(browser.calls).toHaveLength(0)
       const profile = await db.store.getProfile('example.com')
-      expect(profile?.path).toBe(join(ctx.config.profilesDir, 'example.com'))
+      expect(profile?.path).toBe(join(ctx.config.profilesDir, 'example.com', 'headless'))
       expect(out.stdout).toContain('saved profile for example.com')
     } finally {
       await db.cleanup()

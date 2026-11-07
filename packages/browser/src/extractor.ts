@@ -19,6 +19,7 @@ import {
   type ExtractResult,
   type Extractor,
 } from '@linkinbox/extractors'
+import type { BrowserRegistry } from './registry.js'
 
 export interface PageReaderExtractorOptions {
   /** Base profiles dir; the profile dir is <dir>/<host>/<adapterId>. */
@@ -117,4 +118,26 @@ export function pageReaderExtractor(
       }
     },
   }
+}
+
+/**
+ * Build the adapterId -> Extractor map the router and the browse reader
+ * share: every registry adapter with a PageReaderPort becomes an
+ * Extractor over the new profile layout. `overrides` win per adapter id
+ * (tests inject fakes here).
+ */
+export function browserAdapterReaders(
+  registry: BrowserRegistry,
+  options: PageReaderExtractorOptions & {
+    overrides?: Record<string, Extractor>
+  } = {},
+): Record<string, Extractor> {
+  const { overrides, ...extractorOptions } = options
+  const out: Record<string, Extractor> = {}
+  for (const id of Object.keys(registry.config.adapters ?? {})) {
+    const instance = registry.adapter(id)
+    if (!instance?.reader) continue
+    out[id] = overrides?.[id] ?? pageReaderExtractor(instance.reader, extractorOptions)
+  }
+  return out
 }

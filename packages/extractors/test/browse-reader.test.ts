@@ -23,7 +23,7 @@ describe('browse reader: the engine choice', () => {
     })
     const outcome = await reader('https://plain.example/a', 'plain.example')
     expect(outcome.ok).toBe(true)
-    expect(outcome.engine).toBe('agent-browser')
+    expect(outcome.engine).toBe('headless')
     expect(outcome.markdown).toContain('hello')
     // The only commands are the ones a read needs: open the page, read it
     // and close the session. No click, no type.
@@ -37,20 +37,20 @@ describe('browse reader: the engine choice', () => {
       profilesDir: '/tmp/profiles',
       command: 'agent-browser',
       exec: async () => ({ code: 0, stdout: '', stderr: '' }),
-      // Only the agent-browser profile exists: the stealth engine keeps its
+      // Only the agent-browser profile exists: the stealth adapter keeps its
       // own profile directory, so it never touches the other one.
       profileExists: (dir) => {
         seenDirs.push(dir)
-        return !dir.includes('patchright')
+        return !dir.endsWith('/stealth')
       },
       stealthHost: (host) => host === 'stealth.example',
     })
     const outcome = await reader('https://stealth.example/a', 'stealth.example')
     expect(outcome.ok).toBe(false)
     expect(outcome.reason).toBe('no_profile')
-    expect(outcome.engine).toBe('patchright')
-    // The stealth engine looked in its own profile subdirectory.
-    expect(seenDirs[0]).toContain('patchright')
+    expect(outcome.engine).toBe('stealth')
+    // The stealth adapter looked in its own profile subdirectory.
+    expect(seenDirs[0]).toMatch(/\/stealth$/)
   })
 })
 

@@ -197,6 +197,9 @@ importers:
 
   packages/app:
     dependencies:
+      '@linkinbox/browser':
+        specifier: workspace:*
+        version: link:../browser
       '@linkinbox/core':
         specifier: workspace:*
         version: link:../core
@@ -256,6 +259,9 @@ importers:
       '@linkinbox/app':
         specifier: workspace:*
         version: link:../app
+      '@linkinbox/browser':
+        specifier: workspace:*
+        version: link:../browser
       '@linkinbox/core':
         specifier: workspace:*
         version: link:../core

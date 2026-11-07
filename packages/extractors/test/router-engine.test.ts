@@ -1,6 +1,9 @@
 /**
- * The engine routing: a stealth host extracts with the patchright
- * extractor, every other host keeps the agent-browser one.
+ * The merged browser route: every browser-routed host takes the single
+ * `browser` route. WHICH adapter reads the page is the app layer's
+ * composite browser extractor (`meta.adapter`); the extractors router only
+ * guarantees there is one browser route and that its needsBrowser outcome
+ * is terminal.
  *
  * Fakes only: the extractors are stubbed, so no browser and no network.
  */
@@ -21,7 +24,7 @@ const ok: ExtractResult = { markdown: "x".repeat(500) };
 
 function routerWith(
   overrides: Partial<Record<RouteChoice, Extractor>>,
-  policy?: (host: string) => { browser?: boolean; stealth?: boolean; skipped?: boolean },
+  policy?: (host: string) => { browser?: boolean; skipped?: boolean },
 ) {
   return createRouter({
     hostPolicy: policy,
@@ -29,7 +32,6 @@ function routerWith(
       defuddle: fakeExtractor("defuddle", ok),
       readability: fakeExtractor("readability", ok),
       browser: fakeExtractor("browser", ok),
-      patchright: fakeExtractor("patchright", ok),
       ytdlp: fakeExtractor("ytdlp", ok),
       pdf: fakeExtractor("pdf", ok),
       ...overrides,
@@ -37,53 +39,50 @@ function routerWith(
   });
 }
 
-describe("engine routing", () => {
-  it("routes a stealth host to the patchright extractor", async () => {
+describe("browser route consolidation", () => {
+  it("routes a policy-gated host to the single browser route", async () => {
     const router = routerWith({}, (host) =>
-      host === "app.devin.ai" ? { browser: true, stealth: true } : {},
+      host === "app.devin.ai" ? { browser: true } : {},
     );
-    expect(await router.routeForWithPolicy("https://app.devin.ai/x")).toBe("patchright");
+    expect(await router.routeForWithPolicy("https://app.devin.ai/x")).toBe("browser");
     expect(await router.routeForWithPolicy("https://example.com/x")).toBe("defuddle");
   });
 
-  it("routes a non-stealth browser host to the browser extractor", async () => {
-    const router = routerWith({}, () => ({ browser: true, stealth: false }));
-    expect(await router.routeForWithPolicy("https://example.com/x")).toBe("browser");
-  });
-
-  it("extracts through the patchright extractor for a stealth host", async () => {
+  it("keeps adapter identity in meta: the browser extractor stamps it", async () => {
     const router = routerWith(
       {
-        patchright: fakeExtractor("patchright", { markdown: "x".repeat(500), meta: { engine: "patchright" } }),
-        browser: fakeExtractor("browser", { markdown: "y".repeat(500) }),
-      },
-      () => ({ browser: true, stealth: true }),
-    );
-    const result = await router.extract("https://app.devin.ai/x");
-    expect(result.route).toBe("patchright");
-    expect(result.meta?.["engine"]).toBe("patchright");
-  });
-
-  it("surfaces a missing profile as needsBrowser from the patchright route", async () => {
-    const router = routerWith(
-      {
-        patchright: fakeExtractor("patchright", {
-          markdown: "",
-          needsBrowser: true,
-          meta: { missingProfile: true },
+        browser: fakeExtractor("browser", {
+          markdown: "x".repeat(500),
+          meta: { adapter: "stealth", engine: "patchright" },
         }),
       },
-      () => ({ browser: true, stealth: true }),
+      () => ({ browser: true }),
     );
     const result = await router.extract("https://app.devin.ai/x");
-    expect(result.route).toBe("patchright");
-    expect(result.needsBrowser).toBe(true);
-    // Terminal: no fallback to another engine.
-    expect(result.attempts.map((a) => a.route)).toEqual(["patchright"]);
+    expect(result.route).toBe("browser");
+    expect(result.meta?.["adapter"]).toBe("stealth");
   });
 
-  it("never routes a skipped host to a browser engine", async () => {
-    const router = routerWith({}, () => ({ skipped: true, browser: true, stealth: true }));
+  it("surfaces a missing profile as needsBrowser from the browser route", async () => {
+    const router = routerWith(
+      {
+        browser: fakeExtractor("browser", {
+          markdown: "",
+          needsBrowser: true,
+          meta: { missingProfile: true, adapter: "headless" },
+        }),
+      },
+      () => ({ browser: true }),
+    );
+    const result = await router.extract("https://app.devin.ai/x");
+    expect(result.route).toBe("browser");
+    expect(result.needsBrowser).toBe(true);
+    // Terminal: no fallback to another extractor.
+    expect(result.attempts.map((a) => a.route)).toEqual(["browser"]);
+  });
+
+  it("never routes a skipped host to the browser route", async () => {
+    const router = routerWith({}, () => ({ skipped: true, browser: true }));
     expect(await router.routeForWithPolicy("https://example.com/x")).toBe("defuddle");
   });
 });

@@ -24,6 +24,7 @@ import {
   browseRead,
   captureIngest,
   DEFAULT_BROWSER_CONFIG,
+  normalizeBrowserConfig,
   DEFAULT_CAPTURE_CONFIG,
   DEFAULT_LIMITS,
   DEFAULT_LOGIN_CONFIG,
@@ -52,7 +53,9 @@ import {
   triage,
   linkHistory,
   LLM_KEY,
+  migrateBrowserProfiles,
   noopLogger,
+  remapLegacyProfilePath,
   type AsrFn,
   type BrowseFn,
   type BrowseOptions,
@@ -98,6 +101,7 @@ import {
   type UntilEmptyOptions,
   type UntilEmptyResult,
 } from '@linkinbox/core'
+import { existsSync } from 'node:fs'
 import { loadLoginReport, type LoginReport, type PendingLoginPolicy } from './pending-logins.js'
 import { createExtractFn } from './adapters/extract-fn.js'
 import { createEnrichFn } from './adapters/enrich-fn.js'
@@ -309,7 +313,7 @@ function resolveConfig(config: LinkinboxConfig): ResolvedConfig {
     media: config.media ?? DEFAULT_MEDIA_CONFIG,
     capture: config.capture ?? DEFAULT_CAPTURE_CONFIG,
     share: config.share ?? DEFAULT_SHARE_CONFIG,
-    browser: config.browser ?? DEFAULT_BROWSER_CONFIG,
+    browser: normalizeBrowserConfig(config.browser ?? DEFAULT_BROWSER_CONFIG),
     profilesDir: config.profilesDir ?? '',
     dir: config.dir ?? '',
     ...(config.dbPath !== undefined ? { dbPath: config.dbPath } : {}),
@@ -345,6 +349,33 @@ export function createLinkinboxOps(
   let enrichFnPromise: Promise<EnrichFn> | undefined
   let mediaFnPromise: Promise<AdapterMediaFn> | undefined
   let browseFnPromise: Promise<BrowseFn> | undefined
+  let profilesMigrated = false
+
+  /**
+   * One-time browser profile migration (M1): move legacy
+   * <profiles>/<host> and <profiles>/<host>/patchright directories into
+   * the per-adapter <profiles>/<host>/<adapterId> layout and rewrite the
+   * stored profile paths to match. Idempotent; runs before the first
+   * browser-touching adapter is built.
+   */
+  async function ensureBrowserProfiles(): Promise<void> {
+    if (profilesMigrated || cfg.profilesDir === '') return
+    profilesMigrated = true
+    try {
+      migrateBrowserProfiles(cfg.profilesDir, cfg.browser, (m) => logger.info(m))
+      for (const profile of await store.listProfiles()) {
+        const next = remapLegacyProfilePath(cfg.profilesDir, cfg.browser, profile.path)
+        if (next === undefined || next === profile.path) continue
+        // Rewrite only when the move actually happened: the new dir exists
+        // and the old one is gone. Otherwise the path still resolves.
+        if (existsSync(next) && !existsSync(profile.path)) {
+          await store.upsertProfile({ host: profile.host, path: next })
+        }
+      }
+    } catch {
+      // Migration is best effort: a failure here must never block a run.
+    }
+  }
 
   const ops: LinkinboxOps = {
     store,
@@ -354,8 +385,10 @@ export function createLinkinboxOps(
     llmKey: LLM_KEY,
 
     extractFn() {
-      extractFnPromise ??= Promise.resolve(
-        deps.extractFn ??
+      extractFnPromise ??= (async () => {
+        await ensureBrowserProfiles()
+        return (
+          deps.extractFn ??
           createExtractFn({
             profilesDir: cfg.profilesDir,
             limits: cfg.limits,
@@ -363,8 +396,9 @@ export function createLinkinboxOps(
             pacing: cfg.pacing,
             browserConfig: cfg.browser,
             store,
-          }),
-      )
+          })
+        )
+      })()
       return extractFnPromise
     },
 
@@ -395,13 +429,14 @@ export function createLinkinboxOps(
     },
 
     browseFn() {
-      browseFnPromise ??= Promise.resolve(
-        createBrowseFn({
+      browseFnPromise ??= (async () => {
+        await ensureBrowserProfiles()
+        return createBrowseFn({
           share: cfg.share,
           browser: cfg.browser,
           profilesDir: cfg.profilesDir,
-        }),
-      )
+        })
+      })()
       return browseFnPromise
     },
 

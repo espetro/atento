@@ -386,7 +386,7 @@ describe('cli login', () => {
   })
 
   it('derives the profile path from the host', () => {
-    expect(profileDirFor('/tmp/profiles', 'x.com')).toBe(join('/tmp/profiles', 'x.com'))
+    expect(profileDirFor('/tmp/profiles', 'x.com')).toBe(join('/tmp/profiles', 'x.com', 'headless'))
   })
 })
 

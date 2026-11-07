@@ -81,8 +81,11 @@ export const DEFAULT_BROWSER_CONFIG: BrowserConfig = {
   stealthHosts: [],
   reader: LEGACY_HEADLESS_ADAPTER,
   login: LEGACY_HEADLESS_ADAPTER,
-  escalate: [],
-  adapters: {},
+  escalate: [LEGACY_STEALTH_ADAPTER],
+  adapters: {
+    [LEGACY_HEADLESS_ADAPTER]: { kind: 'agent-browser', options: {} },
+    [LEGACY_STEALTH_ADAPTER]: { kind: 'patchright', options: {} },
+  },
   hosts: {},
 }
 
@@ -170,8 +173,11 @@ export function browserFromToml(toml: Record<string, unknown>): BrowserConfig {
   const login = str(table['login'])
   if (login) out.login = login
   const escalate = table['escalate']
-  if (Array.isArray(escalate)) {
-    out.escalate = escalate.filter((e): e is string => typeof e === 'string' && e !== '')
+  const escalateSet = Array.isArray(escalate)
+  if (escalateSet) {
+    out.escalate = (escalate as unknown[]).filter(
+      (e): e is string => typeof e === 'string' && e !== '',
+    )
   }
 
   const adaptersTable = tomlTable(table['adapters'])
@@ -201,9 +207,10 @@ export function browserFromToml(toml: Record<string, unknown>): BrowserConfig {
     if (out.engine === 'patchright') {
       out.reader = LEGACY_STEALTH_ADAPTER
       out.login = LEGACY_STEALTH_ADAPTER
-      out.escalate = []
-    } else {
-      out.escalate = out.escalate.length > 0 ? out.escalate : [LEGACY_STEALTH_ADAPTER]
+      out.escalate = escalateSet ? out.escalate : []
+    } else if (!escalateSet) {
+      // No explicit escalate list: keep the legacy patchright fallback.
+      out.escalate = [LEGACY_STEALTH_ADAPTER]
     }
     for (const pattern of out.stealthHosts) {
       out.hosts[pattern] = LEGACY_STEALTH_ADAPTER
@@ -263,7 +270,7 @@ export function isStealthHost(config: BrowserConfig, host: string): boolean {
  */
 export function isListedStealthHost(config: BrowserConfig, host: string): boolean {
   const lower = host.toLowerCase()
-  return config.stealthHosts.some((pattern) => {
+  return (config.stealthHosts ?? []).some((pattern) => {
     if (pattern.startsWith('*.')) {
       const suffix = pattern.slice(2)
       return lower === suffix || lower.endsWith(`.${suffix}`)
@@ -304,7 +311,8 @@ export function resolveBrowserAdapter(
 ): string {
   const mapped = browserHostAdapter(config, host)
   if (mapped !== undefined) return mapped
-  return role === 'login' ? config.login : config.reader
+  if (role === 'login') return config.login ?? LEGACY_HEADLESS_ADAPTER
+  return config.reader ?? LEGACY_HEADLESS_ADAPTER
 }
 
 /**
@@ -313,7 +321,7 @@ export function resolveBrowserAdapter(
  */
 export function browserHostAdapter(config: BrowserConfig, host: string): string | undefined {
   const lower = host.toLowerCase()
-  for (const [pattern, id] of Object.entries(config.hosts)) {
+  for (const [pattern, id] of Object.entries(config.hosts ?? {})) {
     if (pattern.startsWith('*.')) {
       const suffix = pattern.slice(2)
       if (lower === suffix || lower.endsWith(`.${suffix}`)) return id
@@ -334,8 +342,10 @@ export function browserEscalation(
   host: string,
   usedAdapterId?: string,
 ): string[] {
-  const used = usedAdapterId ?? resolveBrowserAdapter(config, 'reader', host)
-  return config.escalate.filter((id) => id !== used && id in config.adapters)
+  const used =
+    usedAdapterId ?? resolveBrowserAdapter(config, 'reader', host)
+  const adapters = config.adapters ?? {}
+  return (config.escalate ?? []).filter((id) => id !== used && id in adapters)
 }
 
 /** The config table of one adapter instance, when it exists. */
@@ -343,5 +353,54 @@ export function browserAdapterConfig(
   config: BrowserConfig,
   id: string,
 ): BrowserAdapterConfig | undefined {
-  return config.adapters[id]
+  return config.adapters?.[id]
+}
+
+/**
+ * Normalize a BrowserConfig that may have been built by hand (tests,
+ * programmatic callers) instead of `browserFromToml`: when the registry
+ * fields are missing, synthesize the same adapter pair the TOML migration
+ * shim produces. Already-normalized configs pass through untouched.
+ */
+export function normalizeBrowserConfig(config: BrowserConfig): BrowserConfig {
+  if (
+    config.adapters &&
+    Object.keys(config.adapters).length > 0 &&
+    typeof config.reader === 'string' &&
+    config.reader !== '' &&
+    typeof config.login === 'string' &&
+    config.login !== '' &&
+    Array.isArray(config.escalate) &&
+    config.hosts
+  ) {
+    return config
+  }
+  const executablePath = config.executablePath
+  const adapterOptions = executablePath ? { executablePath } : {}
+  const adapters: Record<string, BrowserAdapterConfig> = {
+    [LEGACY_HEADLESS_ADAPTER]: { kind: 'agent-browser', options: { ...adapterOptions } },
+    [LEGACY_STEALTH_ADAPTER]: { kind: 'patchright', options: { ...adapterOptions } },
+  }
+  const hosts: Record<string, string> = { ...(config.hosts ?? {}) }
+  for (const pattern of config.stealthHosts ?? []) {
+    if (!(pattern in hosts)) hosts[pattern] = LEGACY_STEALTH_ADAPTER
+  }
+  if (config.engine === 'patchright') {
+    return {
+      ...config,
+      reader: config.reader || LEGACY_STEALTH_ADAPTER,
+      login: config.login || LEGACY_STEALTH_ADAPTER,
+      escalate: config.escalate ?? [],
+      adapters,
+      hosts,
+    }
+  }
+  return {
+    ...config,
+    reader: config.reader || LEGACY_HEADLESS_ADAPTER,
+    login: config.login || LEGACY_HEADLESS_ADAPTER,
+    escalate: config.escalate ?? [LEGACY_STEALTH_ADAPTER],
+    adapters,
+    hosts,
+  }
 }

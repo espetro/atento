@@ -15,7 +15,7 @@
  * it cannot place stay put.
  */
 import { existsSync, mkdirSync, readdirSync, renameSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import type { BrowserConfig } from './browser-config.js'
 import { LEGACY_HEADLESS_ADAPTER, LEGACY_STEALTH_ADAPTER } from './browser-config.js'
 
@@ -131,4 +131,46 @@ export function migrateBrowserProfiles(
     }
   }
   return result
+}
+
+/**
+ * The adapter ids the legacy profile dirs map to: the first agent-browser
+ * and patchright kind adapters in config, else the migrated defaults.
+ */
+export function legacyAdapterIds(config: BrowserConfig): {
+  agentBrowser: string
+  patchright: string
+} {
+  return {
+    agentBrowser: adapterIdForKind(config, 'agent-browser') ?? LEGACY_HEADLESS_ADAPTER,
+    patchright: adapterIdForKind(config, 'patchright') ?? LEGACY_STEALTH_ADAPTER,
+  }
+}
+
+/**
+ * The new-layout path a legacy stored profile path maps to, or undefined
+ * when the path is already in the new layout (or outside profilesDir).
+ * Used to rewrite the profiles table after migrateBrowserProfiles moves
+ * the directories.
+ */
+export function remapLegacyProfilePath(
+  profilesDir: string,
+  config: BrowserConfig,
+  oldPath: string,
+): string | undefined {
+  const rel = relative(profilesDir, oldPath)
+  if (rel === '' || rel.startsWith('..') || rel.startsWith(sep)) return undefined
+  const segments = rel.split(sep)
+  const host = segments[0]
+  if (!host) return undefined
+  const ids = legacyAdapterIds(config)
+  if (segments.length === 1) {
+    // <profilesDir>/<host> was the agent-browser profile.
+    return browserProfileDir(profilesDir, host, ids.agentBrowser)
+  }
+  if (segments.length === 2 && segments[1] === 'patchright') {
+    // <profilesDir>/<host>/patchright was the stealth profile.
+    return browserProfileDir(profilesDir, host, ids.patchright)
+  }
+  return undefined
 }
