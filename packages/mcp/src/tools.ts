@@ -7,10 +7,12 @@
 import { z } from 'zod/mini'
 import {
   createLinkinboxOps,
+  COLLECTION_NAMES,
   hostOf,
   LINK_STATES,
   LLM_KEY,
   DEFAULT_LIMITS,
+  type CollectionName,
   type LinkField,
   type LinkStateName,
   type LinkinboxOps,
@@ -473,6 +475,119 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
           tokensOut: outcome.tokensOut,
           costUsd: outcome.costUsd,
         })
+      }
+    },
+  )
+
+const COLLECTION_FIELD_NAMES = [
+  'id', 'url', 'url_hash', 'title', 'source', 'added_at', 'note', 'tags',
+  'category', 'priority', 'action', 'confidence', 'read_minutes', 'status',
+  'state', 'reason', 'needs_browser', 'expires_at', 'expiry_reason',
+  'why_it_matters', 'summary', 'created_at', 'updated_at',
+] as const
+
+const collectionNameSchema = z.enum(COLLECTION_NAMES as unknown as [CollectionName, ...CollectionName[]])
+const collectionFieldsSchema = z.optional(z.array(z.enum(COLLECTION_FIELD_NAMES)))
+const sinceSchema = z.optional(z.number().check(z.int(), z.minimum(0)))
+
+  server.registerTool(
+    'collections_summary',
+    {
+      description:
+        'Counts per pipeline collection plus the per-host breakdown of ' +
+        'needs_login (spec name collections.summary). This is the tool a ' +
+        'harness calls after a run: one line per host that still needs a ' +
+        'login. Read-only.',
+      inputSchema: {},
+    },
+    async () => {
+      const ctx = await deps.ctx()
+      return json(await opsFor(ctx).collectionsSummary())
+    },
+  )
+
+  server.registerTool(
+    'collection_read',
+    {
+      description:
+        'Read one collection inline (spec name collections.read): paginated ' +
+        '(<=50 rows by default), fields projection, format=json|tsv. Pass ' +
+        'since=<cursor> from a previous read or export to get only the ' +
+        'delta; the response carries the next cursor. Collections: ' +
+        COLLECTION_NAMES.join(', ') + '.',
+      inputSchema: {
+        name: collectionNameSchema,
+        since: sinceSchema,
+        fields: collectionFieldsSchema,
+        format: z.optional(z.enum(['json', 'tsv'])),
+        limit: z.optional(z.number().check(z.int(), z.positive())),
+        offset: z.optional(z.number().check(z.int(), z.minimum(0))),
+      },
+    },
+    async (args: {
+      name: CollectionName
+      since?: number
+      fields?: string[]
+      format?: 'json' | 'tsv'
+      limit?: number
+      offset?: number
+    }) => {
+      const ctx = await deps.ctx()
+      {
+        const result = await opsFor(ctx).collectionRead(args.name, {
+          ...(args.since !== undefined ? { since: args.since } : {}),
+          ...(args.fields !== undefined ? { fields: args.fields } : {}),
+          ...(args.limit !== undefined ? { limit: args.limit } : {}),
+          ...(args.offset !== undefined ? { offset: args.offset } : {}),
+        })
+        if (args.format === 'tsv') {
+          // TSV is the token-cheap form: emit it as the raw text payload.
+          const { serializeCollection } = await import('@linkinbox/app')
+          const fields = args.fields ?? ['id', 'url', 'title', 'category', 'priority', 'summary']
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: serializeCollection(result.rows, fields, 'tsv'),
+              },
+            ],
+          }
+        }
+        return json(result)
+      }
+    },
+  )
+
+  server.registerTool(
+    'collection_export',
+    {
+      description:
+        'Export one collection to a file (spec name collections.export): ' +
+        'writes ~/.linkinbox/exports/<name>-<cursor>.<ext> and returns ' +
+        '{ path, uri, count, bytes } where uri is a linkinbox:// resource ' +
+        'link to read lazily. Use it instead of collection_read for large ' +
+        'result sets.',
+      inputSchema: {
+        name: collectionNameSchema,
+        since: sinceSchema,
+        fields: collectionFieldsSchema,
+        format: z.optional(z.enum(['jsonl', 'md', 'tsv'])),
+      },
+    },
+    async (args: {
+      name: CollectionName
+      since?: number
+      fields?: string[]
+      format?: 'jsonl' | 'md' | 'tsv'
+    }) => {
+      const ctx = await deps.ctx()
+      {
+        const result = await opsFor(ctx).collectionExport(args.name, {
+          ...(args.since !== undefined ? { since: args.since } : {}),
+          ...(args.fields !== undefined ? { fields: args.fields } : {}),
+          ...(args.format !== undefined ? { format: args.format } : {}),
+        })
+        return json(result)
       }
     },
   )

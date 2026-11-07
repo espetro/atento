@@ -12,6 +12,12 @@ import { tmpdir } from 'node:os'
 import { extname, join, resolve, sep } from 'node:path'
 import {
   createLinkinboxOps,
+  isCollectionName,
+  serializeCollection,
+  COLLECTION_NAMES,
+  DEFAULT_COLLECTION_FIELDS,
+  type CollectionExportFormat,
+  type CollectionName,
   type LinkinboxOps,
 } from '@linkinbox/app'
 import {
@@ -267,6 +273,94 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
     const job = await ops.ingestStatus(c.req.param('jobId'))
     if (!job) return c.json({ error: 'not found' }, 404)
     return c.json({ job })
+  })
+
+  // ---- collections -------------------------------------------------------
+  //
+  // Token-efficient output for agents: summary counts, paginated reads with
+  // a fields projection and tsv/jsonl streaming, plus file exports. The
+  // `since` parameter is the link_events cursor returned by earlier reads.
+
+  app.get('/api/collections/summary', async (c) => {
+    return c.json(await ops.collectionsSummary())
+  })
+
+  app.get('/api/collections/:name', async (c) => {
+    const name = c.req.param('name')
+    if (!isCollectionName(name)) {
+      return c.json({ error: `unknown collection "${name}"; expected one of: ${COLLECTION_NAMES.join(', ')}` }, 400)
+    }
+    const q = c.req.query()
+    const since = q['since'] !== undefined ? Number(q['since']) : undefined
+    if (since !== undefined && (!Number.isInteger(since) || since < 0)) {
+      return c.json({ error: 'since must be a non-negative integer cursor' }, 400)
+    }
+    const format = q['format'] ?? 'json'
+    const fields =
+      q['fields'] !== undefined && q['fields'] !== ''
+        ? q['fields'].split(',').map((f) => f.trim()).filter(Boolean)
+        : undefined
+    const limit = q['limit'] !== undefined ? Number(q['limit']) : undefined
+    const offset = q['offset'] !== undefined ? Number(q['offset']) : undefined
+
+    // Export-style formats stream the whole (optionally delta) collection;
+    // json/tsv are the inline paginated read.
+    if (format === 'jsonl' || format === 'md') {
+      const result = await ops.collectionRead(name as CollectionName, {
+        ...(since !== undefined ? { since } : {}),
+        ...(fields !== undefined ? { fields } : {}),
+        limit: 1_000_000,
+      })
+      const body = serializeCollection(result.rows, fields ?? DEFAULT_COLLECTION_FIELDS, format)
+      return new Response(body, {
+        headers: {
+          'content-type': format === 'jsonl' ? 'application/x-ndjson; charset=utf-8' : 'text/markdown; charset=utf-8',
+          'x-linkinbox-cursor': String(result.cursor),
+        },
+      })
+    }
+    if (format !== 'json' && format !== 'tsv') {
+      return c.json({ error: `unknown format "${format}"; expected json, tsv, jsonl or md` }, 400)
+    }
+    const result = await ops.collectionRead(name as CollectionName, {
+      ...(since !== undefined ? { since } : {}),
+      ...(fields !== undefined ? { fields } : {}),
+      ...(limit !== undefined ? { limit } : {}),
+      ...(offset !== undefined ? { offset } : {}),
+    })
+    if (format === 'tsv') {
+      const body = serializeCollection(result.rows, fields ?? DEFAULT_COLLECTION_FIELDS, 'tsv')
+      return new Response(body, {
+        headers: {
+          'content-type': 'text/tab-separated-values; charset=utf-8',
+          'x-linkinbox-cursor': String(result.cursor),
+        },
+      })
+    }
+    return c.json(result)
+  })
+
+  app.post('/api/collections/export', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as
+      | { name?: unknown; since?: unknown; fields?: unknown; format?: unknown }
+      | null
+    if (!body || typeof body.name !== 'string' || !isCollectionName(body.name)) {
+      return c.json({ error: `name must be one of: ${COLLECTION_NAMES.join(', ')}` }, 400)
+    }
+    const format = body.format ?? 'jsonl'
+    if (format !== 'jsonl' && format !== 'md' && format !== 'tsv') {
+      return c.json({ error: 'format must be jsonl, md or tsv' }, 400)
+    }
+    const fields =
+      Array.isArray(body.fields) && body.fields.every((f) => typeof f === 'string')
+        ? (body.fields as string[])
+        : undefined
+    const result = await ops.collectionExport(body.name as CollectionName, {
+      ...(typeof body.since === 'number' ? { since: body.since } : {}),
+      ...(fields !== undefined ? { fields } : {}),
+      format: format as CollectionExportFormat,
+    })
+    return c.json(result)
   })
 
   app.get('/api/links', async (c) => {

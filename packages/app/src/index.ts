@@ -14,12 +14,14 @@ export * from './adapters/media-fn.js'
 export * from './adapters/browse-fn.js'
 export * from './linkinbox.js'
 export * from './ingest-input.js'
+export * from './collections.js'
 
 // The shared contract surface the driving adapters render from. These are
 // core domain values and shapers, re-exported so adapters never reach into
 // @linkinbox/core for them.
 export {
   LINK_STATES,
+  COLLECTION_NAMES,
   LLM_KEY,
   MEDIA_TIERS,
   UI_SUMMARY_FIELDS,
@@ -82,6 +84,7 @@ export type {
   IngestJob,
   IngestJobStatus,
   IngestResult,
+  CollectionName,
   LimitsConfig,
   Link,
   LinkField,

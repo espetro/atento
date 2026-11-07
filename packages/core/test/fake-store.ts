@@ -257,6 +257,24 @@ export class FakeStore implements Store {
     return this.history.filter((h) => h.linkId === linkId)
   }
 
+  async linkEventCursor(): Promise<number> {
+    let max = 0
+    for (const h of this.history) if (h.id > max) max = h.id
+    return max
+  }
+
+  async listChangedLinks(since: number, limit?: number): Promise<Link[]> {
+    const ids = new Set<number>()
+    for (const h of this.history) {
+      if (h.id > since) ids.add(h.linkId)
+    }
+    let out = this.links
+      .filter((l) => ids.has(l.id))
+      .sort((a, b) => a.id - b.id)
+    if (limit !== undefined) out = out.slice(0, limit)
+    return out
+  }
+
   async countByState(): Promise<Record<LinkStateName, number>> {
     const out = {} as Record<LinkStateName, number>
     for (const name of LINK_STATES) out[name] = 0
@@ -618,6 +636,17 @@ export class FakeStore implements Store {
           items.push({ linkId: link.id, url, ok: true, duplicate: true })
         } else {
           inserted += 1
+          // Mirror SqliteStore: an INGESTED marker row so the collections
+          // delta cursor sees the new link before its first transition.
+          this.history.push({
+            id: this.nextHistoryId++,
+            linkId: link.id,
+            fromState: 'created',
+            toState: 'created',
+            event: 'INGESTED',
+            data: { at: now.toISOString(), source: raw.source, jobId },
+            at: now,
+          })
           items.push({ linkId: link.id, url, ok: true, duplicate: false })
         }
       } catch (err) {

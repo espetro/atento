@@ -38,6 +38,7 @@ export const CLI_TO_TOOL: Record<string, string[]> = {
   run: ['ingest_run', 'extract_run', 'enrich_run'],
   // The `ingest` command group is the M2 bulk-ingest contract.
   ingest: ['ingest_file', 'ingest_text', 'ingest_urls', 'ingest_remote', 'ingest_status'],
+  collections: ['collections_summary', 'collection_read', 'collection_export'],
   list: ['links_list'],
   show: ['links_get'],
   triage: ['links_triage'],
@@ -65,6 +66,9 @@ const SPEC_TOOLS = [
   'ingest.urls',
   'ingest.remote',
   'ingest.status',
+  'collections.summary',
+  'collections.read',
+  'collections.export',
   'extract.run',
   'enrich.run',
   'metrics.get',

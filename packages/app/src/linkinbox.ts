@@ -107,6 +107,17 @@ import {
   type IngestJobSummary,
   type IngestStatus,
 } from './ingest-input.js'
+import {
+  collectionExport,
+  collectionRead,
+  collectionsSummary,
+  type CollectionExportOptions,
+  type CollectionExportResult,
+  type CollectionName,
+  type CollectionReadOptions,
+  type CollectionReadResult,
+  type CollectionsSummary,
+} from './collections.js'
 import { createExtractFn } from './adapters/extract-fn.js'
 import { createEnrichFn } from './adapters/enrich-fn.js'
 import { createMediaFn, type MediaFn as AdapterMediaFn } from './adapters/media-fn.js'
@@ -225,8 +236,10 @@ export interface LinkinboxOps {
   readonly store: Store
   readonly config: Required<Omit<LinkinboxConfig, 'dbPath'>> & { dbPath?: string }
   readonly logger: PipelineLogger
-  /** The durable-ingest spool root, when the config dir is known. */
-  readonly spoolDir?: string
+  /** The durable-ingest spool root. */
+  readonly spoolDir: string
+  /** The collection export root: <config dir>/exports (or next to the db). */
+  readonly exportsDir: string
 
   // ---- adapter functions (lazy, memoized, config-wired) -------------
   extractFn(): Promise<ExtractFn>
@@ -260,6 +273,17 @@ export interface LinkinboxOps {
   ingest(input: IngestInput, options?: { logger?: PipelineLogger; now?: () => Date }): Promise<IngestJobSummary>
   /** Progress for one ingest job (null when the id is unknown). */
   ingestStatus(jobId: string): Promise<IngestStatus | null>
+
+  // ---- collections (token-efficient output) ------------------------------
+  /** Counts per collection plus the needs_login per-host breakdown. */
+  collectionsSummary(): Promise<CollectionsSummary>
+  /** Inline paginated read of one collection; `since` is a link_events cursor. */
+  collectionRead(name: CollectionName, options?: CollectionReadOptions): Promise<CollectionReadResult>
+  /** Write one collection (or its delta) to an export file; returns a handle. */
+  collectionExport(
+    name: CollectionName,
+    options?: Omit<CollectionExportOptions, 'exportsDir'>,
+  ): Promise<CollectionExportResult>
 
   // ---- pipeline stages -------------------------------------------------
   extract(options?: ExtractStageOptions): Promise<ExtractResult>
@@ -363,6 +387,12 @@ export function createLinkinboxOps(
       : cfg.dbPath !== undefined
         ? join(dirname(cfg.dbPath), 'spool')
         : join(tmpdir(), 'linkinbox-spool'))
+  const exportsDir =
+    cfg.dir !== ''
+      ? join(cfg.dir, 'exports')
+      : cfg.dbPath !== undefined
+        ? join(dirname(cfg.dbPath), 'exports')
+        : join(tmpdir(), 'linkinbox-exports')
 
   // Lazily built, memoized adapter functions.
   let extractFnPromise: Promise<ExtractFn> | undefined
@@ -374,7 +404,8 @@ export function createLinkinboxOps(
     store,
     config: cfg,
     logger,
-    ...(spoolDir !== undefined ? { spoolDir } : {}),
+    spoolDir,
+    exportsDir,
     llmKey: LLM_KEY,
 
     extractFn() {
@@ -501,6 +532,18 @@ export function createLinkinboxOps(
     async ingestStatus(jobId) {
       const job = await store.getIngestJob(jobId)
       return job === null ? null : ingestStatusOf(job)
+    },
+
+    collectionsSummary() {
+      return collectionsSummary(store)
+    },
+
+    collectionRead(name, options = {}) {
+      return collectionRead(store, name, options)
+    },
+
+    collectionExport(name, options = {}) {
+      return collectionExport(store, name, { ...options, exportsDir })
     },
 
     async extract(options = {}) {
