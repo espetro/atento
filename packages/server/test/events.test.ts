@@ -252,6 +252,43 @@ describe('GET /api/events (SSE)', () => {
     }
   })
 
+  it('emits every pending run once when a low-id run finishes last (>500 candidates)', { timeout: 30_000 }, async () => {
+    // Regression: drainRuns used to scan only the first 500 candidates by
+    // run id while emitRun advanced the composite runMs floor to the max
+    // announced activity. A low-id run finishing last pushed the floor
+    // past higher-id pending runs, which were then skipped forever.
+    const now = Date.now()
+    const startedAt = new Date(now - 9_000)
+    const midFinish = new Date(now - 8_000)
+    const lastFinish = new Date(now)
+
+    // 502 candidates: the FIRST seeded row has the lowest id and the
+    // newest finishedAt — it "finishes last" inside the replay window.
+    const ids: number[] = []
+    const long = await store.startRun('enrich', 1, startedAt)
+    ids.push(long.id)
+    for (let i = 0; i < 501; i++) {
+      const r = await store.startRun('enrich', 1, startedAt)
+      ids.push(r.id)
+      await store.finishRun(r.id, { finishedAt: midFinish, okCount: 1, errorCount: 0 })
+    }
+    await store.finishRun(long.id, { finishedAt: lastFinish, okCount: 1, errorCount: 0 })
+
+    // Resume from an old cursor so the whole backlog is one candidate set.
+    const lastEventId = `evt:${JSON.stringify({ l: 0, r: now - 10_000, i: 0 })}`
+    const sse = await connectEvents({ 'last-event-id': lastEventId })
+    try {
+      const frames = await sse.waitFor('run', 502, 15_000)
+      expect(frames.length).toBe(502)
+      const emitted = frames.map((f) => (JSON.parse(f.data) as { id: number }).id)
+      // Exactly once each: no skips, no duplicates.
+      expect(new Set(emitted).size).toBe(502)
+      for (const id of ids) expect(emitted).toContain(id)
+    } finally {
+      await sse.cancel()
+    }
+  })
+
   it('emits run start/finish events', async () => {
     const sse = await connectEvents()
     try {

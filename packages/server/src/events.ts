@@ -42,8 +42,7 @@ const KEEPALIVE_MS = 15_000
 /** Candidate floor margin when resuming run/ingest by timestamp. */
 const REPLAY_MARGIN_MS = 1_000
 const LINK_PAGE = 500
-/** How far back the head cursor scans for the newest run activity. */
-const HEAD_RUN_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000
+const RUN_PAGE = 500
 
 /** Per-family resume state carried inside every emitted `id:`. */
 interface EventCursor {
@@ -309,13 +308,29 @@ export function createEventsResponse(
 
       // Run candidates: rows whose startedAt or finishedAt moved inside the
       // floor margin; the signature map drops rows already announced.
+      // Keyset-paginated by run id: emitRun advances cursor.runMs to the
+      // max announced activity, so a single truncated page could push the
+      // floor past candidates that were never scanned (a low-id run
+      // finishing last would permanently skip higher-id pending runs).
+      // Paging until exhaustion keeps the floor honest; each page stays
+      // bounded.
       const drainRuns = async () => {
         const floor = new Date(cursor.runMs - REPLAY_MARGIN_MS)
-        const runs = await store.listRuns({ since: floor, limit: 500 })
-        for (const run of runs) {
-          const sig = runSignature(run)
-          if (runSignatures.get(run.id) === sig) continue
-          emitRun(run)
+        let afterId: number | undefined
+        for (;;) {
+          const page = await store.listRuns({
+            since: floor,
+            limit: RUN_PAGE,
+            ...(afterId !== undefined ? { afterId } : {}),
+          })
+          if (page.length === 0) break
+          for (const run of page) {
+            const sig = runSignature(run)
+            if (runSignatures.get(run.id) === sig) continue
+            emitRun(run)
+          }
+          afterId = page[page.length - 1]!.id
+          if (page.length < RUN_PAGE) break
         }
       }
 
@@ -338,11 +353,23 @@ export function createEventsResponse(
       // runs/jobs. Explicit cursors skip both steps and replay instead.
       if (parsed.head) {
         const now = Date.now()
-        const recentRuns = await store.listRuns({
-          since: new Date(now - HEAD_RUN_LOOKBACK_MS),
-          limit: 500,
-        })
-        for (const run of recentRuns) runSignatures.set(run.id, runSignature(run))
+        // Seed signatures for exactly the rows drainRuns can see as
+        // candidates (same floor), paginated so a >page backlog cannot
+        // leave rows unseeded — an unseeded candidate would replay as if
+        // it were new work.
+        const seedFloor = new Date(now - REPLAY_MARGIN_MS)
+        let seedAfterId: number | undefined
+        for (;;) {
+          const page = await store.listRuns({
+            since: seedFloor,
+            limit: RUN_PAGE,
+            ...(seedAfterId !== undefined ? { afterId: seedAfterId } : {}),
+          })
+          if (page.length === 0) break
+          for (const run of page) runSignatures.set(run.id, runSignature(run))
+          seedAfterId = page[page.length - 1]!.id
+          if (page.length < RUN_PAGE) break
+        }
         for (const job of await store.listIngestJobs()) {
           ingestSignatures.set(job.id, ingestSignature(job))
         }

@@ -752,15 +752,16 @@ export class SqliteStore implements Store {
     return row === undefined ? null : runFromRow(row)
   }
 
-  async listRuns(opts: { since?: Date; limit?: number } = {}): Promise<Run[]> {
+  async listRuns(opts: { since?: Date; limit?: number; afterId?: number } = {}): Promise<Run[]> {
+    const conds = []
+    if (opts.since !== undefined) {
+      conds.push(or(gt(runs.startedAt, opts.since), gt(runs.finishedAt, opts.since)))
+    }
+    if (opts.afterId !== undefined) conds.push(gt(runs.id, opts.afterId))
     const q = this.db
       .select()
       .from(runs)
-      .where(
-        opts.since !== undefined
-          ? or(gt(runs.startedAt, opts.since), gt(runs.finishedAt, opts.since))
-          : undefined,
-      )
+      .where(conds.length > 0 ? and(...conds) : undefined)
       .orderBy(sql`${runs.id} ASC`)
     const rows = opts.limit !== undefined ? q.limit(opts.limit).all() : q.all()
     return rows.map(runFromRow)

@@ -518,8 +518,9 @@ export class FakeStore implements Store {
     return this.runs.find((r) => r.id === id) ?? null
   }
 
-  async listRuns(opts: { since?: Date; limit?: number } = {}): Promise<Run[]> {
+  async listRuns(opts: { since?: Date; limit?: number; afterId?: number } = {}): Promise<Run[]> {
     let out = [...this.runs].sort((a, b) => a.id - b.id)
+    if (opts.afterId !== undefined) out = out.filter((r) => r.id > opts.afterId!)
     if (opts.since !== undefined) {
       out = out.filter(
         (r) =>

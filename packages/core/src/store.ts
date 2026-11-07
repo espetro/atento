@@ -171,7 +171,12 @@ export interface Store {
    * `finishedAt` is newer than the instant — the poll shape live event
    * streams use to spot run starts and finishes.
    */
-  listRuns(opts?: { since?: Date; limit?: number }): Promise<Run[]>
+  listRuns(opts?: {
+    since?: Date
+    limit?: number
+    /** Keyset pagination: only rows with id greater than this. */
+    afterId?: number
+  }): Promise<Run[]>
 
   /**
    * Mark `running` journal rows `crashed` when their owner is gone: the pid
