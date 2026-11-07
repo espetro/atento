@@ -925,13 +925,22 @@ export class SqliteStore implements Store {
     return r.changes
   }
 
+  /**
+   * Legacy metrics row: NOT a journal lock. The row is inserted already
+   * `done`-ish (non-'running') so it can never be mistaken for an
+   * `acquireRun` holder, reclaimed as crashed, or block a stage. Stage
+   * work must go through `acquireRun` + `heartbeatRun` instead — a
+   * 'running' row without heartbeat refresh would be reclaimed while
+   * still alive.
+   */
   async startRun(stage: string, inputCount: number, startedAt?: Date): Promise<Run> {
     const at = startedAt ?? new Date()
     const row = this.db
       .insert(runs)
       .values({
         stage,
-        status: 'running',
+        // Non-locking status: the journal only guards 'running' rows.
+        status: 'done',
         pid: process.pid,
         heartbeatAt: at,
         startedAt: at,

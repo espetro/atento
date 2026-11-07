@@ -436,7 +436,9 @@ export class FakeStore implements Store {
       costUsd: null,
     }
     this.runs.push(run)
-    this.journal.set(run.id, { status: 'running', pid: process.pid, heartbeatAt: at })
+    // Mirrors SqliteStore.startRun: a legacy metrics row, NOT a journal
+    // lock — non-'running' so it is never a holder or reclaimable.
+    this.journal.set(run.id, { status: 'done', pid: process.pid, heartbeatAt: at })
     return run
   }
 
@@ -452,6 +454,7 @@ export class FakeStore implements Store {
     if (holder) return { ok: false, busy: this.journalEntry(holder.id) }
     const run = await this.startRun(stage, 0, at)
     const j = this.journal.get(run.id)!
+    j.status = 'running'
     j.pid = pid
     j.heartbeatAt = at
     return { ok: true, run: this.journalEntry(run.id) }

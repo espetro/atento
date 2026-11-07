@@ -194,6 +194,12 @@ export interface Store {
   ): Promise<IngestChunkCommit>
 
   // runs
+  /**
+   * Legacy metrics row — NOT a journal lock. Inserts with a non-'running'
+   * status so it never holds a stage lock, never heartbeats and never gets
+   * reclaimed as crashed. Stage work must use `acquireRun` +
+   * `heartbeatRun`; `finishRun` still closes this row out.
+   */
   startRun(stage: string, inputCount: number, startedAt?: Date): Promise<Run>
   finishRun(
     id: number,

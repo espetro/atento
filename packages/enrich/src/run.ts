@@ -1,7 +1,16 @@
 import { generateObject } from 'ai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import type { LanguageModelV3 } from '@ai-sdk/provider'
-import { EnrichmentSchema, type Enrichment, type Store } from '@linkinbox/core'
+import {
+  EnrichmentSchema,
+  STAGES,
+  busyRunOf,
+  reclaimCrashedRuns,
+  startRunHeartbeat,
+  type BusyRun,
+  type Enrichment,
+  type Store,
+} from '@linkinbox/core'
 import { buildPrompt } from './prompt.js'
 
 export type { EnrichmentInput } from '@linkinbox/core'
@@ -74,12 +83,19 @@ export interface EnrichPendingResult {
   errorCount: number
   tokensIn: number
   tokensOut: number
+  /** Set when another enrich run holds the journal lock; nothing was processed. */
+  busy?: BusyRun
 }
 
 /**
  * Enrich inbox links that have extracted content but no enrichment yet.
  * Writes via store.setEnrichment + store.setExpiry and records usage in
  * a `runs` row plus metrics.
+ *
+ * Holds the same journal lock as the pipeline enrich stage: crashed runs
+ * are reclaimed first, `acquireRun` makes this the single writer for
+ * 'enrich', and the heartbeat keeps a live run from being reclaimed as
+ * crashed. Journal time is wall-clock; `deps.now` only dates the prompt.
  */
 export async function enrichPending(
   store: Store,
@@ -91,47 +107,71 @@ export async function enrichPending(
   )
   const batch = opts.limit !== undefined ? candidates.slice(0, opts.limit) : candidates
 
-  const run = await store.startRun('enrich', batch.length)
-  const startedAt = Date.now()
-  let okCount = 0
-  let errorCount = 0
-  let tokensIn = 0
-  let tokensOut = 0
-
-  for (const link of batch) {
-    const result = await enrichLink(link, deps)
-    if (result.ok) {
-      okCount += 1
-      tokensIn += result.usage.tokensIn
-      tokensOut += result.usage.tokensOut
-      await store.setEnrichment(link.id, result.enrichment)
-    } else {
-      errorCount += 1
-      await store.addMetric({
-        timestamp: new Date(),
-        stage: 'enrich',
-        key: 'error',
-        value: 1,
-        tags: { link_id: String(link.id), stage: result.stage },
-      })
+  await reclaimCrashedRuns(store)
+  const acquired = await store.acquireRun(STAGES.enrich, { pid: process.pid })
+  if (!acquired.ok) {
+    return {
+      processed: 0,
+      okCount: 0,
+      errorCount: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      busy: busyRunOf(acquired.busy),
     }
   }
+  const journal = acquired.run
+  const stopHeartbeat = startRunHeartbeat(store, journal.id)
+  const startedAt = Date.now()
 
-  await store.finishRun(run.id, {
-    finishedAt: new Date(),
-    okCount,
-    errorCount,
-    durationMs: Date.now() - startedAt,
-    tokensIn,
-    tokensOut,
-  })
-  await store.addMetric({
-    timestamp: new Date(),
-    stage: 'enrich',
-    key: 'processed',
-    value: batch.length,
-    tags: null,
-  })
+  try {
+    let okCount = 0
+    let errorCount = 0
+    let tokensIn = 0
+    let tokensOut = 0
 
-  return { processed: batch.length, okCount, errorCount, tokensIn, tokensOut }
+    for (const link of batch) {
+      const result = await enrichLink(link, deps)
+      if (result.ok) {
+        okCount += 1
+        tokensIn += result.usage.tokensIn
+        tokensOut += result.usage.tokensOut
+        await store.setEnrichment(link.id, result.enrichment)
+      } else {
+        errorCount += 1
+        await store.addMetric({
+          timestamp: new Date(),
+          stage: 'enrich',
+          key: 'error',
+          value: 1,
+          tags: { link_id: String(link.id), stage: result.stage },
+        })
+      }
+    }
+
+    await store.finishRun(journal.id, {
+      finishedAt: new Date(),
+      okCount,
+      errorCount,
+      durationMs: Date.now() - startedAt,
+      tokensIn,
+      tokensOut,
+      inputCount: batch.length,
+    })
+    await store.addMetric({
+      timestamp: new Date(),
+      stage: 'enrich',
+      key: 'processed',
+      value: batch.length,
+      tags: null,
+    })
+
+    return { processed: batch.length, okCount, errorCount, tokensIn, tokensOut }
+  } catch (err) {
+    await store
+      .finishRun(journal.id, { finishedAt: new Date(), status: 'failed', errorCount: 1 })
+      .catch(() => {})
+    throw err
+  } finally {
+    stopHeartbeat()
+  }
 }
