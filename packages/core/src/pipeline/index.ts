@@ -1,5 +1,6 @@
 export * from './types.js'
 export * from './ingest.js'
+export * from './ingest-job.js'
 export * from './extract.js'
 export * from './reconcile.js'
 export * from './enrich.js'

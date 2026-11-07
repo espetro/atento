@@ -99,6 +99,16 @@ function makeStore(links: Link[] = [makeLink()]) {
       return 1
     },
     setExtractedContent: async () => 1,
+    reclaimLeasesForRuns: async () => 0,
+    acquireRun: async () => ({ ok: false as const, busy: { id: 0, stage: 'enrich', status: 'running' as const, pid: null, startedAt: new Date(), heartbeatAt: null, finishedAt: null } }),
+    heartbeatRun: async () => {},
+    listRunningRuns: async () => [],
+    reclaimDeadRuns: async () => [],
+    createIngestJob: async () => { throw new Error('not implemented') },
+    getIngestJob: async () => null,
+    updateIngestJob: async () => {},
+    listIngestJobs: async () => [],
+    commitIngestChunk: async () => { throw new Error('not implemented') },
     startRun: async (stage, inputCount) => ({
       id: 1,
       stage,

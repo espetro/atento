@@ -14,10 +14,20 @@ import {
   startRunHeartbeat,
   type RunJournalEntry,
 } from '../run-journal.js'
+import { createSpooledIngestJob, runIngestJob } from './ingest-job.js'
 
 export interface IngestOptions extends StageOptions {
   /** Cap the number of links processed in this run. */
   limit?: number
+  /**
+   * Durable ingest: when set, the raw links are spooled to
+   * `<spoolDir>/<jobId>/input.jsonl` and committed in chunks through an
+   * `ingest_jobs` row, so a crash resumes exactly from the cursor. The
+   * caller provides the spool root (the CLI passes `<config dir>/spool`,
+   * i.e. ~/.linkinbox/spool honouring LINKINBOX_HOME). Without it the
+   * in-memory single-shot path runs, still under the journal lock.
+   */
+  spoolDir?: string
 }
 
 export interface IngestResult extends StageResult {
@@ -41,6 +51,12 @@ export async function ingest(
   const logger = options.logger ?? noopLogger
   const now = options.now ?? (() => new Date())
   const startedAt = now()
+
+  // Durable path: bulk input goes through an ingest_jobs row + spool, so a
+  // crash resumes from the cursor instead of re-doing or losing work.
+  if (options.spoolDir !== undefined) {
+    return ingestSpooled(store, rawLinks, options)
+  }
 
   // Crash recovery first: a dead run's journal row must not hold the lock,
   // and its leases must come back before this run selects work.
@@ -91,6 +107,69 @@ export async function ingest(
     throw err
   } finally {
     stopHeartbeat()
+  }
+}
+
+/**
+ * The durable ingest path: spool the raw links, create the job row, then
+ * run it. `limit` is applied before spooling so the job only ever contains
+ * what will be committed — identical external behaviour to the
+ * single-shot path.
+ */
+async function ingestSpooled(
+  store: Store,
+  rawLinks: RawLink[],
+  options: IngestOptions,
+): Promise<IngestResult> {
+  const logger = options.logger ?? noopLogger
+  const now = options.now ?? (() => new Date())
+  const effective =
+    options.limit !== undefined ? rawLinks.slice(0, options.limit) : rawLinks
+  const job = await createSpooledIngestJob(store, {
+    source: 'ingest',
+    spoolDir: options.spoolDir as string,
+    links: effective,
+    now,
+  })
+  logger.info('ingest job {jobId} spooled {total} links', {
+    jobId: job.id,
+    total: effective.length,
+  })
+  const result = await runIngestJob(store, job.id, { now, logger })
+  if (result.busy) {
+    return {
+      stage: STAGES.ingest,
+      runId: result.busy.runId,
+      busy: result.busy,
+      inputCount: rawLinks.length,
+      okCount: 0,
+      errorCount: 0,
+      skippedCount: rawLinks.length,
+      durationMs: result.durationMs,
+      tokensIn: 0,
+      tokensOut: 0,
+      costUsd: 0,
+      outcomes: [],
+      warnings: [],
+      linkIds: [],
+      duplicates: 0,
+    }
+  }
+  return {
+    stage: STAGES.ingest,
+    runId: result.runId ?? job.runId ?? 0,
+    inputCount: rawLinks.length,
+    okCount: result.okCount,
+    errorCount: result.errorCount,
+    skippedCount: rawLinks.length - result.inputCount,
+    durationMs: result.durationMs,
+    tokensIn: 0,
+    tokensOut: 0,
+    costUsd: 0,
+    outcomes: result.outcomes,
+    warnings: [],
+    linkIds: result.linkIds,
+    duplicates: result.duplicates,
   }
 }
 

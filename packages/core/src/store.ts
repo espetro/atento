@@ -7,6 +7,8 @@ import type {
   Status,
   Run,
   RunJournalStatus,
+  IngestJob,
+  IngestJobStatus,
   Metric,
   Profile,
   ProfileInput,
@@ -135,6 +137,48 @@ export interface Store {
     pidAlive?: (pid: number) => boolean
   }): Promise<RunJournalEntry[]>
 
+  // ingest jobs (durable bulk ingest)
+
+  /** Insert a new ingest job row (status 'pending'). */
+  createIngestJob(job: NewIngestJob): Promise<IngestJob>
+
+  getIngestJob(id: string): Promise<IngestJob | null>
+
+  /** Patch job fields; `updatedAt` defaults to now. */
+  updateIngestJob(
+    id: string,
+    patch: {
+      status?: IngestJobStatus
+      total?: number
+      done?: number
+      cursor?: number
+      spoolPath?: string | null
+      runId?: number | null
+      error?: string | null
+      finishedAt?: Date | null
+      updatedAt?: Date
+    },
+  ): Promise<void>
+
+  /** Jobs in the given statuses, oldest first. */
+  listIngestJobs(filter?: {
+    status?: IngestJobStatus | IngestJobStatus[]
+    limit?: number
+  }): Promise<IngestJob[]>
+
+  /**
+   * Commit one chunk of spooled input atomically: every link upsert AND the
+   * job's cursor/done advance happen in one transaction, so a crash can
+   * never leave links written past the recorded cursor. Per-item failures
+   * (bad url, store error) are captured in the result, not thrown — the
+   * chunk still commits and the cursor still advances.
+   */
+  commitIngestChunk(
+    jobId: string,
+    raws: RawLink[],
+    opts?: { now?: Date },
+  ): Promise<IngestChunkCommit>
+
   // runs
   startRun(stage: string, inputCount: number, startedAt?: Date): Promise<Run>
   finishRun(
@@ -211,6 +255,37 @@ export interface RunJournalEntry {
 }
 
 export type { RunJournalStatus }
+
+/** Fields needed to create an ingest_jobs row. */
+export interface NewIngestJob {
+  id: string
+  source: string
+  /** Absolute path of the job's spool directory. */
+  spoolPath?: string | null
+  /** Known input size up front (pre-parsed payloads). */
+  total?: number
+}
+
+/** Per-link outcome inside one committed ingest chunk. */
+export interface IngestItemResult {
+  linkId: number
+  url: string
+  ok: boolean
+  /** The url_hash was already known: upsert was a no-op downstream. */
+  duplicate: boolean
+  error?: string
+}
+
+/** Result of one atomic ingest chunk commit. */
+export interface IngestChunkCommit {
+  /** New cursor: old cursor + raws.length (every item is consumed). */
+  cursor: number
+  /** New done count: old done + raws.length. */
+  done: number
+  inserted: number
+  updated: number
+  items: IngestItemResult[]
+}
 
 /** Suggested canonical importer identities. Not enforced here. */
 export const SOURCES = {

@@ -100,6 +100,36 @@ export interface Run {
   costUsd: number | null
 }
 
+/** Lifecycle of a durable ingest job (the `ingest_jobs` table). */
+export type IngestJobStatus = 'pending' | 'running' | 'done' | 'failed'
+
+/**
+ * One durable ingest job: bulk input spooled to disk, committed in chunks.
+ * `cursor` is the number of spooled input lines already committed; a crash
+ * resumes exactly there. `done` mirrors the committed count for reporting.
+ */
+export interface IngestJob {
+  id: string
+  /** Importer/pipeline identity, e.g. "import", "capture", "mcp". */
+  source: string
+  status: IngestJobStatus
+  /** Total spooled input lines (0 until the payload is materialized). */
+  total: number
+  /** Lines committed so far (equals cursor after each chunk commit). */
+  done: number
+  /** Read position in the spooled input: lines [0, cursor) are committed. */
+  cursor: number
+  /** Absolute path of the job's spool directory, when spooled. */
+  spoolPath: string | null
+  /** The journal run currently processing the job, when running. */
+  runId: number | null
+  /** Last error message, when the job failed. */
+  error: string | null
+  createdAt: Date
+  updatedAt: Date
+  finishedAt: Date | null
+}
+
 /** A single metric sample. */
 export interface Metric {
   timestamp: Date

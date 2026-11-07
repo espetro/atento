@@ -46,23 +46,23 @@ function linkInput(overrides: Partial<LinkInput> = {}): LinkInput {
 describe('SqliteStore', () => {
   it('migrates idempotently and records schema version', async () => {
     const store = await openStore({ path: join(dir, 'test.db') })
-    expect(await store.schemaVersion()).toBe('8')
+    expect(await store.schemaVersion()).toBe('9')
     await store.migrate() // second run must not throw
-    expect(await store.schemaVersion()).toBe('8')
+    expect(await store.schemaVersion()).toBe('9')
     await store.close()
   })
 
   it('records applied migrations and does not reapply them', async () => {
     const dbPath = join(dir, 'migrations.db')
     const store = await openStore({ path: dbPath })
-    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_capture', '0006_human_pacing', '0007_media', '0008_run_journal'])
+    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_capture', '0006_human_pacing', '0007_media', '0008_run_journal', '0009_ingest_jobs'])
     await store.migrate()
-    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_capture', '0006_human_pacing', '0007_media', '0008_run_journal'])
+    expect(store.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_capture', '0006_human_pacing', '0007_media', '0008_run_journal', '0009_ingest_jobs'])
     await store.close()
 
     // reopening an existing database keeps the same migration set
     const reopened = await openStore({ path: dbPath })
-    expect(reopened.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_capture', '0006_human_pacing', '0007_media', '0008_run_journal'])
+    expect(reopened.appliedMigrations()).toEqual(['0001_initial', '0002_fsm', '0003_host_state', '0004_canary_trial', '0005_capture', '0006_human_pacing', '0007_media', '0008_run_journal', '0009_ingest_jobs'])
     expect(await reopened.countLinks()).toBe(0)
     await reopened.close()
   })

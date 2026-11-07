@@ -109,6 +109,34 @@ export const runs = sqliteTable(
   ],
 )
 
+/**
+ * Durable ingest jobs: bulk input spooled under the config dir, committed in
+ * chunks. `cursor` is the number of spooled input lines already committed —
+ * the resume point after a crash. `run_id` points at the journal run that
+ * owns processing while status is 'running'.
+ */
+export const ingestJobs = sqliteTable(
+  'ingest_jobs',
+  {
+    id: text('id').primaryKey(),
+    source: text('source').notNull(),
+    status: text('status').notNull().default('pending'),
+    total: integer('total').notNull().default(0),
+    done: integer('done').notNull().default(0),
+    cursor: integer('cursor').notNull().default(0),
+    spoolPath: text('spool_path'),
+    runId: integer('run_id'),
+    error: text('error'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+    finishedAt: integer('finished_at', { mode: 'timestamp_ms' }),
+  },
+  (t) => [
+    index('ingest_jobs_status_idx').on(t.status),
+    index('ingest_jobs_created_idx').on(t.createdAt),
+  ],
+)
+
 /** Numeric metric samples, tagged. */
 export const metrics = sqliteTable(
   'metrics',
@@ -180,5 +208,6 @@ export type MetricRow = typeof metrics.$inferSelect
 export type ProfileRow = typeof profiles.$inferSelect
 export type MetaRow = typeof meta.$inferSelect
 export type LinkEventRow = typeof linkEvents.$inferSelect
+export type IngestJobRow = typeof ingestJobs.$inferSelect
 
-export const SCHEMA_VERSION = '8'
+export const SCHEMA_VERSION = '9'

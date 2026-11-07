@@ -18,6 +18,7 @@ import {
   ingest,
   extract,
   enrich,
+  resumeIngestJobs,
   guardDepsFromStore,
   guardStatuses,
   DEFAULT_LIMITS,
@@ -281,6 +282,10 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
     async (args: { files: string[]; limit?: number }) => {
       const ctx = await deps.ctx()
       {
+        // Crash resume first: a killed ingest job finishes before new work.
+        if (ctx.spoolDir !== undefined) {
+          await resumeIngestJobs(ctx.store, { logger: ctx.logger })
+        }
         const raws = []
         const warnings: string[] = []
         const importers: Record<string, number> = {}
@@ -290,7 +295,11 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
           raws.push(...result.links)
           importers[result.importer] = (importers[result.importer] ?? 0) + result.links.length
         }
-        const outcome = await ingest(ctx.store, raws, { logger: ctx.logger, limit: args.limit })
+        const outcome = await ingest(ctx.store, raws, {
+          logger: ctx.logger,
+          limit: args.limit,
+          ...(ctx.spoolDir !== undefined ? { spoolDir: ctx.spoolDir } : {}),
+        })
         return json({
           importers,
           warnings,
@@ -299,6 +308,7 @@ export function registerTools(server: { registerTool: Function }, deps: McpDeps)
           errorCount: outcome.errorCount,
           skippedCount: outcome.skippedCount,
           duplicates: outcome.duplicates,
+          ...(outcome.busy ? { busy: outcome.busy } : {}),
         })
       }
     },

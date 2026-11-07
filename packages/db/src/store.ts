@@ -11,7 +11,9 @@ import {
   runs,
   hostState,
   mediaBudget,
+  ingestJobs,
   type LinkRow,
+  type IngestJobRow,
 } from './schema.js'
 import { runMigrations } from './migrations.js'
 import type {
@@ -22,10 +24,13 @@ import type {
   MetricFilter,
   Profile,
   ProfileInput,
+  RawLink,
   Run,
   Status,
   Store,
   Enrichment,
+  IngestJob,
+  IngestJobStatus,
   LinkEvent,
   LinkState,
   LinkStateName,
@@ -41,12 +46,16 @@ import {
   isTerminal,
   LINK_STATES,
   LEASED_STATES,
+  normalizeUrl,
   pidAlive,
   heartbeatStale,
   RUN_STALE_MS,
   type AcquireRunResult,
   type RunJournalEntry,
   type RunJournalStatus,
+  type NewIngestJob,
+  type IngestChunkCommit,
+  type IngestItemResult,
 } from '@linkinbox/core'
 
 export interface SqliteStoreOptions {
@@ -150,7 +159,14 @@ export class SqliteStore implements Store {
   }
 
   async upsertLink(input: LinkInput): Promise<Link> {
-    const now = new Date()
+    return this.upsertLinkSync(input, new Date())
+  }
+
+  /**
+   * Synchronous upsert core, callable inside a better-sqlite3 transaction
+   * (commitIngestChunk). All drizzle calls here are synchronous.
+   */
+  private upsertLinkSync(input: LinkInput, now: Date): Link {
     // FSM: a tombstoned url is never resurrected by a re-import.
     const tombstone = this.db
       .select({ id: links.id })
@@ -679,6 +695,158 @@ export class SqliteStore implements Store {
     return crashed
   }
 
+  // ---- ingest jobs ----
+
+  async createIngestJob(job: NewIngestJob): Promise<IngestJob> {
+    const now = new Date()
+    const row = this.db
+      .insert(ingestJobs)
+      .values({
+        id: job.id,
+        source: job.source,
+        status: 'pending',
+        total: job.total ?? 0,
+        done: 0,
+        cursor: 0,
+        spoolPath: job.spoolPath ?? null,
+        runId: null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()
+      .get()
+    return jobFromRow(row)
+  }
+
+  async getIngestJob(id: string): Promise<IngestJob | null> {
+    const row = this.db.select().from(ingestJobs).where(eq(ingestJobs.id, id)).get()
+    return row ? jobFromRow(row) : null
+  }
+
+  async updateIngestJob(
+    id: string,
+    patch: {
+      status?: IngestJobStatus
+      total?: number
+      done?: number
+      cursor?: number
+      spoolPath?: string | null
+      runId?: number | null
+      error?: string | null
+      finishedAt?: Date | null
+      updatedAt?: Date
+    },
+  ): Promise<void> {
+    const set: Partial<typeof ingestJobs.$inferInsert> = {
+      updatedAt: patch.updatedAt ?? new Date(),
+    }
+    if (patch.status !== undefined) set.status = patch.status
+    if (patch.total !== undefined) set.total = patch.total
+    if (patch.done !== undefined) set.done = patch.done
+    if (patch.cursor !== undefined) set.cursor = patch.cursor
+    if (patch.spoolPath !== undefined) set.spoolPath = patch.spoolPath
+    if (patch.runId !== undefined) set.runId = patch.runId
+    if (patch.error !== undefined) set.error = patch.error
+    if (patch.finishedAt !== undefined) set.finishedAt = patch.finishedAt
+    this.db.update(ingestJobs).set(set).where(eq(ingestJobs.id, id)).run()
+  }
+
+  async listIngestJobs(filter?: {
+    status?: IngestJobStatus | IngestJobStatus[]
+    limit?: number
+  }): Promise<IngestJob[]> {
+    const conds = []
+    if (filter?.status !== undefined) {
+      const statuses = Array.isArray(filter.status) ? filter.status : [filter.status]
+      conds.push(inArray(ingestJobs.status, statuses))
+    }
+    const q = this.db.select().from(ingestJobs)
+    const filtered = conds.length ? q.where(and(...conds)) : q
+    const ordered = filtered.orderBy(sql`${ingestJobs.createdAt} ASC, ${ingestJobs.id} ASC`)
+    const paged = filter?.limit !== undefined ? ordered.limit(filter.limit) : ordered
+    return paged.all().map(jobFromRow)
+  }
+
+  /**
+   * Commit one chunk of spooled input atomically: every link upsert AND the
+   * job's cursor/done advance happen in one BEGIN IMMEDIATE transaction, so
+   * a crash can never leave links written past the recorded cursor. Per-item
+   * failures are captured in the result — the chunk still commits.
+   */
+  async commitIngestChunk(
+    jobId: string,
+    raws: RawLink[],
+    opts: { now?: Date } = {},
+  ): Promise<IngestChunkCommit> {
+    const now = opts.now ?? new Date()
+    const commit = this.sqlite.transaction((): IngestChunkCommit => {
+      const job = this.db
+        .select()
+        .from(ingestJobs)
+        .where(eq(ingestJobs.id, jobId))
+        .get()
+      if (!job) {
+        throw new Error(`ingest job ${jobId} does not exist`)
+      }
+      const items: IngestItemResult[] = []
+      let inserted = 0
+      let updated = 0
+      for (const raw of raws) {
+        try {
+          const { url, hash } = normalizeUrl(raw.url)
+          const existing = this.db
+            .select({ id: links.id })
+            .from(links)
+            .where(eq(links.urlHash, hash))
+            .get()
+          const link = this.upsertLinkSync(
+            {
+              urlHash: hash,
+              url,
+              title: raw.title ?? null,
+              source: raw.source,
+              addedAt: raw.addedAt ?? null,
+              note: raw.note ?? null,
+              tags: raw.tags ?? null,
+              status: 'inbox',
+              needsBrowser: false,
+              captured: false,
+              capturedAt: null,
+              // FSM: a freshly ingested link starts in the `created` state.
+              state: 'created',
+              stateData: {},
+            },
+            now,
+          )
+          if (existing) {
+            updated += 1
+            items.push({ linkId: link.id, url, ok: true, duplicate: true })
+          } else {
+            inserted += 1
+            items.push({ linkId: link.id, url, ok: true, duplicate: false })
+          }
+        } catch (err) {
+          items.push({
+            linkId: -1,
+            url: raw.url,
+            ok: false,
+            duplicate: false,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }
+      const cursor = job.cursor + raws.length
+      const done = job.done + raws.length
+      this.db
+        .update(ingestJobs)
+        .set({ cursor, done, updatedAt: now })
+        .where(eq(ingestJobs.id, jobId))
+        .run()
+      return { cursor, done, inserted, updated, items }
+    })
+    return commit.immediate()
+  }
+
   /** FSM state of one link, zod-validated. */
   async getState(id: number): Promise<LinkState | null> {
     const row = this.db
@@ -889,6 +1057,24 @@ export class SqliteStore implements Store {
 // ---- FSM helpers ----
 
 // ---- run journal helpers ----
+
+/** Map an ingest_jobs row to the domain job. */
+function jobFromRow(row: IngestJobRow): IngestJob {
+  return {
+    id: row.id,
+    source: row.source,
+    status: row.status as IngestJobStatus,
+    total: row.total,
+    done: row.done,
+    cursor: row.cursor,
+    spoolPath: row.spoolPath ?? null,
+    runId: row.runId ?? null,
+    error: row.error ?? null,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    finishedAt: row.finishedAt ?? null,
+  }
+}
 
 /** Map a runs row to the journal view (status/pid/heartbeat included). */
 function journalFromRow(row: {

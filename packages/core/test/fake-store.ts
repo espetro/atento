@@ -7,6 +7,7 @@ import type {
   MetricFilter,
   Profile,
   ProfileInput,
+  RawLink,
   Run,
   Status,
   Store,
@@ -19,6 +20,11 @@ import type {
   RunJournalEntry,
   RunJournalStatus,
   AcquireRunResult,
+  NewIngestJob,
+  IngestChunkCommit,
+  IngestItemResult,
+  IngestJob,
+  IngestJobStatus,
 } from '../src/index.js'
 import {
   normalizeUrl,
@@ -56,6 +62,8 @@ export class FakeStore implements Store {
     number,
     { status: RunJournalStatus; pid: number | null; heartbeatAt: Date | null }
   >()
+  /** Ingest jobs, keyed by job id (the ingest_jobs table). */
+  ingestJobRows = new Map<string, IngestJob>()
 
   async upsertLink(input: LinkInput): Promise<Link> {
     const now = new Date()
@@ -486,6 +494,129 @@ export class FakeStore implements Store {
       crashed.push(this.journalEntry(run.id))
     }
     return crashed
+  }
+
+  // ---- ingest jobs ----
+
+  async createIngestJob(job: NewIngestJob): Promise<IngestJob> {
+    const now = new Date()
+    const row: IngestJob = {
+      id: job.id,
+      source: job.source,
+      status: 'pending',
+      total: job.total ?? 0,
+      done: 0,
+      cursor: 0,
+      spoolPath: job.spoolPath ?? null,
+      runId: null,
+      error: null,
+      createdAt: now,
+      updatedAt: now,
+      finishedAt: null,
+    }
+    this.ingestJobRows.set(job.id, row)
+    return { ...row }
+  }
+
+  async getIngestJob(id: string): Promise<IngestJob | null> {
+    const row = this.ingestJobRows.get(id)
+    return row ? { ...row } : null
+  }
+
+  async updateIngestJob(
+    id: string,
+    patch: {
+      status?: IngestJobStatus
+      total?: number
+      done?: number
+      cursor?: number
+      spoolPath?: string | null
+      runId?: number | null
+      error?: string | null
+      finishedAt?: Date | null
+      updatedAt?: Date
+    },
+  ): Promise<void> {
+    const row = this.ingestJobRows.get(id)
+    if (!row) return
+    if (patch.status !== undefined) row.status = patch.status
+    if (patch.total !== undefined) row.total = patch.total
+    if (patch.done !== undefined) row.done = patch.done
+    if (patch.cursor !== undefined) row.cursor = patch.cursor
+    if (patch.spoolPath !== undefined) row.spoolPath = patch.spoolPath
+    if (patch.runId !== undefined) row.runId = patch.runId
+    if (patch.error !== undefined) row.error = patch.error
+    if (patch.finishedAt !== undefined) row.finishedAt = patch.finishedAt
+    row.updatedAt = patch.updatedAt ?? new Date()
+  }
+
+  async listIngestJobs(filter?: {
+    status?: IngestJobStatus | IngestJobStatus[]
+    limit?: number
+  }): Promise<IngestJob[]> {
+    let out = [...this.ingestJobRows.values()]
+    if (filter?.status !== undefined) {
+      const statuses = Array.isArray(filter.status) ? filter.status : [filter.status]
+      out = out.filter((j) => statuses.includes(j.status))
+    }
+    out.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id))
+    if (filter?.limit !== undefined) out = out.slice(0, filter.limit)
+    return out.map((j) => ({ ...j }))
+  }
+
+  async commitIngestChunk(
+    jobId: string,
+    raws: RawLink[],
+    opts: { now?: Date } = {},
+  ): Promise<IngestChunkCommit> {
+    const job = this.ingestJobRows.get(jobId)
+    if (!job) throw new Error(`ingest job ${jobId} does not exist`)
+    const now = opts.now ?? new Date()
+    const items: IngestItemResult[] = []
+    let inserted = 0
+    let updated = 0
+    for (const raw of raws) {
+      try {
+        const { url, hash } = normalizeUrl(raw.url)
+        const existing = await this.getLinkByUrlHash(hash)
+        const link = await this.upsertLink({
+          urlHash: hash,
+          url,
+          title: raw.title ?? null,
+          source: raw.source,
+          addedAt: raw.addedAt ?? null,
+          note: raw.note ?? null,
+          tags: raw.tags ?? null,
+          status: 'inbox',
+          needsBrowser: false,
+          captured: false,
+          capturedAt: null,
+          state: 'created',
+          stateData: {},
+        })
+        if (existing) {
+          updated += 1
+          items.push({ linkId: link.id, url, ok: true, duplicate: true })
+        } else {
+          inserted += 1
+          items.push({ linkId: link.id, url, ok: true, duplicate: false })
+        }
+      } catch (err) {
+        items.push({
+          linkId: -1,
+          url: raw.url,
+          ok: false,
+          duplicate: false,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
+    const cursor = job.cursor + raws.length
+    const done = job.done + raws.length
+    job.cursor = cursor
+    job.done = done
+    job.updatedAt = now
+    return { cursor, done, inserted, updated, items }
   }
 
   async finishRun(
