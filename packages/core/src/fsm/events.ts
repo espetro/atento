@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import { z } from 'zod/mini'
 import { PARK_REASONS } from '../pipeline/park-reason.js'
 
 /**
@@ -8,7 +8,7 @@ import { PARK_REASONS } from '../pipeline/park-reason.js'
  * The store applies events atomically with a compare-and-set on the state.
  */
 
-const iso = z.string().datetime({ offset: true })
+const iso = z.iso.datetime({ offset: true })
 const stageEnum = z.enum(['extract', 'enrich'])
 
 export const LINK_EVENTS = [
@@ -31,62 +31,62 @@ export type LinkEventName = (typeof LINK_EVENTS)[number]
 
 const baseEvent = z.object({ at: iso })
 
-export const extractStartedEvent = baseEvent.extend({
+export const extractStartedEvent = z.extend(baseEvent, {
   type: z.literal('EXTRACT_STARTED'),
-  attempt: z.number().int().min(1).optional(),
+  attempt: z.optional(z.number().check(z.int(), z.minimum(1))),
 })
-export const extractedEvent = baseEvent.extend({
+export const extractedEvent = z.extend(baseEvent, {
   type: z.literal('EXTRACTED'),
-  chars: z.number().int().min(0),
+  chars: z.number().check(z.int(), z.minimum(0)),
 })
-export const needsBrowserEvent = baseEvent.extend({
+export const needsBrowserEvent = z.extend(baseEvent, {
   type: z.literal('NEEDS_BROWSER'),
-  host: z.string().optional(),
+  host: z.optional(z.string()),
   /** Why a browser is needed, e.g. `login_wall` or `private_404`. */
-  reason: z.string().optional(),
+  reason: z.optional(z.string()),
   /** The park reason class decided by the extract stage. */
-  reasonClass: z.enum(PARK_REASONS).optional(),
+  reasonClass: z.optional(z.enum(PARK_REASONS)),
 })
-export const extractFailedEvent = baseEvent.extend({
+export const extractFailedEvent = z.extend(baseEvent, {
   type: z.literal('EXTRACT_FAILED'),
   error: z.string(),
-  retryable: z.boolean().optional(),
-  attempts: z.number().int().min(0).optional(),
+  retryable: z.optional(z.boolean()),
+  attempts: z.optional(z.number().check(z.int(), z.minimum(0))),
 })
-export const deferEvent = baseEvent.extend({
+export const deferEvent = z.extend(baseEvent, {
   type: z.literal('DEFER'),
   stage: stageEnum,
   nextAttemptAt: iso,
-  attempts: z.number().int().min(0),
+  attempts: z.number().check(z.int(), z.minimum(0)),
   reason: z.string(),
   /** The park reason class, when the deferral parks the link. */
-  reasonClass: z.enum(PARK_REASONS).optional(),
+  reasonClass: z.optional(z.enum(PARK_REASONS)),
 })
-export const enrichStartedEvent = baseEvent.extend({
+export const enrichStartedEvent = z.extend(baseEvent, {
   type: z.literal('ENRICH_STARTED'),
-  attempt: z.number().int().min(1).optional(),
+  attempt: z.optional(z.number().check(z.int(), z.minimum(1))),
 })
-export const enrichedEvent = baseEvent.extend({ type: z.literal('ENRICHED') })
-export const enrichFailedEvent = baseEvent.extend({
+export const enrichedEvent = z.extend(baseEvent, { type: z.literal('ENRICHED') })
+export const enrichFailedEvent = z.extend(baseEvent, {
   type: z.literal('ENRICH_FAILED'),
   error: z.string(),
-  retryable: z.boolean().optional(),
-  attempts: z.number().int().min(0).optional(),
+  retryable: z.optional(z.boolean()),
+  attempts: z.optional(z.number().check(z.int(), z.minimum(0))),
 })
-export const triageEvent = baseEvent.extend({
+export const triageEvent = z.extend(baseEvent, {
   type: z.literal('TRIAGE'),
   action: z.enum(['read_now', 'schedule', 'archive', 'discard']),
   /** For action=schedule. */
-  scheduledFor: iso.optional(),
+  scheduledFor: z.optional(iso),
 })
-export const expireEvent = baseEvent.extend({ type: z.literal('EXPIRE') })
-export const restoreEvent = baseEvent.extend({ type: z.literal('RESTORE') })
-export const retryEvent = baseEvent.extend({
+export const expireEvent = z.extend(baseEvent, { type: z.literal('EXPIRE') })
+export const restoreEvent = z.extend(baseEvent, { type: z.literal('RESTORE') })
+export const retryEvent = z.extend(baseEvent, {
   type: z.literal('RETRY'),
-  stage: stageEnum.optional(),
+  stage: z.optional(stageEnum),
 })
-export const leaseExpiredEvent = baseEvent.extend({ type: z.literal('LEASE_EXPIRED') })
-export const deleteEvent = baseEvent.extend({ type: z.literal('DELETE') })
+export const leaseExpiredEvent = z.extend(baseEvent, { type: z.literal('LEASE_EXPIRED') })
+export const deleteEvent = z.extend(baseEvent, { type: z.literal('DELETE') })
 
 /** The discriminated union of all events. Discriminant: `type`. */
 export const LinkEventSchema = z.discriminatedUnion('type', [

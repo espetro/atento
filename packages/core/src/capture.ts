@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto'
-import { z } from 'zod'
+import { z } from 'zod/mini'
 
 /**
  * Client-side capture ingest contract.
@@ -32,15 +32,15 @@ export const TRUST_ANONYMOUS = 1
 
 /** The zod schema for one capture. Discriminated-union ready on `contentType`. */
 export const captureSchema = z.object({
-  url: z.string().min(1),
-  title: z.string().optional(),
-  capturedAt: z.string().datetime({ offset: true }),
+  url: z.string().check(z.minLength(1)),
+  title: z.optional(z.string()),
+  capturedAt: z.iso.datetime({ offset: true }),
   contentType: z.literal(CAPTURE_CONTENT_TYPES),
-  body: z.string().min(1),
-  selection: z.string().optional(),
-  meta: z.record(z.string(), z.unknown()).optional(),
+  body: z.string().check(z.minLength(1)),
+  selection: z.optional(z.string()),
+  meta: z.optional(z.record(z.string(), z.unknown())),
   /** Free-form client identity, e.g. "stash" or "stash@laptop". Stored as the link source. */
-  source: z.string().min(1),
+  source: z.string().check(z.minLength(1)),
 })
 
 export type Capture = z.infer<typeof captureSchema>
