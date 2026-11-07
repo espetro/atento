@@ -19,6 +19,8 @@ export const extractingSchema = z.object({
   state: z.literal('extracting'),
   startedAt: z.string(),
   attempt: z.number().int().min(1),
+  /** The journal run that owns this lease (crash reclaim key). */
+  runId: z.number().int().positive().optional(),
 })
 
 export const extractedSchema = z.object({
@@ -58,6 +60,8 @@ export const enrichingSchema = z.object({
   state: z.literal('enriching'),
   startedAt: z.string(),
   attempt: z.number().int().min(1),
+  /** The journal run that owns this lease (crash reclaim key). */
+  runId: z.number().int().positive().optional(),
 })
 
 export const inboxSchema = z.object({

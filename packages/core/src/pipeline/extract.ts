@@ -34,6 +34,12 @@ import {
 import { isMediaLink, type MediaFn, type MediaRun } from '../media.js'
 import { DEFAULT_MAX_ATTEMPTS } from './resilience-options.js'
 import { selectFairBatch, hostEligible, hostInSpacingWait } from './batch-select.js'
+import {
+  busyRunOf,
+  reclaimCrashedRuns,
+  startRunHeartbeat,
+  type RunJournalEntry,
+} from '../run-journal.js'
 
 /** The reason recorded on links parked because their host is skip-listed. */
 export const SKIP_HOST_REASON = 'skip_host'
@@ -133,6 +139,70 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
   const logger = options.logger ?? noopLogger
   const now = options.now ?? (() => new Date())
   const startedAt = now()
+
+  // Crash recovery first: a dead run's journal row must not hold the lock,
+  // and its leases must come back before this run selects work.
+  await reclaimCrashedRuns(store, { now: startedAt })
+
+  // Single-writer lock for the extract stage. A second concurrent extract —
+  // in this process or another — gets a busy result with the holder's id.
+  const acquired = await store.acquireRun(STAGES.extract, {
+    pid: process.pid,
+    now: startedAt,
+  })
+  if (!acquired.ok) {
+    const holder = acquired.busy
+    logger.warn('extract is busy: run {runId} holds the lock (pid {pid})', {
+      runId: holder.id,
+      pid: holder.pid,
+    })
+    return {
+      stage: STAGES.extract,
+      runId: holder.id,
+      busy: busyRunOf(holder),
+      inputCount: 0,
+      okCount: 0,
+      errorCount: 0,
+      skippedCount: 0,
+      durationMs: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      costUsd: 0,
+      outcomes: [],
+      warnings: [],
+      needsBrowserCount: 0,
+      deferredCount: 0,
+      retryAfter: 0,
+      skippedHostCount: 0,
+      reviewOnlyCount: 0,
+      reconciledCount: 0,
+      mediaCount: 0,
+      canaryTrials: {},
+    }
+  }
+  const journal = acquired.run
+  const stopHeartbeat = startRunHeartbeat(store, journal.id, now)
+  try {
+    return await extractPass(store, options, journal, startedAt)
+  } catch (err) {
+    await store
+      .finishRun(journal.id, { finishedAt: now(), status: 'failed', errorCount: 1 })
+      .catch(() => {})
+    throw err
+  } finally {
+    stopHeartbeat()
+  }
+}
+
+/** The extract body, run while holding the stage's journal lock. */
+async function extractPass(
+  store: Store,
+  options: ExtractOptions,
+  journal: RunJournalEntry,
+  startedAt: Date,
+): Promise<ExtractResult> {
+  const logger = options.logger ?? noopLogger
+  const now = options.now ?? (() => new Date())
   const guard: GuardDeps | undefined = options.guard
   const guardActive = guard !== undefined
   const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS
@@ -208,7 +278,7 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
     blocked: blockedHostsInBatch,
     waiting: waitingHosts,
   }).slice(0, maxBatch)
-  const run = await store.startRun(STAGES.extract, batch.length, startedAt)
+  const run = journal
   logger.info('extract run {runId} started with {inputCount} links', {
     runId: run.id,
     inputCount: batch.length,
@@ -270,6 +340,7 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
     // gets a typed STALE_STATE/ILLEGAL_TRANSITION and skips the link.
     const claim = await store.applyEvent(link.id, {
       type: 'EXTRACT_STARTED',
+      runId: run.id,
       at: now().toISOString(),
     })
     if (!claim.ok) {
@@ -807,6 +878,7 @@ export async function extract(store: Store, options: ExtractOptions): Promise<Ex
     okCount,
     errorCount,
     durationMs,
+    inputCount: batch.length,
   })
   logger.info('extract run {runId} finished: {okCount} ok, {errorCount} errors', {
     runId: run.id,

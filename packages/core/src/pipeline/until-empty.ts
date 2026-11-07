@@ -8,7 +8,7 @@
  */
 import type { Store } from '../store.js'
 import { extract, type ExtractOptions, type ExtractResult } from './extract.js'
-import { noopLogger } from './types.js'
+import { noopLogger, type BusyRun } from './types.js'
 
 /** Upper bound on iterations: a runaway loop can never hang the CLI. */
 export const MAX_UNTIL_EMPTY_ITERATIONS = 100
@@ -38,6 +38,11 @@ export interface UntilEmptyResult {
   hitCap: boolean
   /** Shortest retry-after across batches (ms), 0 when nothing was deferred. */
   retryAfter: number
+  /**
+   * Set when a batch found the extract lock held by another run: the loop
+   * stopped without doing more work. Not an error — the holder is running.
+   */
+  busy?: BusyRun
 }
 
 export interface UntilEmptyOptions extends Omit<ExtractOptions, 'extract'> {
@@ -73,6 +78,10 @@ export async function extractUntilEmpty(
       ...options,
       extract: options.extract,
     } as ExtractOptions)
+    if (result.busy) {
+      const byState = await store.countByState()
+      return { batches, totals, hitCap: false, retryAfter, byState, busy: result.busy }
+    }
     const summary: UntilEmptyBatchSummary = {
       iteration,
       inputCount: result.inputCount,

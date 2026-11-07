@@ -76,10 +76,19 @@ export interface Link {
   updatedAt: Date
 }
 
-/** One pipeline stage execution. */
+/** Journal lifecycle of a runs row (durable execution). */
+export type RunJournalStatus = 'running' | 'done' | 'failed' | 'crashed'
+
+/** One pipeline stage execution, doubling as a run-journal row. */
 export interface Run {
   id: number
   stage: string
+  /** Journal lifecycle; absent on rows written before the journal existed. */
+  status?: RunJournalStatus | null
+  /** OS pid of the process that owns this run. */
+  pid?: number | null
+  /** Last heartbeat write while the run was alive. */
+  heartbeatAt?: Date | null
   startedAt: Date
   finishedAt: Date | null
   inputCount: number

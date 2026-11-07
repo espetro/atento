@@ -16,6 +16,9 @@ import type {
   LinkHistoryEntry,
   HostState,
   MediaReport,
+  RunJournalEntry,
+  RunJournalStatus,
+  AcquireRunResult,
 } from '../src/index.js'
 import {
   normalizeUrl,
@@ -24,6 +27,9 @@ import {
   legacyStatus,
   isTerminal,
   LINK_STATES,
+  pidAlive,
+  heartbeatStale,
+  RUN_STALE_MS,
 } from '../src/index.js'
 
 /**
@@ -45,6 +51,11 @@ export class FakeStore implements Store {
   private nextProfileId = 1
   history: LinkHistoryEntry[] = []
   private nextHistoryId = 1
+  /** Journal fields for each runs row, keyed by run id. */
+  private journal = new Map<
+    number,
+    { status: RunJournalStatus; pid: number | null; heartbeatAt: Date | null }
+  >()
 
   async upsertLink(input: LinkInput): Promise<Link> {
     const now = new Date()
@@ -260,6 +271,23 @@ export class FakeStore implements Store {
     return reclaimed
   }
 
+  async reclaimLeasesForRuns(runIds: number[], at?: Date): Promise<number> {
+    const wanted = new Set(runIds)
+    let reclaimed = 0
+    for (const link of this.links) {
+      if (link.state !== 'extracting' && link.state !== 'enriching') continue
+      const state = parseLinkState(link.state, link.stateData)
+      if (state.state !== 'extracting' && state.state !== 'enriching') continue
+      if (state.runId === undefined || !wanted.has(state.runId)) continue
+      const outcome = await this.applyEvent(link.id, {
+        type: 'LEASE_EXPIRED',
+        at: (at ?? new Date()).toISOString(),
+      })
+      if (outcome.ok) reclaimed += 1
+    }
+    return reclaimed
+  }
+
   async getState(id: number): Promise<import('../src/index.js').LinkState | null> {
     const link = this.links.find((l) => l.id === id)
     if (!link) return null
@@ -369,10 +397,11 @@ export class FakeStore implements Store {
   }
 
   async startRun(stage: string, inputCount: number, startedAt?: Date): Promise<Run> {
+    const at = startedAt ?? new Date()
     const run: Run = {
       id: this.nextRunId++,
       stage,
-      startedAt: startedAt ?? new Date(),
+      startedAt: at,
       finishedAt: null,
       inputCount,
       okCount: 0,
@@ -383,7 +412,80 @@ export class FakeStore implements Store {
       costUsd: null,
     }
     this.runs.push(run)
+    this.journal.set(run.id, { status: 'running', pid: process.pid, heartbeatAt: at })
     return run
+  }
+
+  async acquireRun(
+    stage: string,
+    opts: { pid?: number; now?: Date } = {},
+  ): Promise<AcquireRunResult> {
+    const at = opts.now ?? new Date()
+    const pid = opts.pid ?? process.pid
+    const holder = this.runs.find(
+      (r) => r.stage === stage && this.journal.get(r.id)?.status === 'running',
+    )
+    if (holder) return { ok: false, busy: this.journalEntry(holder.id) }
+    const run = await this.startRun(stage, 0, at)
+    const j = this.journal.get(run.id)!
+    j.pid = pid
+    j.heartbeatAt = at
+    return { ok: true, run: this.journalEntry(run.id) }
+  }
+
+  private journalEntry(id: number): RunJournalEntry {
+    const run = this.runs.find((r) => r.id === id)!
+    const j = this.journal.get(id) ?? {
+      status: 'done' as RunJournalStatus,
+      pid: null,
+      heartbeatAt: null,
+    }
+    return {
+      id: run.id,
+      stage: run.stage,
+      status: j.status,
+      pid: j.pid,
+      startedAt: run.startedAt,
+      heartbeatAt: j.heartbeatAt,
+      finishedAt: run.finishedAt,
+    }
+  }
+
+  async heartbeatRun(id: number, at?: Date): Promise<void> {
+    const j = this.journal.get(id)
+    if (!j || j.status !== 'running') return
+    j.heartbeatAt = at ?? new Date()
+  }
+
+  async listRunningRuns(): Promise<RunJournalEntry[]> {
+    return this.runs
+      .filter((r) => this.journal.get(r.id)?.status === 'running')
+      .map((r) => this.journalEntry(r.id))
+  }
+
+  async reclaimDeadRuns(
+    opts: {
+      now?: Date
+      heartbeatStaleMs?: number
+      pidAlive?: (pid: number) => boolean
+    } = {},
+  ): Promise<RunJournalEntry[]> {
+    const now = opts.now ?? new Date()
+    const staleMs = opts.heartbeatStaleMs ?? RUN_STALE_MS
+    const alive = opts.pidAlive ?? pidAlive
+    const crashed: RunJournalEntry[] = []
+    for (const run of this.runs) {
+      const j = this.journal.get(run.id)
+      if (!j || j.status !== 'running') continue
+      const entry = this.journalEntry(run.id)
+      const pidDead = entry.pid !== null && !alive(entry.pid)
+      const stale = heartbeatStale(entry, now, staleMs)
+      if (!pidDead && !stale) continue
+      j.status = 'crashed'
+      run.finishedAt = now
+      crashed.push(this.journalEntry(run.id))
+    }
+    return crashed
   }
 
   async finishRun(
@@ -396,17 +498,22 @@ export class FakeStore implements Store {
       tokensIn?: number | null
       tokensOut?: number | null
       costUsd?: number | null
+      inputCount?: number
+      status?: 'done' | 'failed'
     },
   ): Promise<void> {
     const run = this.runs.find((r) => r.id === id)
     if (!run) return
     run.finishedAt = result.finishedAt ?? new Date()
+    if (result.inputCount !== undefined) run.inputCount = result.inputCount
     run.okCount = result.okCount ?? run.okCount
     run.errorCount = result.errorCount ?? run.errorCount
     run.durationMs = result.durationMs ?? run.durationMs
     run.tokensIn = result.tokensIn ?? run.tokensIn
     run.tokensOut = result.tokensOut ?? run.tokensOut
     run.costUsd = result.costUsd ?? run.costUsd
+    const j = this.journal.get(id)
+    if (j) j.status = result.status ?? 'done'
   }
 
   async addMetric(metric: Metric): Promise<void> {

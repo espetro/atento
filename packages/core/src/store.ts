@@ -6,6 +6,7 @@ import type {
   Enrichment,
   Status,
   Run,
+  RunJournalStatus,
   Metric,
   Profile,
   ProfileInput,
@@ -96,6 +97,44 @@ export interface Store {
    */
   reclaimExpiredLeases(cutoff: Date): Promise<number>
 
+  /**
+   * Return every leased link owned by one of `runIds` to its queue state.
+   * Called right after `reclaimDeadRuns` marks crashed runs: their leases
+   * come back immediately instead of waiting out the lease timeout.
+   */
+  reclaimLeasesForRuns(runIds: number[], at?: Date): Promise<number>
+
+  // run journal (durable execution)
+
+  /**
+   * Single-writer lock for one stage. Atomically inserts a `runs` row with
+   * `status='running'`, the OS pid and a first heartbeat — or reports the
+   * run currently holding the lock. The check-and-insert is one
+   * `BEGIN IMMEDIATE` transaction, so two processes can never both win.
+   */
+  acquireRun(
+    stage: string,
+    opts?: { pid?: number; now?: Date },
+  ): Promise<AcquireRunResult>
+
+  /** Refresh the heartbeat of a running journal row. */
+  heartbeatRun(id: number, at?: Date): Promise<void>
+
+  /** Every journal row still marked `running`. */
+  listRunningRuns(): Promise<RunJournalEntry[]>
+
+  /**
+   * Mark `running` journal rows `crashed` when their owner is gone: the pid
+   * is dead (`pidAlive` says so) or the heartbeat is older than
+   * `heartbeatStaleMs`. Returns the rows it crashed. The lease reclaim for
+   * those runs is `reclaimLeasesForRuns`.
+   */
+  reclaimDeadRuns(opts?: {
+    now?: Date
+    heartbeatStaleMs?: number
+    pidAlive?: (pid: number) => boolean
+  }): Promise<RunJournalEntry[]>
+
   // runs
   startRun(stage: string, inputCount: number, startedAt?: Date): Promise<Run>
   finishRun(
@@ -108,6 +147,10 @@ export interface Store {
       tokensIn?: number | null
       tokensOut?: number | null
       costUsd?: number | null
+      /** Journal: the batch size, when known only after selection. */
+      inputCount?: number
+      /** Journal lifecycle written with the finish: done (default) | failed. */
+      status?: 'done' | 'failed'
     },
   ): Promise<void>
 
@@ -150,6 +193,24 @@ export interface MetricFilter {
   until?: Date
   limit?: number
 }
+
+/** Result of Store.acquireRun: the new journal row, or the current holder. */
+export type AcquireRunResult =
+  | { ok: true; run: RunJournalEntry }
+  | { ok: false; busy: RunJournalEntry }
+
+/** The journal view of one runs row. */
+export interface RunJournalEntry {
+  id: number
+  stage: string
+  status: RunJournalStatus
+  pid: number | null
+  startedAt: Date
+  heartbeatAt: Date | null
+  finishedAt: Date | null
+}
+
+export type { RunJournalStatus }
 
 /** Suggested canonical importer identities. Not enforced here. */
 export const SOURCES = {

@@ -31,11 +31,13 @@ const TABLE: StateTable = {
       state: 'extracting',
       startedAt: at.toISOString(),
       attempt: e.attempt ?? 1,
+      ...(e.runId !== undefined ? { runId: e.runId } : {}),
     }),
     ENRICH_STARTED: (_s, e, at) => ({
       state: 'enriching',
       startedAt: at.toISOString(),
       attempt: e.attempt ?? 1,
+      ...(e.runId !== undefined ? { runId: e.runId } : {}),
     }),
     TRIAGE: (_s, e, at) => {
       switch (e.action) {
@@ -91,6 +93,7 @@ const TABLE: StateTable = {
       state: 'enriching',
       startedAt: at.toISOString(),
       attempt: e.attempt ?? 1,
+      ...(e.runId !== undefined ? { runId: e.runId } : {}),
     }),
     // An explicit `retry --headless`: back to the extraction queue so the
     // headless extractor runs again over the captured link.
@@ -154,6 +157,7 @@ const TABLE: StateTable = {
       state: 'enriching',
       startedAt: at.toISOString(),
       attempt: e.attempt ?? 1,
+      ...(e.runId !== undefined ? { runId: e.runId } : {}),
     }),
     TRIAGE: (_s, e, at) => {
       switch (e.action) {

@@ -74,12 +74,24 @@ export const linkEvents = sqliteTable(
   ],
 )
 
-/** One row per pipeline stage execution. */
+/**
+ * One row per pipeline stage execution AND per run-journal entry. The
+ * journal columns (`status`, `pid`, `heartbeat_at`) turn the stage log into
+ * the durable run journal: a row inserted `running` is the single-writer
+ * lock for its `stage`, its pid + heartbeat let the next start detect a
+ * crashed run and reclaim its leases immediately.
+ */
 export const runs = sqliteTable(
   'runs',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
     stage: text('stage').notNull(),
+    /** Journal lifecycle: running -> done | failed | crashed. */
+    status: text('status').notNull().default('done'),
+    /** OS pid of the process that owns this run (null when unknown). */
+    pid: integer('pid'),
+    /** Last heartbeat write while the run was alive. */
+    heartbeatAt: integer('heartbeat_at', { mode: 'timestamp_ms' }),
     startedAt: integer('started_at', { mode: 'timestamp_ms' }).notNull(),
     finishedAt: integer('finished_at', { mode: 'timestamp_ms' }),
     inputCount: integer('input_count').notNull().default(0),
@@ -90,7 +102,11 @@ export const runs = sqliteTable(
     tokensOut: integer('tokens_out'),
     costUsd: real('cost_usd'),
   },
-  (t) => [index('runs_stage_idx').on(t.stage), index('runs_started_at_idx').on(t.startedAt)],
+  (t) => [
+    index('runs_stage_idx').on(t.stage),
+    index('runs_started_at_idx').on(t.startedAt),
+    index('runs_status_idx').on(t.status),
+  ],
 )
 
 /** Numeric metric samples, tagged. */
@@ -165,4 +181,4 @@ export type ProfileRow = typeof profiles.$inferSelect
 export type MetaRow = typeof meta.$inferSelect
 export type LinkEventRow = typeof linkEvents.$inferSelect
 
-export const SCHEMA_VERSION = '7'
+export const SCHEMA_VERSION = '8'

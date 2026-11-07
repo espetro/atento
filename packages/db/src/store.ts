@@ -41,6 +41,12 @@ import {
   isTerminal,
   LINK_STATES,
   LEASED_STATES,
+  pidAlive,
+  heartbeatStale,
+  RUN_STALE_MS,
+  type AcquireRunResult,
+  type RunJournalEntry,
+  type RunJournalStatus,
 } from '@linkinbox/core'
 
 export interface SqliteStoreOptions {
@@ -101,6 +107,9 @@ export class SqliteStore implements Store {
       .map((r) => ({
         id: r.id,
         stage: r.stage,
+        status: (r.status as RunJournalStatus | null) ?? null,
+        pid: r.pid ?? null,
+        heartbeatAt: r.heartbeatAt ?? null,
         startedAt: r.startedAt,
         finishedAt: r.finishedAt ?? null,
         inputCount: r.inputCount,
@@ -556,6 +565,120 @@ export class SqliteStore implements Store {
     return reclaimed
   }
 
+  /**
+   * Return every leased link owned by one of `runIds` to its queue state.
+   * The lease owner lives in the FSM payload (`state_data.runId`), written
+   * by the stage's STARTED event, so the reclaim goes through the same
+   * compare-and-set path as every other transition.
+   */
+  async reclaimLeasesForRuns(runIds: number[], at?: Date): Promise<number> {
+    if (runIds.length === 0) return 0
+    const wanted = new Set(runIds)
+    const rows = this.db
+      .select({ id: links.id })
+      .from(links)
+      .where(inArray(links.state, LEASED_STATES))
+      .all()
+    let reclaimed = 0
+    for (const row of rows) {
+      const state = await this.getState(row.id)
+      if (!state || (state.state !== 'extracting' && state.state !== 'enriching')) continue
+      const owner = state.runId
+      if (owner === undefined || !wanted.has(owner)) continue
+      const outcome = await this.applyEvent(row.id, {
+        type: 'LEASE_EXPIRED',
+        at: (at ?? new Date()).toISOString(),
+      })
+      if (outcome.ok) reclaimed += 1
+    }
+    return reclaimed
+  }
+
+  /**
+   * Single-writer lock for one stage. The check-and-insert runs in one
+   * `BEGIN IMMEDIATE` transaction (better-sqlite3 `.immediate()`), so two
+   * processes can never both observe "no running row" and both insert.
+   */
+  async acquireRun(
+    stage: string,
+    opts: { pid?: number; now?: Date } = {},
+  ): Promise<AcquireRunResult> {
+    const now = opts.now ?? new Date()
+    const pid = opts.pid ?? process.pid
+    const acquire = this.sqlite.transaction(() => {
+      const holder = this.db
+        .select()
+        .from(runs)
+        .where(and(eq(runs.stage, stage), eq(runs.status, 'running')))
+        .orderBy(sql`${runs.id} ASC`)
+        .get()
+      if (holder) return { ok: false as const, busy: journalFromRow(holder) }
+      const row = this.db
+        .insert(runs)
+        .values({
+          stage,
+          status: 'running',
+          pid,
+          heartbeatAt: now,
+          startedAt: now,
+          inputCount: 0,
+        })
+        .returning()
+        .get()
+      return { ok: true as const, run: journalFromRow(row) }
+    })
+    return acquire.immediate()
+  }
+
+  async heartbeatRun(id: number, at?: Date): Promise<void> {
+    this.db
+      .update(runs)
+      .set({ heartbeatAt: at ?? new Date() })
+      .where(and(eq(runs.id, id), eq(runs.status, 'running')))
+      .run()
+  }
+
+  async listRunningRuns(): Promise<RunJournalEntry[]> {
+    return this.db
+      .select()
+      .from(runs)
+      .where(eq(runs.status, 'running'))
+      .orderBy(sql`${runs.id} ASC`)
+      .all()
+      .map(journalFromRow)
+  }
+
+  /**
+   * Mark `running` journal rows `crashed` when their owner is gone: the pid
+   * is dead or the heartbeat is stale. A row with no pid and no heartbeat
+   * falls back to its `started_at` for the staleness check.
+   */
+  async reclaimDeadRuns(
+    opts: {
+      now?: Date
+      heartbeatStaleMs?: number
+      pidAlive?: (pid: number) => boolean
+    } = {},
+  ): Promise<RunJournalEntry[]> {
+    const now = opts.now ?? new Date()
+    const staleMs = opts.heartbeatStaleMs ?? RUN_STALE_MS
+    const alive = opts.pidAlive ?? pidAlive
+    const running = await this.listRunningRuns()
+    const crashed: RunJournalEntry[] = []
+    for (const entry of running) {
+      const pidDead = entry.pid !== null && !alive(entry.pid)
+      const stale = heartbeatStale(entry, now, staleMs)
+      if (!pidDead && !stale) continue
+      this.db
+        .update(runs)
+        .set({ status: 'crashed', finishedAt: now })
+        .where(and(eq(runs.id, entry.id), eq(runs.status, 'running')))
+        .run()
+      crashed.push({ ...entry, status: 'crashed', finishedAt: now })
+    }
+    return crashed
+  }
+
   /** FSM state of one link, zod-validated. */
   async getState(id: number): Promise<LinkState | null> {
     const row = this.db
@@ -591,9 +714,17 @@ export class SqliteStore implements Store {
   }
 
   async startRun(stage: string, inputCount: number, startedAt?: Date): Promise<Run> {
+    const at = startedAt ?? new Date()
     const row = this.db
       .insert(runs)
-      .values({ stage, inputCount, startedAt: startedAt ?? new Date() })
+      .values({
+        stage,
+        status: 'running',
+        pid: process.pid,
+        heartbeatAt: at,
+        startedAt: at,
+        inputCount,
+      })
       .returning()
       .get()
     return {
@@ -621,12 +752,16 @@ export class SqliteStore implements Store {
       tokensIn?: number | null
       tokensOut?: number | null
       costUsd?: number | null
+      inputCount?: number
+      status?: 'done' | 'failed'
     },
   ): Promise<void> {
     this.db
       .update(runs)
       .set({
         finishedAt: result.finishedAt ?? new Date(),
+        status: result.status ?? 'done',
+        ...(result.inputCount !== undefined ? { inputCount: result.inputCount } : {}),
         okCount: result.okCount,
         errorCount: result.errorCount,
         durationMs: result.durationMs,
@@ -752,6 +887,29 @@ export class SqliteStore implements Store {
 }
 
 // ---- FSM helpers ----
+
+// ---- run journal helpers ----
+
+/** Map a runs row to the journal view (status/pid/heartbeat included). */
+function journalFromRow(row: {
+  id: number
+  stage: string
+  status: string | null
+  pid: number | null
+  heartbeatAt: Date | null
+  startedAt: Date
+  finishedAt: Date | null
+}): RunJournalEntry {
+  return {
+    id: row.id,
+    stage: row.stage,
+    status: (row.status as RunJournalStatus | null) ?? 'done',
+    pid: row.pid ?? null,
+    startedAt: row.startedAt,
+    heartbeatAt: row.heartbeatAt ?? null,
+    finishedAt: row.finishedAt ?? null,
+  }
+}
 
 // ---- host state helpers ----
 
