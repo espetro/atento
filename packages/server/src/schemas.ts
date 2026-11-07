@@ -86,6 +86,24 @@ export const IngestInputBody = z.union([
   z.object({ kind: z.literal('text'), text: z.string() }),
 ])
 
+// ---- pairing -------------------------------------------------------------
+
+/** GET /api/pair/code: a short-lived one-time code for POST /api/pair. */
+export const PairCodeBody = z.object({
+  code: z.string(),
+  expiresAt: z.string(),
+})
+
+export const PairExchangeBody = z.object({
+  code: z.string(),
+})
+
+/** POST /api/pair: the bearer tokens the client should store. */
+export const PairTokensBody = z.object({
+  captureToken: z.nullable(z.string()),
+  serverToken: z.nullable(z.string()),
+})
+
 // ---- links ---------------------------------------------------------------
 
 /** The UI-shaped link row: stable documented keys, additive fields allowed. */

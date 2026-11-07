@@ -3,7 +3,8 @@
   "name": "linkinbox capture",
   "version": "0.1.0",
   "description": "Capture the page you are looking at into linkinbox, from your own logged-in session.",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "scripting", "storage", "alarms", "contextMenus", "bookmarks"],
+  "host_permissions": ["http://*/*", "https://*/*"],
   "action": {
     "default_title": "Save this page to linkinbox"
   },
