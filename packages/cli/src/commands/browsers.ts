@@ -5,15 +5,15 @@
  *   linkinbox browsers          table of adapters + health
  *   linkinbox browsers --json   machine-readable output
  *
- * Health checks never launch a real browsing session: agent-browser runs
- * `<bin> --version`, patchright checks the optional package imports,
- * cdp-attach probes the endpoint's /json/version, external loads the
- * module.
+ * The data comes from the app layer (`app.browsers()`); this command only
+ * formats it. Health checks never launch a real browsing session:
+ * agent-browser runs `<bin> --version`, patchright checks the optional
+ * package imports, cdp-attach probes the endpoint's /json/version,
+ * external loads the module.
  */
 import type { Command } from 'commander'
 import type { CliContext } from '../context.js'
-import { createBrowserRegistry } from '@linkinbox/browser'
-import { normalizeBrowserConfig, type BrowserHealth } from '@linkinbox/core'
+import type { BrowserAdapterInfo } from '@linkinbox/app'
 import { renderTable } from '../render.js'
 
 interface Row {
@@ -27,52 +27,46 @@ interface Row {
   detail: string
 }
 
-export async function runBrowsers(ctx: CliContext, json = false): Promise<void> {
-  const browser = normalizeBrowserConfig(ctx.config.browser)
-  const registry = createBrowserRegistry(browser, {
-    profilesDir: ctx.config.profilesDir,
-  })
-  const listings = registry.list()
-  const rows: Row[] = []
-  const healths: Record<string, BrowserHealth> = {}
-  for (const listing of listings) {
-    const health = await registry.health(listing.id)
-    healths[listing.id] = health
-    const caps = listing.caps
-    rows.push({
-      id: listing.id,
-      kind: listing.kind,
-      roles: listing.roles.join('+') || '-',
-      caps: caps
-        ? [
-            caps.stealth ? 'stealth' : 'plain',
-            caps.headless ? 'headless' : 'headed',
-            caps.persistentProfile ? 'profile' : 'no-profile',
-          ].join(',')
-        : listing.kind === 'external'
-          ? 'plugin'
-          : '-',
-      forRoles: [
-        listing.defaultFor.reader ? 'reader' : '',
-        listing.defaultFor.login ? 'login' : '',
-      ]
-        .filter(Boolean)
-        .join('+') || '-',
-      escalate: listing.inEscalate ? 'yes' : '-',
-      health: health.ok ? 'ok' : 'FAIL',
-      detail: health.detail,
-    })
+function rowFor(adapter: BrowserAdapterInfo): Row {
+  const caps = adapter.caps
+  return {
+    id: adapter.id,
+    kind: adapter.kind,
+    roles: adapter.roles.join('+') || '-',
+    caps: caps
+      ? [
+          caps.stealth ? 'stealth' : 'plain',
+          caps.headless ? 'headless' : 'headed',
+          caps.persistentProfile ? 'profile' : 'no-profile',
+        ].join(',')
+      : adapter.kind === 'external'
+        ? 'plugin'
+        : '-',
+    forRoles: [
+      adapter.defaultFor.reader ? 'reader' : '',
+      adapter.defaultFor.login ? 'login' : '',
+    ]
+      .filter(Boolean)
+      .join('+') || '-',
+    escalate: adapter.inEscalate ? 'yes' : '-',
+    health: adapter.health.ok ? 'ok' : 'FAIL',
+    detail: adapter.health.detail,
   }
+}
+
+export async function runBrowsers(ctx: CliContext, json = false): Promise<void> {
+  const info = await ctx.app.browsers()
+  const rows = info.adapters.map(rowFor)
 
   if (json) {
     console.log(
       JSON.stringify(
         {
           adapters: rows,
-          hostMappings: browser.hosts,
-          reader: browser.reader,
-          login: browser.login,
-          escalate: browser.escalate,
+          hostMappings: info.hostMappings,
+          reader: info.reader,
+          login: info.login,
+          escalate: info.escalate,
         },
         null,
         2,
