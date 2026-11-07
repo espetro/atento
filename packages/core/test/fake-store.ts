@@ -25,6 +25,7 @@ import type {
   IngestItemResult,
   IngestJob,
   IngestJobStatus,
+  LinkPatch,
 } from '../src/index.js'
 import {
   normalizeUrl,
@@ -174,6 +175,7 @@ export class FakeStore implements Store {
     linkId: number,
     event: LinkEvent,
     expected?: LinkStateName,
+    patch?: LinkPatch,
   ): Promise<TransitionOutcome> {
     const at = new Date()
     const link = this.links.find((l) => l.id === linkId)
@@ -212,25 +214,31 @@ export class FakeStore implements Store {
     const payload = { ...next } as Record<string, unknown>
     delete payload['state']
     const purge = next.state === 'deleted'
-    const updated: Link = {
-      ...link,
-      state: next.state,
-      stateData: payload,
-      status: legacyStatus(next),
-      updatedAt: at,
-      ...(purge
-        ? {
-            extractedContent: null,
-            extractedAt: null,
-            enrichment: null,
-            needsBrowser: false,
-            category: null,
-            priority: null,
-            action: null,
-            confidence: null,
-            readMinutes: null,
-          }
-        : {}),
+    // The patch lands before the tombstone purge (mirroring SqliteStore): a
+    // DELETE can never be talked into keeping bulky content.
+    let updated: Link = applyLinkPatch(
+      {
+        ...link,
+        state: next.state,
+        stateData: payload,
+        status: legacyStatus(next),
+        updatedAt: at,
+      },
+      patch ?? {},
+    )
+    if (purge) {
+      updated = {
+        ...updated,
+        extractedContent: null,
+        extractedAt: null,
+        enrichment: null,
+        needsBrowser: false,
+        category: null,
+        priority: null,
+        action: null,
+        confidence: null,
+        readMinutes: null,
+      }
     }
     this.links[this.links.indexOf(link)] = updated
     this.history.push({
@@ -390,6 +398,14 @@ export class FakeStore implements Store {
     if (!link) return 0
     link.mediaReport = report
     link.updatedAt = updatedAt ?? new Date()
+    return 1
+  }
+
+  async patchLink(id: number, patch: LinkPatch, updatedAt?: Date): Promise<number> {
+    const index = this.links.findIndex((l) => l.id === id)
+    if (index === -1) return 0
+    this.links[index] = applyLinkPatch(this.links[index]!, patch)
+    this.links[index]!.updatedAt = updatedAt ?? new Date()
     return 1
   }
 
@@ -761,6 +777,41 @@ export async function seedLink(store: FakeStore, url: string, overrides: Partial
     needsBrowser: false,
     ...overrides,
   } as LinkInput)
+}
+
+/**
+ * Apply a LinkPatch to an in-memory link, mirroring SqliteStore.patchColumns:
+ * `undefined` leaves a field alone, `null` clears it, and `enrichment`
+ * derives the denormalized columns (expiresAt/expiryReason default to the
+ * enrichment's own values unless overridden).
+ */
+function applyLinkPatch(link: Link, patch: LinkPatch): Link {
+  const out = { ...link }
+  if (patch.title !== undefined) out.title = patch.title
+  if (patch.extractedContent !== undefined) out.extractedContent = patch.extractedContent
+  if (patch.extractedAt !== undefined) out.extractedAt = patch.extractedAt
+  if (patch.needsBrowser !== undefined) out.needsBrowser = patch.needsBrowser
+  if (patch.captured !== undefined) out.captured = patch.captured
+  if (patch.capturedAt !== undefined) out.capturedAt = patch.capturedAt
+  if (patch.mediaReport !== undefined) out.mediaReport = patch.mediaReport
+  if (patch.enrichment !== undefined) {
+    const e = patch.enrichment
+    out.enrichment = e
+    out.category = e?.category ?? null
+    out.priority = e?.priority ?? null
+    out.action = e?.action ?? null
+    out.confidence = e?.confidence ?? null
+    out.readMinutes = e?.read_minutes ?? null
+    if (patch.expiresAt === undefined) {
+      out.expiresAt = e?.expires_at ? new Date(e.expires_at) : null
+    }
+    if (patch.expiryReason === undefined) {
+      out.expiryReason = e?.expiry_reason ?? null
+    }
+  }
+  if (patch.expiresAt !== undefined) out.expiresAt = patch.expiresAt
+  if (patch.expiryReason !== undefined) out.expiryReason = patch.expiryReason
+  return out
 }
 
 function eventForStatus(status: Status, at: Date): import('../src/index.js').LinkEvent {

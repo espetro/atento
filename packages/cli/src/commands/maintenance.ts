@@ -4,6 +4,8 @@
  */
 import type { Command } from 'commander'
 import { createInterface } from 'node:readline/promises'
+import { mkdir } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import {
   applyPrune,
   applySweep,
@@ -114,6 +116,29 @@ async function promptYesNo(message: string): Promise<string> {
   }
 }
 
+export interface BackupOptions {
+  /** Destination file. Default: <config dir>/backups/linkinbox-<timestamp>.db */
+  out?: string
+  now?: Date
+}
+
+/** Default backup destination inside the config dir (honours LINKINBOX_HOME). */
+export function defaultBackupPath(ctx: CliContext, now: Date = new Date()): string {
+  const stamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  return join(ctx.config.dir, 'backups', `linkinbox-${stamp}.db`)
+}
+
+/**
+ * backup [--out <path>]: consistent sqlite snapshot via the online backup
+ * API. Safe while the pipeline runs — the backup is a point-in-time copy.
+ */
+export async function runBackup(ctx: CliContext, opts: BackupOptions = {}): Promise<string> {
+  const dest = opts.out ?? defaultBackupPath(ctx, opts.now)
+  await mkdir(dirname(dest), { recursive: true })
+  await ctx.store.backup(dest)
+  return dest
+}
+
 export function registerMaintenanceCommands(
   program: Command,
   deps: {
@@ -146,6 +171,20 @@ export function registerMaintenanceCommands(
           apply: opts.apply === true,
           yes: opts.yes === true,
         })
+      } finally {
+        await ctx.close()
+      }
+    })
+
+  program
+    .command('backup')
+    .description('write a consistent sqlite backup of the database')
+    .option('--out <path>', 'destination file (default <config dir>/backups/linkinbox-<timestamp>.db)')
+    .action(async (opts: { out?: string }) => {
+      const ctx = await deps.ctx()
+      try {
+        const dest = await runBackup(ctx, { out: opts.out })
+        console.log(`backup written to ${dest}`)
       } finally {
         await ctx.close()
       }

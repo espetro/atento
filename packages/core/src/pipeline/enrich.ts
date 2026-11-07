@@ -1,4 +1,5 @@
 import type { Store } from '../store.js'
+import type { LinkPatch } from '../store.js'
 import type { StageResult, StageOptions, LinkOutcome, EnrichFn } from './types.js'
 import { STAGES, noopLogger } from './types.js'
 import { recordRunMetrics } from './ingest.js'
@@ -244,18 +245,25 @@ async function enrichPass(
       if (result.ok) {
         modelId = result.modelId
         const enrichment = result.enrichment
-        await store.setEnrichment(link.id, enrichment, now())
-        // When the enrichment carries no expiry, derive one from the ttl
-        // config (by_category first, then default_days).
+        // The enrichment result and the ENRICHED transition commit in ONE
+        // transaction: a crash can never leave the payload stored while the
+        // link is still leased (which would burn a second LLM call on
+        // resume). When the enrichment carries no expiry, derive one from
+        // the ttl config (by_category first, then default_days).
+        const patch: LinkPatch = { enrichment }
         if (!enrichment.expires_at && options.ttl) {
           const days = ttlDaysForCategory(options.ttl, enrichment.category)
-          const expiresAt = new Date(now().getTime() + days * 24 * 60 * 60 * 1000)
-          await store.setExpiry(link.id, expiresAt, enrichment.expiry_reason, now())
+          patch.expiresAt = new Date(now().getTime() + days * 24 * 60 * 60 * 1000)
         }
-        const done = await store.applyEvent(link.id, {
-          type: 'ENRICHED',
-          at: now().toISOString(),
-        })
+        const done = await store.applyEvent(
+          link.id,
+          {
+            type: 'ENRICHED',
+            at: now().toISOString(),
+          },
+          undefined,
+          patch,
+        )
         if (!done.ok) {
           errorCount += 1
           bump(errorsByModel, 'error')

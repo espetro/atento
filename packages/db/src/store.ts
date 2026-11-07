@@ -1,4 +1,6 @@
 import Database from 'better-sqlite3'
+import { mkdir } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { eq, inArray, and, gte, lte, sql } from 'drizzle-orm'
 import {
@@ -56,6 +58,7 @@ import {
   type NewIngestJob,
   type IngestChunkCommit,
   type IngestItemResult,
+  type LinkPatch,
 } from '@linkinbox/core'
 
 export interface SqliteStoreOptions {
@@ -86,6 +89,8 @@ export class SqliteStore implements Store {
     if (typeof arg === 'object' && 'path' in arg === false && 'exec' in arg) {
       this.sqlite = arg as Database.Database
       this.ownsSqlite = false
+      // Same durability contract as the owned-handle path.
+      this.sqlite.pragma('synchronous = FULL')
       this.db = drizzle(this.sqlite) as unknown as Db
       return
     }
@@ -98,12 +103,28 @@ export class SqliteStore implements Store {
       this.sqlite.pragma('journal_mode = WAL')
     }
     this.sqlite.pragma('foreign_keys = ON')
+    // Durability: every commit is fsynced before it is acknowledged. WAL
+    // stays on for file DBs; synchronous=FULL makes each commit wait for
+    // the WAL frames to hit stable storage.
+    this.sqlite.pragma('synchronous = FULL')
     this.db = drizzle(this.sqlite) as unknown as Db
   }
 
   /** Run a PRAGMA. `simple: true` returns the first row column as a scalar. */
   pragma(source: string, options?: { simple?: boolean }): unknown {
     return this.sqlite.pragma(source, options)
+  }
+
+  /**
+   * Consistent online backup of the database to `destPath` (better-sqlite3's
+   * backup API). Safe while the store is open and serving: the backup is a
+   * snapshot, WAL included. The destination is created/truncated.
+   */
+  async backup(destPath: string): Promise<void> {
+    // better-sqlite3 refuses to create missing directories: make the parent
+    // first so `backup('backups/snap.db')` just works.
+    await mkdir(dirname(destPath), { recursive: true })
+    await this.sqlite.backup(destPath)
   }
 
   /** All run rows, newest first. Convenience for the metrics CLI. */
@@ -394,6 +415,23 @@ export class SqliteStore implements Store {
     return r.changes
   }
 
+  /**
+   * Atomically patch link columns: one UPDATE statement, so the whole patch
+   * commits or none of it does. For writes that belong to an FSM event use
+   * `applyEvent(..., patch)` instead — it lands in the same transaction as
+   * the transition.
+   */
+  async patchLink(id: number, patch: LinkPatch, updatedAt?: Date): Promise<number> {
+    const set = patchColumns(patch)
+    if (Object.keys(set).length === 0) return 0
+    const r = this.db
+      .update(links)
+      .set({ ...set, updatedAt: updatedAt ?? new Date() })
+      .where(eq(links.id, id))
+      .run()
+    return r.changes
+  }
+
   async getMediaBudget(
     day: string,
   ): Promise<{ total: number; byTier: Record<string, number> }> {
@@ -418,12 +456,15 @@ export class SqliteStore implements Store {
   /**
    * FSM: apply one event atomically. The state change is a compare-and-set
    * (`WHERE id = ? AND state = ?`), so two concurrent runners can never take
-   * the same link. The event history row is written in the same transaction.
+   * the same link. The event history row — and any `patch` column writes —
+   * are written in the same transaction: a result and its FSM event commit
+   * together or not at all.
    */
   async applyEvent(
     linkId: number,
     event: LinkEvent,
     expected?: LinkStateName,
+    patch?: LinkPatch,
   ): Promise<TransitionOutcome> {
     const now = new Date()
     // The event carries its own clock, so the recorded lease start (and the
@@ -478,6 +519,9 @@ export class SqliteStore implements Store {
           stateData: payload,
           status: legacyStatus(next),
           updatedAt: now,
+          // The patch lands before the tombstone purge so a DELETE can never
+          // be talked into keeping bulky content: purge wins on `deleted`.
+          ...patchColumns(patch),
           ...purgeForState(next, row),
         })
         .where(and(eq(links.id, linkId), eq(links.state, currentName)))
@@ -1166,6 +1210,43 @@ function dataForLegacyStatus(
     default:
       return {}
   }
+}
+
+/**
+ * Map a LinkPatch to drizzle column values. `undefined` leaves a column
+ * alone; `null` clears it. When `enrichment` is present the denormalized
+ * columns derive from it (same rules as setEnrichment) and expiresAt /
+ * expiryReason default to the enrichment's own values unless the patch
+ * overrides them explicitly.
+ */
+function patchColumns(patch: LinkPatch | undefined): Partial<typeof links.$inferInsert> {
+  if (patch === undefined) return {}
+  const set: Partial<typeof links.$inferInsert> = {}
+  if (patch.title !== undefined) set.title = patch.title
+  if (patch.extractedContent !== undefined) set.extractedContent = patch.extractedContent
+  if (patch.extractedAt !== undefined) set.extractedAt = patch.extractedAt
+  if (patch.needsBrowser !== undefined) set.needsBrowser = patch.needsBrowser
+  if (patch.captured !== undefined) set.captured = patch.captured
+  if (patch.capturedAt !== undefined) set.capturedAt = patch.capturedAt
+  if (patch.mediaReport !== undefined) set.mediaReport = patch.mediaReport
+  if (patch.enrichment !== undefined) {
+    const e = patch.enrichment
+    set.enrichment = e
+    set.category = e?.category ?? null
+    set.priority = e?.priority ?? null
+    set.action = e?.action ?? null
+    set.confidence = e?.confidence ?? null
+    set.readMinutes = e?.read_minutes ?? null
+    if (patch.expiresAt === undefined) {
+      set.expiresAt = e?.expires_at ? new Date(e.expires_at) : null
+    }
+    if (patch.expiryReason === undefined) {
+      set.expiryReason = e?.expiry_reason ?? null
+    }
+  }
+  if (patch.expiresAt !== undefined) set.expiresAt = patch.expiresAt
+  if (patch.expiryReason !== undefined) set.expiryReason = patch.expiryReason
+  return set
 }
 
 class LostRace extends Error {

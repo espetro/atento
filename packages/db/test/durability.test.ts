@@ -1,10 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import Database from 'better-sqlite3'
 import { openStore, type SqliteStore } from '../src/index.js'
-import { extract, ingest, normalizeUrl } from '@linkinbox/core'
+import {
+  extract,
+  ingest,
+  normalizeUrl,
+  type Enrichment,
+} from '@linkinbox/core'
 
 let dir: string
 let store: SqliteStore
@@ -182,5 +188,141 @@ describe('extract crash recovery', () => {
     ])
     expect(result.busy?.runId).toBe(holderId)
     expect(result.linkIds).toHaveLength(0)
+  })
+})
+
+const sampleEnrichment: Enrichment = {
+  category: 'article',
+  priority: 'normal',
+  why_it_matters: 'test',
+  read_minutes: 5,
+  action: 'read_now',
+  expires_at: null,
+  expiry_reason: null,
+  confidence: 0.9,
+}
+
+describe('atomic writes (D3)', () => {
+  it('applyEvent commits the patch with the transition in one transaction', async () => {
+    const { url, hash } = normalizeUrl('https://example.com/atomic')
+    const link = await store.upsertLink({
+      urlHash: hash,
+      url,
+      source: 'test',
+      state: 'enriching',
+      stateData: { startedAt: new Date().toISOString(), attempt: 1 },
+    })
+    const expiresAt = new Date('2026-12-01T00:00:00Z')
+    const outcome = await store.applyEvent(
+      link.id,
+      { type: 'ENRICHED', at: new Date().toISOString() },
+      undefined,
+      { enrichment: sampleEnrichment, expiresAt, expiryReason: 'ttl' },
+    )
+    expect(outcome.ok).toBe(true)
+    const after = await store.getLink(link.id)
+    expect(after?.state).toBe('inbox')
+    expect(after?.enrichment?.category).toBe('article')
+    // Denormalized columns derive from the enrichment, expiry overridden.
+    expect(after?.category).toBe('article')
+    expect(after?.priority).toBe('normal')
+    expect(after?.action).toBe('read_now')
+    expect(after?.confidence).toBe(0.9)
+    expect(after?.readMinutes).toBe(5)
+    expect(after?.expiresAt?.toISOString()).toBe(expiresAt.toISOString())
+    expect(after?.expiryReason).toBe('ttl')
+    // The event history row landed in the same commit.
+    const history = await store.getHistory(link.id)
+    expect(history.map((h) => h.event)).toContain('ENRICHED')
+  })
+
+  it('an illegal event discards the patch — nothing is half-written', async () => {
+    const { url, hash } = normalizeUrl('https://example.com/illegal')
+    const link = await store.upsertLink({
+      urlHash: hash,
+      url,
+      source: 'test',
+      state: 'created',
+      stateData: {},
+    })
+    // ENRICHED is not legal from `created`: the whole write must roll back.
+    const outcome = await store.applyEvent(
+      link.id,
+      { type: 'ENRICHED', at: new Date().toISOString() },
+      undefined,
+      { enrichment: sampleEnrichment, extractedContent: 'should not land' },
+    )
+    expect(outcome.ok).toBe(false)
+    const after = await store.getLink(link.id)
+    expect(after?.state).toBe('created')
+    expect(after?.enrichment).toBeNull()
+    expect(after?.extractedContent).toBeNull()
+    expect(after?.category).toBeNull()
+    expect(await store.getHistory(link.id)).toHaveLength(0)
+  })
+
+  it('patchLink writes several columns in one atomic update', async () => {
+    const { url, hash } = normalizeUrl('https://example.com/patch')
+    const link = await store.upsertLink({
+      urlHash: hash,
+      url,
+      source: 'test',
+      state: 'created',
+      stateData: {},
+    })
+    const capturedAt = new Date('2026-11-01T00:00:00Z')
+    const n = await store.patchLink(link.id, {
+      extractedContent: 'body',
+      needsBrowser: false,
+      extractedAt: capturedAt,
+      captured: true,
+      capturedAt,
+      title: 'Patched',
+    })
+    expect(n).toBe(1)
+    const after = await store.getLink(link.id)
+    expect(after?.extractedContent).toBe('body')
+    expect(after?.extractedAt?.toISOString()).toBe(capturedAt.toISOString())
+    expect(after?.captured).toBe(true)
+    expect(after?.capturedAt?.toISOString()).toBe(capturedAt.toISOString())
+    expect(after?.title).toBe('Patched')
+    // State untouched: patchLink never moves the FSM.
+    expect(after?.state).toBe('created')
+  })
+})
+
+describe('durability pragmas and backup', () => {
+  it('synchronous = FULL is applied on open and WAL stays on', () => {
+    const sync = store.pragma('synchronous', { simple: true })
+    expect(sync).toBe(2) // SQLITE_FULL
+    const journal = store.pragma('journal_mode', { simple: true })
+    expect(String(journal).toLowerCase()).toBe('wal')
+  })
+
+  it('backup produces a valid sqlite file containing the data', async () => {
+    const { url, hash } = normalizeUrl('https://example.com/backed-up')
+    await store.upsertLink({
+      urlHash: hash,
+      url,
+      source: 'test',
+      state: 'created',
+      stateData: {},
+    })
+    const dest = join(dir, 'backups', 'snapshot.db')
+    await store.backup(dest)
+    expect(existsSync(dest)).toBe(true)
+    // Open the backup independently and verify the rows survived.
+    const check = new Database(dest, { readonly: true })
+    try {
+      const row = check
+        .prepare('SELECT url, state FROM links WHERE url_hash = ?')
+        .get(hash) as { url: string; state: string } | undefined
+      expect(row?.url).toBe(url)
+      expect(row?.state).toBe('created')
+      const integrity = check.pragma('integrity_check', { simple: true })
+      expect(integrity).toBe('ok')
+    } finally {
+      check.close()
+    }
   })
 })

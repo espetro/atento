@@ -31,7 +31,7 @@ import {
   parseParkReason,
   type ParkReason,
 } from '../pipeline/park-reason.js'
-import { isMediaLink, type MediaFn, type MediaRun } from '../media.js'
+import { isMediaLink, type MediaFn, type MediaRun, type MediaReport } from '../media.js'
 import { DEFAULT_MAX_ATTEMPTS } from './resilience-options.js'
 import { selectFairBatch, hostEligible, hostInSpacingWait } from './batch-select.js'
 import {
@@ -367,12 +367,17 @@ async function extractPass(
         type: 'LEASE_EXPIRED',
         at: now().toISOString(),
       })
-      await store.applyEvent(link.id, {
-        type: 'TRIAGE',
-        action: 'discard',
-        at: now().toISOString(),
-      })
-      await store.setExpiry(link.id, null, SKIP_HOST_REASON, now())
+      // The park reason rides along with the transition: one commit.
+      await store.applyEvent(
+        link.id,
+        {
+          type: 'TRIAGE',
+          action: 'discard',
+          at: now().toISOString(),
+        },
+        undefined,
+        { expiresAt: null, expiryReason: SKIP_HOST_REASON },
+      )
       logger.info('{host} is skip-listed: {url} parked as discarded', {
         host,
         url: link.url,
@@ -689,17 +694,23 @@ async function extractPass(
           status: raw.status,
           error: raw.error,
         })
-        await store.setExtractedContent(link.id, markdown, true, now())
-        await store.applyEvent(link.id, {
-          type: 'NEEDS_BROWSER',
-          host,
-          // The reason string names the class, so the plain reason column
-          // is readable too. An unknown class carries no reason: the row
-          // parses as unknown.
-          reason: parkReason === 'unknown' ? undefined : parkReason,
-          reasonClass: parkReason,
-          at: now().toISOString(),
-        })
+        // Content + transition in one commit: a crash can never leave the
+        // body stored while the link is still leased.
+        await store.applyEvent(
+          link.id,
+          {
+            type: 'NEEDS_BROWSER',
+            host,
+            // The reason string names the class, so the plain reason column
+            // is readable too. An unknown class carries no reason: the row
+            // parses as unknown.
+            reason: parkReason === 'unknown' ? undefined : parkReason,
+            reasonClass: parkReason,
+            at: now().toISOString(),
+          },
+          undefined,
+          { extractedContent: markdown, needsBrowser: true, extractedAt: now() },
+        )
         logger.warn('extraction needs a browser for {url} (link {linkId}, extractor {extractor})', {
           url: link.url,
           linkId: link.id,
@@ -716,13 +727,16 @@ async function extractPass(
         continue
       }
 
-      await store.setExtractedContent(link.id, markdown, false, now())
       bump(extractionsByExtractor, extractor)
 
       // The media stage: video links get their tiers run before the link
       // moves on to enrich. A media failure never fails the link: the report
-      // is attached, the extracted content stays.
+      // is attached, the extracted content stays. The content write, the
+      // media report and the EXTRACTED transition commit in ONE transaction
+      // — nothing is stored for a link whose event never landed.
       let mediaRan = false
+      let mediaReport: MediaReport | null = null
+      let finalMarkdown = markdown
       if (options.media) {
         const meta = raw.meta ?? null
         if (isMediaLink(link.url, meta)) {
@@ -730,24 +744,29 @@ async function extractPass(
           if (mediaRun) {
             mediaRan = true
             mediaCount += 1
-            await store.setMediaReport(link.id, mediaRun.report, now())
+            mediaReport = mediaRun.report
             if (mediaRun.markdown.trim() !== '') {
-              await store.setExtractedContent(
-                link.id,
-                `${markdown}\n\n${mediaRun.markdown}`,
-                false,
-                now(),
-              )
+              finalMarkdown = `${markdown}\n\n${mediaRun.markdown}`
             }
           }
         }
       }
 
-      const done = await store.applyEvent(link.id, {
-        type: 'EXTRACTED',
-        chars: markdown.length,
-        at: now().toISOString(),
-      })
+      const done = await store.applyEvent(
+        link.id,
+        {
+          type: 'EXTRACTED',
+          chars: markdown.length,
+          at: now().toISOString(),
+        },
+        undefined,
+        {
+          extractedContent: finalMarkdown,
+          needsBrowser: false,
+          extractedAt: now(),
+          ...(mediaReport !== null ? { mediaReport } : {}),
+        },
+      )
       if (!done.ok) {
         errorCount += 1
         bump(errorsByExtractor, extractor)
@@ -1008,21 +1027,26 @@ async function recordLoginWall(
   now: Date,
   reason: string,
 ): Promise<void> {
-  await store.setExtractedContent(link.id, '', true, now)
-  const outcome = await store.applyEvent(link.id, {
-    type: 'NEEDS_BROWSER',
-    host,
-    reason,
-    reasonClass: 'login_wall',
-    at: now.toISOString(),
-  })
-  if (!outcome.ok) {
-    // The link is no longer in a state that accepts the event: nothing to
-    // park.
-    return
-  }
-  // The expiry reason carries the wall reason for the login command.
-  await store.setExpiry(link.id, null, reason, now)
+  // Content marker, park reason and the NEEDS_BROWSER transition commit in
+  // one transaction — the expiry reason is only stamped when the event lands.
+  await store.applyEvent(
+    link.id,
+    {
+      type: 'NEEDS_BROWSER',
+      host,
+      reason,
+      reasonClass: 'login_wall',
+      at: now.toISOString(),
+    },
+    undefined,
+    {
+      extractedContent: '',
+      needsBrowser: true,
+      extractedAt: now,
+      expiresAt: null,
+      expiryReason: reason,
+    },
+  )
 }
 
 /**
@@ -1037,16 +1061,26 @@ async function parkReviewOnly(
   host: string,
   now: Date,
 ): Promise<void> {
-  await store.setExtractedContent(link.id, '', true, now)
-  const outcome = await store.applyEvent(link.id, {
-    type: 'NEEDS_BROWSER',
-    host,
-    reason: REVIEW_ONLY_REASON,
-    reasonClass: 'review_only',
-    at: now.toISOString(),
-  })
-  if (!outcome.ok) return
-  await store.setExpiry(link.id, null, REVIEW_ONLY_REASON, now)
+  // Same atomic commit as recordLoginWall: content marker + park reason +
+  // transition in one transaction.
+  await store.applyEvent(
+    link.id,
+    {
+      type: 'NEEDS_BROWSER',
+      host,
+      reason: REVIEW_ONLY_REASON,
+      reasonClass: 'review_only',
+      at: now.toISOString(),
+    },
+    undefined,
+    {
+      extractedContent: '',
+      needsBrowser: true,
+      extractedAt: now,
+      expiresAt: null,
+      expiryReason: REVIEW_ONLY_REASON,
+    },
+  )
 }
 
 /**

@@ -52,6 +52,14 @@ export interface Store {
   setMediaReport(id: number, report: MediaReport, updatedAt?: Date): Promise<number>
 
   /**
+   * Atomically patch link columns (one UPDATE). Use this — or the `patch`
+   * argument of `applyEvent` — instead of sequential set* calls whenever the
+   * writes belong together: a crash can then never leave a link half
+   * updated (content stored but still leased, markers set but content not).
+   */
+  patchLink(id: number, patch: LinkPatch, updatedAt?: Date): Promise<number>
+
+  /**
    * Per-day budget counters for the media stage, shared across processes and
    * restarts. Day key format: `YYYY-MM-DD` (UTC).
    */
@@ -67,11 +75,17 @@ export interface Store {
    * FSM: apply one event atomically with a compare-and-set on the current
    * state. All state changes go through here; nothing else writes states.
    * `expected` defaults to the state currently recorded on the link.
+   *
+   * `patch` writes link columns in the SAME transaction as the transition
+   * and the history row — the durable-execution rule that a result and its
+   * FSM event commit together or not at all. When the event is illegal or
+   * the CAS is lost, the patch is discarded with it.
    */
   applyEvent(
     linkId: number,
     event: LinkEvent,
     expected?: LinkStateName,
+    patch?: LinkPatch,
   ): Promise<TransitionOutcome>
 
   /** Append-only event history for one link, oldest first. */
@@ -305,6 +319,29 @@ export type {
   Profile,
   ProfileInput,
   MediaReport,
+}
+
+/**
+ * Column writes that ride along with a store write in one transaction.
+ * `undefined` leaves the column alone; `null` clears it.
+ *
+ * When `enrichment` is present the denormalized columns (category,
+ * priority, action, confidence, read_minutes) derive from it exactly like
+ * `setEnrichment`, and `expiresAt`/`expiryReason` default to the
+ * enrichment's own `expires_at`/`expiry_reason` — pass them explicitly to
+ * override (a TTL-derived expiry, a park reason, a cleared expiry).
+ */
+export interface LinkPatch {
+  title?: string | null
+  extractedContent?: string | null
+  extractedAt?: Date | null
+  needsBrowser?: boolean
+  enrichment?: Enrichment | null
+  expiresAt?: Date | null
+  expiryReason?: string | null
+  captured?: boolean
+  capturedAt?: Date | null
+  mediaReport?: MediaReport | null
 }
 
 /** Outcome of Store.applyEvent: the new state, or a typed error. */
