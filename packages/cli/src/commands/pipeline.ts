@@ -16,7 +16,7 @@ import {
 import type { CliContext } from '../context.js'
 
 /** The stage logger names the pipeline always used. */
-function stageLogger(stage: 'ingest' | 'extract' | 'enrich') {
+function stageLogger(stage: string) {
   return pipelineLogger(stage)
 }
 
@@ -176,7 +176,12 @@ export interface RunAllResult {
   enrich?: RunOutcome
 }
 
-/** run: ingest+extract+enrich in one pass. Import only when files are given. */
+/**
+ * `run`: one full app-level pass — ingest `[sources]` + files, extract
+ * until empty, enrich until empty, sweep — then map the outcome onto the
+ * documented exit codes: 3 busy, 2 finished-but-needs-you, 0 all done.
+ * (1 is reserved for thrown failures, handled by the entry point.)
+ */
 export async function runAll(
   ctx: CliContext,
   files: string[],
@@ -184,58 +189,83 @@ export async function runAll(
   enrichFn: EnrichFn,
   options: { limit?: number; mediaFn?: MediaFn } = {},
 ): Promise<RunAllResult> {
-  const result: RunAllResult = {}
-  // Crash resume first: a killed import finishes before new work starts.
-  // Busy only blocks the ingest stage — extract/enrich have own locks.
-  await resumePendingIngest(ctx)
-  if (files.length > 0) {
-    const { outcome } = await ctx.app.ingestFiles(files, {
-      limit: options.limit,
-      logger: stageLogger('ingest'),
-      onFile: (_file, imported) => {
-        for (const warning of imported.warnings) {
-          ctx.logger.warn('importer warning: {warning}', { warning })
-        }
-      },
-    })
-    result.import = outcome
-    if (outcome.busy) {
-      reportBusy(outcome.busy, 'ingest')
+  const result = await ctx.app.run({
+    files,
+    extract: extractFn,
+    enrich: enrichFn,
+    ...(options.mediaFn ? { media: options.mediaFn } : {}),
+    ...(options.limit !== undefined ? { limit: options.limit } : {}),
+    // Never sleep inside the CLI loop: deferred links wait for the next
+    // invocation, and a process that sleeps minutes gets killed.
+    sleep: async () => {},
+    logger: stageLogger('run'),
+  })
+
+  for (const job of result.summary.ingest.jobs) {
+    if (job.busy) {
+      reportBusy(job.busy, 'ingest')
     } else {
-      printStage(outcome)
+      console.log(
+        `ingest ${job.jobId}: ${job.accepted} accepted` +
+          (job.duplicates > 0 ? `, ${job.duplicates} duplicates` : '') +
+          (job.rejected > 0 ? `, ${job.rejected} rejected` : '') +
+          ` (${job.status})`,
+      )
     }
   }
-
-  const extractOutcome = await ctx.app.extract({
-    extract: extractFn,
-    limit: options.limit,
-    guard: ctx.app.stageGuard(),
-    maxBatch: (ctx.config.limits ?? DEFAULT_LIMITS).maxBatch,
-    ...(options.mediaFn ? { media: options.mediaFn } : {}),
-    logger: stageLogger('extract'),
-  })
-  result.extract = extractOutcome
-  if (extractOutcome.busy) {
-    reportBusy(extractOutcome.busy, 'extract')
-  } else {
-    printStage(extractOutcome)
+  if (result.summary.ingest.jobs.length > 0) {
+    const tin = result.summary.ingest.jobs.reduce((n, j) => n + j.accepted + j.rejected, 0)
+    const tok = result.summary.ingest.jobs.reduce((n, j) => n + j.accepted, 0)
+    console.log(`ingest: ${tok}/${tin} ok`)
   }
-
-  const enrichOutcome = await ctx.app.enrich({
-    enrich: enrichFn,
-    limit: options.limit,
-    guard: ctx.app.stageGuard(),
-    maxBatch: (ctx.config.limits ?? DEFAULT_LIMITS).maxBatch,
-    ttl: ctx.config.ttl,
-    logger: stageLogger('enrich'),
-  })
-  result.enrich = enrichOutcome
-  if (enrichOutcome.busy) {
-    reportBusy(enrichOutcome.busy, 'enrich')
-  } else {
-    printStage(enrichOutcome)
+  const { extract: ex, enrich: en } = result.summary
+  const stageLine = (name: string, s: { input: number; ok: number; errors: number; deferred: number; needsBrowser: number }) =>
+    `${name}: ${s.ok}/${s.input} ok` +
+    (s.deferred > 0 ? `, ${s.deferred} deferred` : '') +
+    (s.needsBrowser > 0 ? `, ${s.needsBrowser} need browser` : '') +
+    (s.errors > 0 ? `, ${s.errors} errors` : '')
+  console.log(stageLine('extract', ex))
+  console.log(stageLine('enrich', en))
+  if (result.summary.swept > 0) {
+    console.log(`sweep: ${result.summary.swept} archived`)
   }
-  return result
+  console.log(
+    `run ${result.runId}: cursor ${result.cursorBefore} -> ${result.cursorAfter}`,
+  )
+
+  const busy =
+    ex.busy ??
+    en.busy ??
+    result.summary.ingest.jobs.find((j) => j.busy)?.busy
+  if (busy) {
+    reportBusy(busy, 'run')
+    return {}
+  }
+  if (result.summary.needsAction) {
+    const c = result.summary.collections.collections
+    const parts: string[] = []
+    if (c.needs_login > 0) parts.push(`${c.needs_login} need login`)
+    if (c.blocked > 0) parts.push(`${c.blocked} blocked`)
+    if (c.errored > 0) parts.push(`${c.errored} errored`)
+    console.log(`needs action: ${parts.join(', ')} — see \`linkinbox collections summary\``)
+    process.exitCode = 2
+  }
+  const accepted = result.summary.ingest.jobs.reduce((n, j) => n + j.accepted, 0)
+  const rejected = result.summary.ingest.jobs.reduce((n, j) => n + j.rejected, 0)
+  return {
+    ...(result.summary.ingest.jobs.length > 0
+      ? {
+          import: {
+            stage: 'ingest',
+            inputCount: accepted + rejected,
+            okCount: accepted,
+            errorCount: rejected,
+          },
+        }
+      : {}),
+    extract: { stage: 'extract', inputCount: ex.input, okCount: ex.ok, errorCount: ex.errors },
+    enrich: { stage: 'enrich', inputCount: en.input, okCount: en.ok, errorCount: en.errors },
+  }
 }
 
 export function registerPipelineCommands(
@@ -287,10 +317,35 @@ export function registerPipelineCommands(
     .command('enrich')
     .description('run enrichment (one structured-output call per link)')
     .option('--limit <n>', 'cap the number of links processed', Number)
-    .action(async (opts: { limit?: number }) => {
+    .option('--until-empty', 'repeat batches until no enrichable link remains or no batch makes progress')
+    .action(async (opts: { limit?: number; untilEmpty?: boolean }) => {
       const ctx = await deps.ctx()
       try {
-        await runEnrich(ctx, await deps.enrichFn(ctx), opts.limit)
+        const shared = {
+          enrich: await deps.enrichFn(ctx),
+          limit: opts.limit,
+          guard: ctx.app.stageGuard(),
+          maxBatch: (ctx.config.limits ?? DEFAULT_LIMITS).maxBatch,
+          ttl: ctx.config.ttl,
+          logger: stageLogger('enrich'),
+        }
+        if (opts.untilEmpty === true) {
+          const outcome = await ctx.app.enrichUntilEmpty({
+            ...shared,
+            sleep: async () => {},
+            onBatch: (summary) => console.log(formatBatchSummary(summary)),
+          })
+          if (outcome.busy) {
+            reportBusy(outcome.busy, 'enrich')
+            return
+          }
+          console.log(formatTotals(outcome))
+          if (outcome.hitCap) {
+            console.log('(stopped at the 100-batch cap with links still queued; re-run to continue)')
+          }
+          return
+        }
+        await runEnrich(ctx, shared.enrich, opts.limit)
       } finally {
         await ctx.close()
       }
