@@ -173,7 +173,14 @@ export async function startHarness(options: HarnessRuntimeOptions): Promise<Harn
     ...(notifier !== undefined ? { notifier } : {}),
     uiUrl: url,
   })
-  scheduler.start()
+  try {
+    scheduler.start()
+  } catch (err) {
+    // Bad harness.toml (e.g. invalid cron) must not leak the listener.
+    await new Promise<void>((res) => server.close(() => res()))
+    if (ownsApp) await app.close()
+    throw err
+  }
 
   // 4. Lifecycle record so `status`/`stop` can find us.
   const pidInfo: PidInfo = {
