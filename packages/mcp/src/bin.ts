@@ -7,8 +7,13 @@
  * The browse tools use the same read path as the CLI: the saved profile of
  * the host, the allowlist from `[share] hosts` and the same per-host budget
  * as the extraction stage. Nothing is written to the link store.
+ *
+ * Serving goes through SDK v2 `serveStdio`, which owns the era decision:
+ * a 2025-era `initialize` handshake is served by a pinned legacy instance,
+ * a modern opening by a modern one — both from the same factory, so the
+ * tool surface cannot drift between eras.
  */
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import {
   createLinkinbox,
   loadConfig,
@@ -44,7 +49,7 @@ export const deps: McpDeps = {
   },
 }
 
-const server = createMcpServer(deps)
+serveStdio(() => createMcpServer(deps))
 
 process.on('SIGINT', async () => {
   await deps.close?.()
@@ -55,7 +60,6 @@ process.on('SIGTERM', async () => {
   process.exit(0)
 })
 
-await server.connect(new StdioServerTransport())
 logger.info('linkinbox mcp server listening on stdio with tools {tools}', {
   tools: Object.keys(TOOL_NAME_MAP),
 })

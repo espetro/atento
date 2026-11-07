@@ -1,7 +1,8 @@
 /**
- * linkinbox MCP server. Thin wrapper: every tool calls the same core ops and
- * pipeline functions as the CLI (packages/core). Nothing here formats rows or
- * builds queries.
+ * linkinbox MCP server. Thin wrapper: every tool calls the same app-layer
+ * use cases (LinkinboxOps) the CLI and the HTTP server drive — nothing here
+ * formats rows or builds queries, and handlers never reach into
+ * store/pipeline internals beyond what the ops object exposes.
  *
  * Tool names use underscores because MCP tool names reject dots. Mapping to
  * the spec surface:
@@ -27,8 +28,15 @@
  * behind the terminal, but the read-only listing of pending logins is
  * available as login_pending.
  */
-export { createMcpServer } from './server.js'
-export { registerTools, applyFilter } from './tools.js'
+export { createMcpServer, withJsonSchema } from './server.js'
+export { createMcpHttpHandler } from './http.js'
+export { TOOLS, callTool, json, opsFor, applyFilter } from './tools/index.js'
+export type {
+  ToolDef,
+  ToolEnv,
+  ToolHandler,
+  ToolResult,
+} from './tools/index.js'
 export {
   TOOL_NAME_MAP,
   type McpContext,
