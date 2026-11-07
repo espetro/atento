@@ -36,12 +36,17 @@ function repoRoot(): string {
 }
 
 /**
- * Candidate build outputs for the web UI, in preference order. apps/web is
- * a separate workstream (M4b): SvelteKit emits `build/`, plain Vite emits
- * `dist/` — accept either, plus a harness.toml `web_dir` override.
+ * Candidate build outputs for the web UI, in preference order. The UI
+ * shipped as packages/ui (plain Vite → dist/); apps/web remains a
+ * possible future home (SvelteKit emits build/, Vite emits dist/) —
+ * accept either layout, plus a harness.toml `web_dir` override.
  */
 export function webDirCandidates(root: string = repoRoot()): string[] {
-  return [join(root, 'apps', 'web', 'build'), join(root, 'apps', 'web', 'dist')]
+  return [
+    join(root, 'packages', 'ui', 'dist'),
+    join(root, 'apps', 'web', 'build'),
+    join(root, 'apps', 'web', 'dist'),
+  ]
 }
 
 /** Resolve the web dir: explicit option > env > harness.toml > candidates. */

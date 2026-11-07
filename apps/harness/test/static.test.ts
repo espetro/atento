@@ -136,10 +136,11 @@ describe('createStaticMiddleware', () => {
 })
 
 describe('resolveWebDir / webDirCandidates', () => {
-  it('lists build before dist', () => {
+  it('prefers packages/ui dist, then apps/web layouts', () => {
     const c = webDirCandidates('/repo')
-    expect(c[0]).toBe(join('/repo', 'apps', 'web', 'build'))
-    expect(c[1]).toBe(join('/repo', 'apps', 'web', 'dist'))
+    expect(c[0]).toBe(join('/repo', 'packages', 'ui', 'dist'))
+    expect(c[1]).toBe(join('/repo', 'apps', 'web', 'build'))
+    expect(c[2]).toBe(join('/repo', 'apps', 'web', 'dist'))
   })
 
   it('prefers harness.toml web_dir when it has index.html', () => {
