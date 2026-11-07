@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createMockState, listLinks, pipelineOverview, sweep } from '../src/mock/data'
-import { PIPELINE_STATES } from '../src/lib/types'
+import { createMockState, listLinks, pipelineOverview, collectionsSummary, collectionOf, triageLinks, ingestUrls, runPipeline, getLink } from '../src/mock/data'
+import { PIPELINE_STATES, COLLECTION_NAMES } from '../src/lib/types'
 
 describe('mock data', () => {
   it('creates 128 links with first 100 in inbox', () => {
@@ -73,17 +73,45 @@ describe('mock data', () => {
     )
   })
 
-  it('sweep groups expired non-archived links by category', () => {
+  it('collectionsSummary counts every collection and finds login hosts', () => {
     const state = createMockState()
-    const res = sweep(state)
-    for (const g of res.groups) {
-      expect(g.links.length).toBeGreaterThan(0)
-      expect(g.links.every((l) => l.category === g.category)).toBe(true)
-      const now = Date.now()
-      expect(
-        g.links.every((l) => l.expires_at && new Date(l.expires_at).getTime() < now),
-      ).toBe(true)
-      expect(g.links.every((l) => l.status !== 'archived' && l.status !== 'discarded')).toBe(true)
-    }
+    const summary = collectionsSummary(state)
+    const sum = COLLECTION_NAMES.reduce((n, c) => n + (summary.collections[c] ?? 0), 0)
+    expect(sum).toBe(state.links.filter((l) => collectionOf(l) !== null).length)
+    expect(summary.needsLoginHosts.length).toBeGreaterThan(0)
+  })
+
+  it('listLinks filters by collection', () => {
+    const state = createMockState()
+    const enriched = listLinks(state, new URLSearchParams({ collection: 'enriched' }))
+    expect(enriched.total).toBeGreaterThan(0)
+    expect(enriched.items.every((l) => collectionOf(l) === 'enriched')).toBe(true)
+  })
+
+  it('triage moves links between collections', () => {
+    const state = createMockState()
+    const target = state.links.find((l) => collectionOf(l) === 'enriched')!
+    triageLinks(state, [target.id], 'archive')
+    expect(collectionOf(getLink(state, target.id)!)).toBe('triaged')
+    triageLinks(state, [target.id], 'read_now')
+    expect(collectionOf(getLink(state, target.id)!)).toBe('enriched')
+  })
+
+  it('ingest adds pending links and a done job', () => {
+    const state = createMockState()
+    const before = state.links.length
+    const { job, created } = ingestUrls(state, ['https://a.example/1', 'https://b.example/2'], 'urls')
+    expect(created).toBe(2)
+    expect(state.links.length).toBe(before + 2)
+    expect(job.status).toBe('done')
+    expect(collectionOf(state.links[0]!)).toBe('pending')
+  })
+
+  it('runPipeline returns a RunResult and journal rows', () => {
+    const state = createMockState()
+    const result = runPipeline(state)
+    expect(result.runId).toContain('mock-run')
+    expect(result.summary.extract.input).toBeGreaterThan(0)
+    expect(state.runRows.length).toBeGreaterThanOrEqual(4)
   })
 })
