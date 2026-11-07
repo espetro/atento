@@ -1,4 +1,44 @@
 export interface paths {
+    "/api/pair/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Issue a one-time pairing code for POST /api/pair
+         * @description Returns a short-lived, single-use code. Display it to the user; the client redeems it at POST /api/pair for the bearer tokens.
+         */
+        get: operations["getApiPairCode"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Redeem a one-time pairing code for bearer tokens
+         * @description Exchanges a code from GET /api/pair/code for the capture and server bearer tokens. Single-use; 401 on unknown, expired or already-redeemed codes. Not bearer-gated: the code is the credential.
+         */
+        post: operations["postApiPair"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/capture": {
         parameters: {
             query?: never;
@@ -321,6 +361,102 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getApiPairCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pairing code issued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: string;
+                        expiresAt: string;
+                    };
+                };
+            };
+        };
+    };
+    postApiPair: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Tokens for the client to store */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        captureToken: string | null;
+                        serverToken: string | null;
+                    };
+                };
+            };
+            /** @description Bad request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+            /** @description Missing or wrong bearer token (non-loopback binds) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+            /** @description Internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
+            };
+        };
+    };
     postCapture: {
         parameters: {
             query?: never;

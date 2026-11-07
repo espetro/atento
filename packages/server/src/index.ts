@@ -62,10 +62,12 @@ import type {
   LinkPatch,
 } from '@linkinbox/core'
 import { createEventsResponse } from './events.js'
+import { createPairingService } from './pairing.js'
 import {
   CollectionsSummaryBody,
   CollectionExportBody,
   CollectionReadResponse,
+  ErrorBody,
   errorResponses,
   IngestInputBody,
   IngestJobResponse,
@@ -76,6 +78,9 @@ import {
   LinkResponse,
   LinkRow,
   MetricsResponse,
+  PairCodeBody,
+  PairExchangeBody,
+  PairTokensBody,
   PipelineOverviewResponse,
   ReextractBody,
   ReextractResponse,
@@ -187,6 +192,7 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
   const env = opts.env ?? process.env
   const ops =
     opts.ops ?? createLinkinboxOps({ ttl }, { store, env })
+  const pairing = createPairingService({ capture, server: serverCfg, env })
   const app = new Hono()
 
   app.onError((err, c) => c.json({ error: errMsg(err) }, 500))
@@ -203,6 +209,11 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
   const loopback = LOOPBACK_HOSTNAMES.has(bindHost)
 
   const bearerAuth: MiddlewareHandler = async (c, next) => {
+    // POST /api/pair is the one unauthenticated /api route: the client
+    // redeeming a one-time pairing code has no bearer token yet — the code
+    // itself is the credential (see pairing.ts). GET /api/pair/code stays
+    // gated so only an authenticated caller can mint codes.
+    if (c.req.method === 'POST' && c.req.path === '/api/pair') return next()
     if (loopback) return next()
     const expected = serverToken(serverCfg, env)
     if (expected === null) return c.json({ error: 'unauthorized' }, 401)
@@ -217,6 +228,66 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
   app.use('/mcp', bearerAuth)
   app.use('/mcp/*', bearerAuth)
   app.use('/openapi.json', bearerAuth)
+
+  // ---- pairing ---------------------------------------------------------
+  //
+  // A capture client (the browser extension) pairs without anyone typing
+  // the bearer tokens: an authenticated caller (the web UI, same origin on
+  // loopback) mints a short-lived one-time code, the client redeems it for
+  // the tokens it needs. Codes live in memory — a server restart simply
+  // means pairing again. See src/pairing.ts for the contract.
+
+  app.get(
+    '/api/pair/code',
+    describeRoute({
+      tags: ['pairing'],
+      summary: 'Issue a one-time pairing code for POST /api/pair',
+      description:
+        'Returns a short-lived, single-use code. Display it to the user; ' +
+        'the client redeems it at POST /api/pair for the bearer tokens.',
+      responses: okJson('Pairing code issued', PairCodeBody),
+    }),
+    (c) => c.json(pairing.issue()),
+  )
+
+  app.post(
+    '/api/pair',
+    describeRoute({
+      tags: ['pairing'],
+      summary: 'Redeem a one-time pairing code for bearer tokens',
+      description:
+        'Exchanges a code from GET /api/pair/code for the capture and ' +
+        'server bearer tokens. Single-use; 401 on unknown, expired or ' +
+        'already-redeemed codes. Not bearer-gated: the code is the ' +
+        'credential.',
+      requestBody: {
+        required: true,
+        content: jsonContent(PairExchangeBody),
+      },
+      responses: {
+        200: {
+          description: 'Tokens for the client to store',
+          content: jsonContent(PairTokensBody),
+        },
+        401: {
+          description: 'Unknown, expired or already-used code',
+          content: jsonContent(ErrorBody),
+        },
+        ...errorResponses,
+      },
+    }),
+    async (c) => {
+      const body = (await c.req.json().catch(() => null)) as { code?: unknown } | null
+      if (typeof body?.code !== 'string' || body.code.trim() === '') {
+        return c.json({ error: 'body must be { code: string }' }, 400)
+      }
+      const tokens = pairing.redeem(body.code)
+      if (tokens === null) {
+        return c.json({ error: 'invalid or expired pairing code' }, 401)
+      }
+      return c.json(tokens)
+    },
+  )
 
   // ---- capture endpoint ----------------------------------------------
   //
