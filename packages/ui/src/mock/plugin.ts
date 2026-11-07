@@ -15,6 +15,7 @@ import {
   pipelineOverview,
   runPipeline,
   triageLinks,
+  restoreLinks,
   type MockState,
 } from './data'
 
@@ -115,6 +116,13 @@ export function mockApiPlugin(enabled: boolean): Plugin {
         broadcast('link', { ids: body.ids, action: body.action })
         broadcast('run', addRunRow(state, 'triage', 'done'))
         return void send(200, { updated })
+      }
+
+      if (path === '/api/links/restore' && req.method === 'POST') {
+        const body = (await readBody(req)) as { ids?: number[] }
+        const result = restoreLinks(state, body.ids ?? [])
+        broadcast('link', { ids: body.ids ?? [] })
+        return void send(200, result)
       }
 
       const reextract = path.match(/^\/api\/links\/(\d+)\/reextract$/)

@@ -356,6 +356,10 @@ export function triageLinks(
   }
   let updated = 0
   for (const l of state.links) {
+    // FSM legality (mirrors packages/core/src/fsm/table.ts): parked
+    // terminal states only accept RESTORE/DELETE — a TRIAGE action on an
+    // archived/discarded/deleted link is an ILLEGAL_TRANSITION no-op.
+    if (l.state === 'archived' || l.state === 'discarded' || l.state === 'deleted') continue
     if (ids.includes(l.id)) {
       l.state = nextState[action] ?? 'inbox'
       l.status = (action === 'read_now' ? 'inbox' : action + 'd') as Status
@@ -368,6 +372,38 @@ export function triageLinks(
     }
   }
   return updated
+}
+
+/**
+ * Restore parked links to the inbox — mirrors ops.restore: only
+ * archived/discarded links are restorable; everything else is blocked.
+ */
+export function restoreLinks(
+  state: MockState,
+  ids: number[],
+): { updated: number; missing: number[]; blocked: number[] } {
+  const missing: number[] = []
+  const blocked: number[] = []
+  let updated = 0
+  const seen = new Set<number>()
+  for (const id of ids) {
+    if (seen.has(id)) continue
+    seen.add(id)
+    const l = getLink(state, id)
+    if (!l) {
+      missing.push(id)
+      continue
+    }
+    if (l.state !== 'archived' && l.state !== 'discarded') {
+      blocked.push(id)
+      continue
+    }
+    l.state = 'inbox'
+    l.status = 'inbox' as Status
+    l.updated_at = new Date().toISOString()
+    updated += 1
+  }
+  return { updated, missing, blocked }
 }
 
 /** Ingest: add links in `created` (pending) and return a job record. */
@@ -505,8 +541,8 @@ export function runPipeline(state: MockState): RunResult {
     cursorAfter: state.links.length,
     summary: {
       ingest: { jobs: [] },
-      extract: { input: before, okCount: before - promoted, errorCount: 0, deferred: 0, needsBrowser: 0 },
-      enrich: { input: before - promoted, okCount: before - promoted - 1, errorCount: 1, deferred: 0 },
+      extract: { input: before, ok: before - promoted, errors: 0, deferred: 0, needsBrowser: 0 },
+      enrich: { input: before - promoted, ok: before - promoted - 1, errors: 1, deferred: 0 },
       swept: 0,
       needsAction,
       collections: summary as unknown as RunResult['summary']['collections'],

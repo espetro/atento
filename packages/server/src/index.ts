@@ -93,6 +93,7 @@ import {
   SweepApplyResponse,
   SweepResponse,
   TriageBody,
+  RestoreBody,
 } from './schemas.js'
 
 export const DEFAULT_PORT = 4173
@@ -881,6 +882,37 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
       }
       const result = await ops.triage(body.ids, body.action as TriageAction)
       return c.json({ updated: result.updated })
+    },
+  )
+
+  app.post(
+    '/api/links/restore',
+    describeRoute({
+      tags: ['links'],
+      summary: 'Restore parked (archived/discarded) links back to the inbox',
+      requestBody: {
+        required: true,
+        content: { 'application/json': { schema: resolverOf(RestoreBody) } },
+      },
+      responses: {
+        200: {
+          description: 'Restore result',
+          content: { 'application/json': { schema: resolverOf(JsonObject) } },
+        },
+        ...errorResponses,
+      },
+    }),
+    async (c) => {
+      const body = (await c.req.json().catch(() => null)) as { ids?: unknown } | null
+      if (!body || !Array.isArray(body.ids) || !body.ids.every((n) => typeof n === 'number')) {
+        return c.json({ error: 'ids must be an array of numbers' }, 400)
+      }
+      const result = await ops.restore(body.ids as number[])
+      return c.json({
+        updated: result.updated,
+        missing: result.missing,
+        blocked: result.blocked,
+      })
     },
   )
 

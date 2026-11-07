@@ -105,6 +105,9 @@ async function newPage(width, height) {
   await page.waitForTimeout(1200)
   const totalRestored = Number((await page.textContent('[data-testid=total-count]'))?.match(/\d+/)?.[0] ?? 0)
   check('undo restores link', totalRestored === totalBefore)
+  // The undo must go through /api/links/restore (FSM-legal), not a fake
+  // read_now triage — no error banner may appear.
+  check('undo surfaces no error', (await page.locator('.triage-error, [class*=error-banner]').count()) === 0)
 
   // Ingest dialog via rail.
   await page.click('[data-testid=nav-ingest]')

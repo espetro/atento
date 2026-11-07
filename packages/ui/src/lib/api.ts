@@ -109,6 +109,13 @@ export const api = {
       body: JSON.stringify({ ids, action } satisfies { ids: number[]; action: LinkAction }),
     })
   },
+  /** Restore parked (archived/discarded) links back to the inbox. */
+  restore(ids: number[]) {
+    return request<{ updated: number; missing: number[]; blocked: number[] }>(
+      '/api/links/restore',
+      { method: 'POST', body: JSON.stringify({ ids }) },
+    )
+  },
   reextract(id: number, options: { adapter?: string; limit?: number } = {}) {
     return request<{ ok: boolean; reason?: string }>(`/api/links/${id}/reextract`, {
       method: 'POST',

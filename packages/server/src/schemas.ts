@@ -181,6 +181,10 @@ export const TriageBody = z.object({
   action: z.enum(['read_now', 'schedule', 'archive', 'discard']),
 })
 
+export const RestoreBody = z.object({
+  ids: z.array(z.number().check(z.int(), z.positive())).check(z.minLength(1)),
+})
+
 export const SweepResponse = z.object({
   groups: z.array(
     z.object({

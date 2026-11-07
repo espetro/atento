@@ -69,7 +69,22 @@
     if (!undo) return
     const { ids } = undo
     undo = null
-    await onTriage(ids, 'read_now')
+    triageError = ''
+    try {
+      const res = await api.restore(ids)
+      if (res.updated === 0) {
+        triageError = `restore failed: ${res.blocked.length} link${res.blocked.length === 1 ? '' : 's'} not restorable`
+      } else if (res.updated < ids.length) {
+        triageError = `restored ${res.updated} of ${ids.length} links`
+      }
+    } catch (err) {
+      triageError = err instanceof ApiError ? err.message : String(err)
+    }
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['links'] }),
+      queryClient.invalidateQueries({ queryKey: ['collections-summary'] }),
+      queryClient.invalidateQueries({ queryKey: ['pipeline'] }),
+    ])
   }
 
   function onOpenUrl(linkUrl: string) {

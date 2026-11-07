@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createMockState, listLinks, pipelineOverview, collectionsSummary, collectionOf, triageLinks, ingestUrls, runPipeline, getLink } from '../src/mock/data'
+import { createMockState, listLinks, pipelineOverview, collectionsSummary, collectionOf, triageLinks, restoreLinks, ingestUrls, runPipeline, getLink } from '../src/mock/data'
 import { PIPELINE_STATES, COLLECTION_NAMES } from '../src/lib/types'
 
 describe('mock data', () => {
@@ -93,8 +93,25 @@ describe('mock data', () => {
     const target = state.links.find((l) => collectionOf(l) === 'enriched')!
     triageLinks(state, [target.id], 'archive')
     expect(collectionOf(getLink(state, target.id)!)).toBe('triaged')
-    triageLinks(state, [target.id], 'read_now')
+    // TRIAGE on a parked (archived) link is an illegal transition — the
+    // mock must not resurrect it the way the old undo did.
+    expect(triageLinks(state, [target.id], 'read_now')).toBe(0)
+    expect(getLink(state, target.id)!.state).toBe('archived')
+    // Restore is the legal path back to the inbox.
+    const res = restoreLinks(state, [target.id])
+    expect(res.updated).toBe(1)
+    expect(getLink(state, target.id)!.state).toBe('inbox')
     expect(collectionOf(getLink(state, target.id)!)).toBe('enriched')
+  })
+
+  it('restore only accepts parked links', () => {
+    const state = createMockState()
+    const parked = state.links.find((l) => collectionOf(l) === 'triaged') ?? state.links[0]!
+    const live = state.links.find((l) => l.state === 'inbox')!
+    const res = restoreLinks(state, [parked.id, live.id, 999_999])
+    expect(res.updated).toBe(parked.state === 'archived' || parked.state === 'discarded' ? 1 : 0)
+    expect(res.blocked).toContain(live.id)
+    expect(res.missing).toContain(999_999)
   })
 
   it('ingest adds pending links and a done job', () => {
