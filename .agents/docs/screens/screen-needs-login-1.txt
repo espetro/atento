@@ -1,0 +1,97 @@
+screen: needs-login-1
+name: Needs-login / blocked / errored view ("attention")
+route: /?view=attention&collection=needs_login|blocked|errored|review
+file: packages/ui/src/views/Attention.svelte (proposed)
+
+The "only you can fix this" surface. It reuses the triage list+preview
+shell but re-frames the job: instead of read/archive decisions, each
+collection explains WHY the pipeline stopped and what the human must
+do. A run that ends "needs you" (exit code 2) links here.
+
+The four collections differ in remediation:
+
+| collection  | pipeline meaning                                            | user action                                  |
+|-------------|-------------------------------------------------------------|----------------------------------------------|
+| needs_login | parked `login_wall` (needs_browser or deferred)             | `linkinbox login <host>` in a terminal, then re-run |
+| blocked     | parked bot_block/js_shell/http_error/timeout/unknown        | retry later, re-extract with another adapter, or archive |
+| errored     | FSM `errored` (extract or enrich stage threw)               | inspect error, re-extract (`r`), or discard  |
+| review      | parked `review_only` — host on `[limits] review_hosts`      | manual review by design; open/read/archive   |
+
+```DESKTOP```
+
+┌──────────────┬───────────────────────────────────────────────────────────────────┐
+│ COLLECTIONS  │  needs_login                                    4 links · 2 hosts │
+│              │  ┌─────────────────────────────────────────────────────────────┐  │
+│ ▸ needs_log 4│  │ These links need a logged-in browser session.               │  │
+│   blocked  12│  │ The pipeline parks them instead of guessing.               │  │
+│   errored   3│  │                                                             │  │
+│   review    2│  │  HOST          LINKS   NEXT STEP                          │  │
+│              │  │  github.com      3    linkinbox login github.com          │  │
+│ HOSTS       │  │  x.com           1    linkinbox login x.com               │  │
+│  github.com 3│  │                                                             │  │
+│  x.com      1│  │  [ copy command ]  [ open terminal instructions ]         │  │
+│              │  └─────────────────────────────────────────────────────────────┘  │
+│              │                                                                   │
+│              │  ┌─────────────────────────────────────────────────────────────┐  │
+│              │  │ link list (same .list-row anatomy as triage)               │  │
+│              │  │  ● Private repo page          github.com · login_wall      │  │
+│              │  │  ● Follower-only post         x.com · login_wall           │  │
+│              │  └─────────────────────────────────────────────────────────────┘  │
+│              │  preview pane (same tabs; Snapshot/Live most useful here)        │
+└──────────────┴───────────────────────────────────────────────────────────────────┘
+
+EMPTY (all caught up):
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  needs_login                                                      0 links     │
+│                                                                               │
+│            ✓ Nothing needs a login right now.                                 │
+│                                                                               │
+│            Links that hit a login wall will appear here after the next run.   │
+│            [ Run a pass now ]   (POST /api/run)                               │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Elements
+
+| Element | State | Description |
+|---------|-------|-------------|
+| Collection switcher | required | Segmented control or the rail's attention rows; `?collection=` carries needs_login/blocked/errored/review |
+| Explainer banner | required | One paragraph naming the collection's meaning + remediation, per the table above; copy is per-collection, not generic |
+| Host action table | conditional | needs_login only: one row per host from `needsLoginHosts` (host, count, exact `linkinbox login <host>` command); "copy command" button per row; hosts sorted by count desc |
+| Terminal instructions | action | Expandable "how login works" block: headed browser opens, you log in, profile saves under `~/.linkinbox/profiles/<host>`, next run picks it up headlessly (from docs + `linkinbox login --help` semantics) |
+| Re-check button | action | "Check sessions" re-runs the verify path — v1 has no HTTP verify endpoint [gap]; interim behavior: POST /api/run scoped note + toast "run `linkinbox login list` to verify" |
+| Link list | required | Same rows/tabs as triage-1; state chip shows the park reason class (login_wall, bot_block, js_shell, http_error, timeout, review_only, unknown) |
+| Preview pane | required | Same four tabs; for parked links Reader usually shows whatever extraction exists (partial), Snapshot shows the parked page's screenshot when captured — the "what did the bot see" evidence |
+| Bulk actions | action | "Archive all from host" / "Discard all" per host row (confirm dialog listing count); individual a/s/d/r/o unchanged |
+| Run-a-pass CTA | action | Empty states and banner footers offer POST /api/run; while a run is active the button shows live stage progress (ingest → extract → enrich → sweep) fed by SSE `run` events |
+| Exit-code bridge | ambient | When arriving from run-1 with `needsAction`, a banner reads "last run finished — N links need you" with counts per collection |
+
+## Behavior
+
+- Same shell, same keyboard contract as triage-1. `a`/`s`/`d` still work
+  (triage actions are legal on parked links — they move the FSM to
+  scheduled/archived/discarded regardless of park state).
+- `r` (re-extract) is the primary remediation for blocked/errored:
+  single adapter fires directly; multiple adapters open the picker.
+  A successful re-extract moves the link out of the attention
+  collection on the next SSE `link` event — the row visibly leaves.
+- needs_login remediation is deliberately NOT a button that pretends to
+  log in for you: login requires a headed human session. The UI's job
+  is to make the exact command copyable and the consequence clear
+  ("links resume automatically on the next run after login"). A
+  "login in browser" deep-link is a possible v2 (SessionLoginPort exists
+  in core but has no HTTP surface [gap]).
+- blocked links show retry context when present: `next_attempt_at`
+  for deferred links ("retry in 12m"), attempt counts for errored
+  ("attempt 3 of ?"), and the raw `reason`/`error` string in the
+  preview header — park reasons are machine strings; render them
+  verbatim with a humanized label, never invent a friendlier cause.
+- review collection is informational by design: `[limits] review_hosts`
+  means "never fetch, human reviews". The banner says so explicitly so
+  the user doesn't expect the pipeline to retry these.
+- Errored links expose `stage` (extract|enrich) and `retryable` in the
+  preview header; non-retryable errors get a stronger "won't retry"
+  chip and steer toward `r` or `d`.
+- All collections paginate identically (50/page, 200 cap); the host
+  table is NOT paginated (needsLoginHosts is already bounded by host
+  count).

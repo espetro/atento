@@ -1,0 +1,98 @@
+screen: collections-1
+name: Collections sidebar (rail)
+route: chrome of /?view=triage (and attention); collapsible
+file: packages/ui/src/views/CollectionsRail.svelte (proposed)
+
+The navigation spine of the app. It is not a separate route — it is the
+left column of the app shell on every triage-family view, spec'd
+separately because it carries its own data contract (summary counts,
+host grouping, saved filters) and its own responsive behavior.
+
+Grounded in the Readinglist reference (docs/screens/references/
+patterns-three-pane.md): smart lists with counts + domain folders map
+directly onto collections + host grouping.
+
+```EXPANDED (desktop)```
+
+┌──────────────────┐
+│ linkinbox        │  ← wordmark; click = enriched collection
+│──────────────────│
+│ COLLECTIONS      │
+│ ▸ enriched    142│  ← selected row highlighted; count right-aligned
+│   pending     37 │
+│   needs_login  4 │  ← state chip tint per collection
+│   blocked    12 │
+│   errored      3 │
+│   review       2 │
+│   triaged     89 │
+│──────────────────│
+│ HOSTS           │  ← collapsible group, sorted by count desc
+│  github.com   8 │
+│  hn.algolia…   6 │
+│  substack.com  5 │
+│  ···  show 12 more
+│──────────────────│
+│ SAVED FILTERS   │  ← user-defined, localStorage
+│  ⌁ unread ai    │
+│  ⌁ long reads   │
+│──────────────────│
+│ + save current  │  ← appears when filters are active
+│ ⚙ settings      │
+│ ⊕ ingest        │
+└──────────────────┘
+
+COLLAPSED (icon strip, 760–1099px)      MOBILE (<760px)
+┌────┐                                  ┌──────────────────┐
+│ ▤  │ enriched                          │ ☰  linkinbox  ⚙ ⊕│
+│ ◌  │ pending                           │──────────────────│
+│ ⚠  │ needs_login 4                     │ (rail opens as a │
+│ ⛔ │ blocked                           │  left sheet over │
+│ ✕  │ errored                           │  the list)       │
+│ …  │ …                                 │                  │
+│ ⚙  │ settings                          │                  │
+└────┘                                  └──────────────────┘
+```
+
+## Elements
+
+| Element | State | Description |
+|---------|-------|-------------|
+| Wordmark | action | "linkinbox" + mark; navigates to default collection (enriched) |
+| Collection rows | required | 7 rows, fixed order enriched → triaged; label + count; each row is a `.list-row`-style hit target; `?collection=` in URL |
+| Collection state chip | ambient | needs_login/blocked/errored/review rows tinted with `.chip-state-*` colors so attention collections are scannable without reading |
+| Hosts group | required | Header "HOSTS" + collapse chevron; rows = host + count, from GET /api/pipeline `byHost` merged with needsLoginHosts (GET /api/collections/summary); top 5 shown, "show N more" expands; row click sets `?host=` within current collection |
+| Saved filters group | conditional | Hidden until ≥1 saved filter exists; each row shows a compact filter summary (e.g. "unread ai") + count when applicable; click applies the stored {collection,q,state,category,host,stale} |
+| Save current filter | action | Visible only while any filter is active; prompts for a name (inline input, not modal); persists to localStorage `linkinbox.savedFilters` |
+| Delete/edit filter | action | Context menu (right-click / long-press) on a saved row: rename, delete |
+| Settings row | action | Navigates to `?view=settings` |
+| Ingest row | action | Opens the ingest dialog (`?dialog=ingest`) from anywhere |
+| Collapse toggle | action | Desktop: collapses rail to icon strip (state in localStorage); mobile: opens/closes the sheet |
+| Counts freshness | ambient | Counts refresh on SSE `link`/`run`/`ingest` events (debounced 500ms) and on window focus; a subtle pulse marks a count that just changed |
+
+## Behavior
+
+- Data: GET /api/collections/summary on mount and on SSE events;
+  GET /api/pipeline for the host histogram (cached 30s — it is a full
+  table scan server-side, do not poll it).
+- Host grouping semantics: hosts group links across the CURRENT
+  collection only when the row is clicked — the rail itself always
+  shows global busiest hosts so a blocked-heavy host is visible from
+  any collection.
+- needs_login hosts are visually distinguished inside HOSTS (warning
+  tint + count badge) because they carry an action (run
+  `linkinbox login <host>`), unlike passive browsing hosts.
+- Saved filters are client-side only (localStorage). They store the
+  full filter object + display name; applying one writes the same URL
+  params a manual filter would. No server sync in v1 — flag if the
+  user wants cross-device filters.
+- Keyboard: `[` / `]` (or ctrl+`[`/`]`) could cycle collections —
+  open question; v1 ships click/URL only, `j`/`k` never leaves the
+  list.
+- Empty states: zero links overall → rail still renders (all counts 0)
+  plus a hint row "ingest your first links" opening the ingest dialog.
+- Accessibility: rail is a `<nav>` with `aria-label="Collections"`;
+  counts announced as "enriched, 142"; collapsed icon strip keeps
+  tooltips + aria-labels; sheet traps focus on mobile.
+- The rail never scrolls independently of the page on desktop (it is
+  as tall as the viewport); HOSTS and SAVED groups scroll internally
+  when they exceed available height.

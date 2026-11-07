@@ -1,0 +1,126 @@
+screen: triage-1
+name: Triage workspace
+route: /?view=triage&collection=<name>&selected=<id>&tab=<reader|metadata|snapshot|live>
+file: packages/ui/src/views/Triage.svelte (proposed)
+
+The daily-driver surface. Three columns on desktop — collections rail,
+link list, preview pane — collapsing to list -> detail on narrow
+viewports. Every row and pane is live: state transitions arrive over
+GET /api/events (SSE) and update rows in place; nothing requires a
+manual refresh.
+
+Collections are pipeline positions, not folders: enriched, pending,
+needs_login, blocked, errored, review, triaged (see
+packages/core/src/collections.ts). The list shows the selected
+collection; the preview pane shows the selected link with four tabs.
+
+```DESKTOP (>= 1100px)```
+
+┌──────────────┬─────────────────────────────┬──────────────────────────────────────────┐
+│ COLLECTIONS  │  enriched        142 items  │  https://blog.example.com/post            │
+│              │  ┌───────────────────────┐  │  Example Post Title            [state]   │
+│ ▸ enriched 142│  │🔍 / search…          │  │  ────────────────────────────────────── │
+│   pending  37 │  └───────────────────────┘  │  [1 Reader] [2 Metadata] [3 Snapshot]    │
+│   needs_log 4 │                              │  [4 Live]                                │
+│   blocked  12 │  ┌───────────────────────┐  │  ┌────────────────────────────────────┐  │
+│   errored   3 │  │● Title one      ai ·hi│  │  │  extracted markdown rendered…      │  │
+│   review    2 │  │  why_it_matters…  6m  │  │  │                                    │  │
+│   triaged 89 │  │● Title two     eng · n │  │  │                                    │  │
+│              │  │  why_it_matters… 12m  │  │  └────────────────────────────────────┘  │
+│ HOSTS       │  ├───────────────────────┤  │  ┌────────────────────────────────────┐  │
+│  github.com 8│  │○ Title three   des ·lo│  │  │ a archive   s schedule   d discard │  │
+│  hn.algolia… │  │  why_it_matters…  4m  │◄─┼──│ r re-extract   o open             │  │
+│              │  └───────────────────────┘  │  │ 1-4 tabs   j/k move   / search     │  │
+│ SAVED       │  [load more · 50/page]      │  └────────────────────────────────────┘  │
+│  ⌁ unread    │                              │                                          │
+│  ⌁ longreads │                              │                                          │
+└──────────────┴─────────────────────────────┴──────────────────────────────────────────┘
+        ↑ rail collapses to icons (<1100px) or a sheet (<760px)
+
+NARROW (<760px): rail hidden behind ☰; list is full width; selecting a
+row pushes the preview pane as a full-screen detail view with a back
+chevron. URL state (?selected=, ?tab=) survives the collapse — the
+same link is shareable at every width.
+
+PREVIEW TABS
+  Reader    rendered extracted markdown (GET /api/links/{id}
+            extracted_content); empty state when the link has no
+            extraction yet (pending/needs_login/blocked collections)
+  Metadata  enrichment fields (category, priority, why_it_matters,
+            read_minutes, expires_at, expiry_reason, confidence) +
+            editable title/note/tags (PATCH /api/links/{id}) +
+            "Re-extract with adapter…" (POST /api/links/{id}/reextract)
+  Snapshot  <img> of GET /api/links/{id}/artifacts/snapshot.png;
+            empty state "no snapshot captured" when 404
+  Live      <iframe src={url}> ONLY when state_data.frameable === true;
+            otherwise the Snapshot image + an "Open in browser" button.
+            NO header-stripping proxy, ever — the iframe shows the real
+            page or nothing.
+```
+
+## Elements
+
+| Element | State | Description |
+|---------|-------|-------------|
+| Collections rail | required | Left column; collection rows with counts (GET /api/collections/summary), HOSTS group (needsLoginHosts + busiest hosts from GET /api/pipeline byHost), SAVED group (user filters, localStorage) |
+| Collection row | action | Switches `?collection=`; count badge; needs_login/blocked/errored/review rows carry a state chip color |
+| Host row | action | Filters the list to `?host=` within the collection; shows per-host count |
+| Saved filter row | action | Named preset of {collection, q, state, category, host, stale}; applies on click, editable via context menu |
+| Search input | required | `/` focuses; writes `?q=`; debounced; searches url+title via GET /api/links?q= |
+| List header | static | Collection name + item count + active filter chips (removable) |
+| Link row | action | `.list-row`: state chip, favicon/host, title (2-line clamp), why_it_matters summary (200-char projection), category + priority chips, read_minutes, staleness marker when expires_at < now |
+| Selected row | ambient | Highlight follows j/k and click; `?selected=` stays in URL |
+| Load more | action | "load more · N remaining" appends next page (limit += 50, offset paging; collections cap 200) |
+| Preview header | required | URL (truncated, copyable), title, FSM state chip + reason line (e.g. `deferred · retry in 4m`, `needs_browser · login_wall`) |
+| Tab bar | required | 4 tabs, `1`-`4` shortcuts; badge on Snapshot when no artifact (dimmed), on Live when not frameable (dimmed + "snapshot" fallback note) |
+| Reader tab | conditional | Rendered markdown of extracted_content; skeleton while GET /api/links/{id} loads; "no extraction yet" empty state for pending/parked links |
+| Metadata tab | required | Enrichment card: category, priority, why_it_matters, read_minutes, expires_at + expiry_reason, confidence bar; editable fields title/note/tags with save-on-blur PATCH; "Re-extract with adapter…" button opens adapter picker (lists configured browser adapters; disabled with reason when none) |
+| Snapshot tab | conditional | Artifact image from GET /api/links/{id}/artifacts/snapshot.png (inline content-disposition); empty state + "capture on next extract" hint when 404 |
+| Live tab | conditional | `<iframe>` of the real URL when state_data.frameable; otherwise Snapshot fallback + "Open in browser" (window.open). Frameable links show a "live — untrusted page" caption; iframe is sandboxed (`allow-scripts` only, no same-origin, no popups) |
+| Action bar | required | `a` archive · `s` schedule · `d` discard · `r` re-extract · `o` open; schedule opens a small date picker popover (needs scheduledFor — see INDEX known gaps); destructive actions confirm inline (undo toast, not modal) |
+| Keymap hint | ambient | `.kbd` chips in the action bar footer; `?` opens the full overlay |
+| Empty collection | conditional | Centered empty state: collection name, count 0, suggestion ("run a pass" → POST /api/run, "ingest links" → opens ingest dialog) |
+| Error state | conditional | List/detail fetch failure: inline alert with retry; SSE disconnect shows a subtle "reconnecting…" chip in the header, never a blocking modal |
+
+## Behavior
+
+- URL state is the single source of truth: `collection`, `q`, `state`,
+  `category`, `host`, `stale`, `selected`, `tab` all live in
+  URLSearchParams (existing convention in packages/ui/src/lib/urlState.ts).
+  Back/forward and shared links restore the exact view.
+- List data: GET /api/links with the active filters, `limit`/`offset`
+  paging (default 50, matching the server default; collections reads cap
+  at 200). Rows are the pipeline projection: `state`, `reason`,
+  `next_attempt_at`, `host`, `updated_at` ride along additively.
+- Live updates: one EventSource on /api/events per session. `link`
+  events patch the affected row in place (state chip, collection
+  membership — a row that leaves the collection animates out); `run`
+  and `ingest` events feed the run-status and ingest-job surfaces.
+  Reconnect uses Last-Event-ID automatically; the composite
+  `evt:{l,r,i}` cursor means no family is skipped.
+- Triage actions POST /api/links/triage `{ids:[selected], action}`;
+  multi-select (shift-click range, cmd-click toggle) batches ids into one
+  call. Optimistic update with rollback on error. `discard`/`archive`
+  offer a 6s undo toast that re-triages back to inbox/scheduled.
+- `r` on a link with >1 configured adapter opens the adapter picker
+  (Bits UI dialog listing `linkinbox browsers` ids + health); on a
+  single-adapter setup it fires POST /api/links/{id}/reextract directly.
+  409 responses (illegal state / busy) surface the server's reason
+  inline, e.g. "extract is busy — run 41 holds the lock".
+- Metadata edits PATCH only title/note/tags — enrichment fields are
+  model output and are never hand-edited (re-extract instead). The form
+  makes this legible: enrichment fields render as read-only chips with a
+  "generated" caption; only the three user fields are inputs.
+- Snapshot/Live degrade honestly: missing artifact → dimmed tab + empty
+  state; `frameable` absent/false → Live tab shows the snapshot and an
+  "Open in browser" button. There is no proxy that strips headers —
+  that was an explicit product decision (login walls and paywalls must
+  not be silently bypassed by the UI).
+- Keyboard: single-key shortcuts are inert while an input, textarea,
+  select or open dialog has focus; `/` always focuses search from
+  anywhere else. `j`/`k` wrap at list ends (or stop — open question,
+  default wrap). All motion respects prefers-reduced-motion.
+- Responsive: ≥1100px three columns; 760–1099px rail collapses to an
+  icon strip; <760px single-column list with push-detail preview.
+  UILOOP gates apply: 0 console errors/warnings, 0 axe
+  critical/serious, verified at 375×812, 768×1024, 1440×900.
