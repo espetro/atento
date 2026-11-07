@@ -106,6 +106,19 @@ describe('runPatchrightLogin', () => {
     expect(browser.closed).toBe(1)
   })
 
+  it('navigates to a custom login url instead of the host root', async () => {
+    const browser = fakeBrowser()
+    const result = await runPatchrightLogin('app.devin.ai', {
+      profilesDir: '/tmp/profiles',
+      url: 'https://app.devin.ai/login?next=/settings',
+      launch: browser.launch,
+      waitForEnter: async () => undefined,
+      log: () => undefined,
+    })
+    expect(result.ok).toBe(true)
+    expect(browser.visited).toEqual(['https://app.devin.ai/login?next=/settings'])
+  })
+
   it('passes the executable path to the launcher', async () => {
     const browser = fakeBrowser()
     await runPatchrightLogin('app.devin.ai', {
@@ -159,8 +172,9 @@ stealth_hosts = ["app.devin.ai"]
       expect(browser.calls[0]?.headless).toBe(false)
       // The profile row points at the patchright profile directory.
       const profile = await db.store.getProfile('app.devin.ai')
+      // The migrated stealth adapter id names the profile directory.
       expect(profile?.path).toBe(
-        join(ctx.config.profilesDir, 'app.devin.ai', 'patchright'),
+        join(ctx.config.profilesDir, 'app.devin.ai', 'stealth'),
       )
       expect(out.stdout).toContain('saved profile for app.devin.ai')
       // The parked links are requeued for the next extract run.
@@ -191,8 +205,32 @@ engine = "patchright"
       expect(browser.calls[0]?.headless).toBe(false)
       const profile = await db.store.getProfile('example.com')
       expect(profile?.path).toBe(
-        join(ctx.config.profilesDir, 'example.com', 'patchright'),
+        join(ctx.config.profilesDir, 'example.com', 'stealth'),
       )
+    } finally {
+      await db.cleanup()
+    }
+  })
+
+  it('threads a custom --url through runLogin to page.goto', async () => {
+    const db = await tempDb()
+    try {
+      const ctx = await contextFor(
+        db,
+        `
+[browser]
+engine = "patchright"
+`,
+      )
+      const browser = fakeBrowser()
+      await capture(() =>
+        runLogin(ctx, 'example.com', {
+          url: 'https://example.com/login?next=/feed',
+          patchrightLaunch: browser.launch,
+          waitForEnter: async () => undefined,
+        }),
+      )
+      expect(browser.visited).toEqual(['https://example.com/login?next=/feed'])
     } finally {
       await db.cleanup()
     }
@@ -213,7 +251,7 @@ engine = "patchright"
       })
       expect(browser.calls).toHaveLength(0)
       const profile = await db.store.getProfile('example.com')
-      expect(profile?.path).toBe(join(ctx.config.profilesDir, 'example.com'))
+      expect(profile?.path).toBe(join(ctx.config.profilesDir, 'example.com', 'headless'))
       expect(out.stdout).toContain('saved profile for example.com')
     } finally {
       await db.cleanup()

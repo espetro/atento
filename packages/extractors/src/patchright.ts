@@ -105,13 +105,27 @@ export interface PatchrightExtractorOptions {
   scrollPx?: number;
   /** Navigation timeout in ms. */
   timeoutMs?: number;
+  /**
+   * The adapter id this extractor stands in for; selects the profile
+   * subdirectory (<profilesDir>/<host>/<adapterId>). Default "patchright".
+   */
+  adapterId?: string;
 }
 
-/** Profile dir for a host: ~/.linkinbox/profiles/<host>/patchright */
-export function patchrightProfileDir(url: string, profilesDir?: string): string {
+/**
+ * Profile dir for a host on an adapter:
+ * ~/.linkinbox/profiles/<host>/<adapterId>. The pre-M1 "patchright"
+ * subdirectory is migrated to the stealth adapter id by core's
+ * migrateBrowserProfiles.
+ */
+export function patchrightProfileDir(
+  url: string,
+  profilesDir?: string,
+  adapterId = PATCHRIGHT_PROFILE_SUFFIX,
+): string {
   const host = new URL(url).hostname;
   const base = profilesDir ?? join(homedir(), ".linkinbox", "profiles");
-  return join(base, host, PATCHRIGHT_PROFILE_SUFFIX);
+  return join(base, host, adapterId);
 }
 
 /**
@@ -237,7 +251,7 @@ export function createPatchrightExtractor(options: PatchrightExtractorOptions = 
   return {
     name: "patchright",
     async extract(url: string): Promise<ExtractResult> {
-      const profileDir = patchrightProfileDir(url, options.profilesDir);
+      const profileDir = patchrightProfileDir(url, options.profilesDir, options.adapterId);
       if (!exists(profileDir)) {
         return { markdown: "", needsBrowser: true, meta: { missingProfile: true } };
       }

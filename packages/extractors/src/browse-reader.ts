@@ -1,20 +1,22 @@
 import { createBrowserExtractor, type BrowserExtractorOptions } from "./browser.js";
 import { createPatchrightExtractor, type PatchrightExtractorOptions } from "./patchright.js";
-import type { ExecLike } from "./types.js";
+import type { ExecLike, Extractor, ExtractResult } from "./types.js";
 
 /**
  * The read-only reader behind `linkinbox browse` and the MCP browse_read
  * tool.
  *
- * It reuses the two engines the pipeline already has (agent-browser and
- * the stealth Patchright extractor) and exposes NOTHING but a read: the
- * only commands it ever runs are "open the url" and "read the page". No
- * click, no type, no form, no navigation API. The click/type surface of
- * agent-browser is deliberately not reachable from here.
+ * It reuses the browser engines the pipeline already has and exposes
+ * NOTHING but a read: the only commands it ever runs are "open the url"
+ * and "read the page". No click, no type, no form, no navigation API. The
+ * click/type surface of agent-browser is deliberately not reachable from
+ * here.
  *
- * The engine is chosen per host: the stealth engine for the hosts the
- * owner listed in `stealth_hosts`, the default engine for the rest. The
- * choice comes from the caller, so no host name is hardcoded here.
+ * The engine is chosen per host through the adapter registry: the caller
+ * injects `adapterFor` (host -> adapter id) and `adapterReaders`
+ * (adapter id -> extractor). The legacy `stealthHost` callback still works
+ * for callers that have not migrated: it maps onto the "stealth"/"headless"
+ * adapter ids.
  */
 
 export type BrowseReadReason = "no_profile" | "login_wall" | "error";
@@ -26,7 +28,7 @@ export interface BrowseReadOutcome {
   markdown: string;
   /** The final URL after redirects, when the engine reports one. */
   finalUrl?: string;
-  /** Which engine read the page. */
+  /** Which adapter read the page. */
   engine: string;
   /** Why the read failed, when it did. */
   reason?: BrowseReadReason;
@@ -41,8 +43,18 @@ export interface BrowseReaderOptions {
   browser?: BrowserExtractorOptions;
   /** The stealth (Patchright) engine options. */
   patchright?: PatchrightExtractorOptions;
-  /** True when the host must be read with the stealth engine. */
+  /**
+   * Legacy engine choice: true when the host must be read with the stealth
+   * engine. Used only when `adapterFor`/`adapterReaders` do not resolve.
+   */
   stealthHost?: (host: string) => boolean;
+  /**
+   * The adapter id a host reads with (the registry's reader resolution).
+   * When it returns an id present in `adapterReaders`, that extractor runs.
+   */
+  adapterFor?: (host: string) => string | undefined;
+  /** Adapter id -> extractor, for adapters beyond the built-in pair. */
+  adapterReaders?: Record<string, Extractor>;
   /**
    * Close the agent-browser session after the read (default true). A browse
    * is a one-shot read: leaving the browser open would hold the profile
@@ -94,7 +106,9 @@ export function toBrowseOutcome(
         ? meta["stderr"]
         : typeof meta["exitCode"] === "number"
           ? `exit code ${meta["exitCode"]}`
-          : "the browser could not read the page";
+          : typeof meta["error"] === "string"
+            ? meta["error"]
+            : "the browser could not read the page";
     return { ok: false, markdown: "", engine, reason: "error", detail };
   }
   return {
@@ -105,9 +119,14 @@ export function toBrowseOutcome(
   };
 }
 
+/** The adapter ids the built-in engine pair answers to. */
+export const BROWSE_HEADLESS_ADAPTER = "headless";
+export const BROWSE_STEALTH_ADAPTER = "stealth";
+
 /**
- * Build the reader. The stealth engine is used for the hosts the caller
- * marks as stealth hosts; every other host uses the default engine.
+ * Build the reader. The adapter for a host comes from `adapterFor` (the
+ * registry); without it the legacy `stealthHost` callback picks between
+ * the built-in "headless" and "stealth" readers.
  */
 export function createBrowseReader(options: BrowseReaderOptions = {}): BrowseReader {
   const closeAfterRead = options.closeAfterRead !== false;
@@ -129,31 +148,48 @@ export function createBrowseReader(options: BrowseReaderOptions = {}): BrowseRea
     profileExists: options.profileExists,
     ...options.patchright,
     profilesDir: options.profilesDir ?? options.patchright?.profilesDir,
+    adapterId: BROWSE_STEALTH_ADAPTER,
   });
 
+  const readers: Record<string, { extractor: Extractor; closeProfile?: boolean }> = {
+    [BROWSE_HEADLESS_ADAPTER]: { extractor: browserExtractor, closeProfile: true },
+    [BROWSE_STEALTH_ADAPTER]: { extractor: patchrightExtractor },
+    ...Object.fromEntries(
+      Object.entries(options.adapterReaders ?? {}).map(([id, extractor]) => [
+        id,
+        { extractor },
+      ]),
+    ),
+  };
+
   return async (url: string, host: string): Promise<BrowseReadOutcome> => {
-    if (stealth(host)) {
-      const result = await patchrightExtractor.extract(url);
-      return toBrowseOutcome(result, "patchright");
-    }
-    const result = await browserExtractor.extract(url);
-    if (closeAfterRead && options.exec) {
+    const adapterId = options.adapterFor?.(host);
+    const fallbackId = stealth(host) ? BROWSE_STEALTH_ADAPTER : BROWSE_HEADLESS_ADAPTER;
+    const adapterIdUsed =
+      adapterId !== undefined && readers[adapterId] !== undefined ? adapterId : fallbackId;
+    const entry = readers[adapterIdUsed]!;
+    const result: ExtractResult = await entry.extractor.extract(url);
+    if (closeAfterRead && entry.closeProfile && options.exec) {
       // The session is closed best effort: a failure here must never fail
       // the read that already succeeded.
       await options.exec(
         command,
-        ["--profile", profileDirFor(options.profilesDir, host), "close"],
+        ["--profile", profileDirFor(options.profilesDir, host, adapterIdUsed), "close"],
         { timeoutMs: 15_000 },
       ).catch(() => undefined);
     }
-    return toBrowseOutcome(result, "agent-browser");
+    return toBrowseOutcome(result, adapterIdUsed);
   };
 }
 
-/** The profile directory of a host: <profilesDir>/<host>. */
-export function profileDirFor(profilesDir: string | undefined, host: string): string {
+/** The profile directory of a host on an adapter: <profilesDir>/<host>/<adapterId>. */
+export function profileDirFor(
+  profilesDir: string | undefined,
+  host: string,
+  adapterId = BROWSE_HEADLESS_ADAPTER,
+): string {
   const base = profilesDir ?? defaultProfilesDir();
-  return `${base.replace(/\/+$/, "")}/${host}`;
+  return `${base.replace(/\/+$/, "")}/${host}/${adapterId}`;
 }
 
 function defaultProfilesDir(): string {

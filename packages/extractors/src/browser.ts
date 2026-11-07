@@ -35,6 +35,11 @@ export interface BrowserExtractorOptions {
   dwellMs?: number;
   /** Sampled scroll distance in px; defaults to a small human-like step. */
   scrollPx?: number;
+  /**
+   * The adapter id this extractor stands in for; selects the profile
+   * subdirectory (<profilesDir>/<host>/<adapterId>). Default "headless".
+   */
+  adapterId?: string;
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -96,11 +101,15 @@ function defaultExec(
   });
 }
 
-/** Profile dir for a host: ~/.linkinbox/profiles/<host> */
-export function profileDirForHost(url: string, profilesDir?: string): string {
+/** Profile dir for a host on an adapter: ~/.linkinbox/profiles/<host>/<adapterId> */
+export function profileDirForHost(
+  url: string,
+  profilesDir?: string,
+  adapterId = "headless",
+): string {
   const host = new URL(url).hostname;
   const base = profilesDir ?? join(homedir(), ".linkinbox", "profiles");
-  return join(base, host);
+  return join(base, host, adapterId);
 }
 
 /**
@@ -127,7 +136,7 @@ export function createBrowserExtractor(options: BrowserExtractorOptions = {}): E
   return {
     name: "browser",
     async extract(url: string): Promise<ExtractResult> {
-      const profileDir = profileDirForHost(url, options.profilesDir);
+      const profileDir = profileDirForHost(url, options.profilesDir, options.adapterId);
       if (!exists(profileDir)) {
         return { markdown: "", needsBrowser: true, meta: { missingProfile: true } };
       }

@@ -4,6 +4,8 @@
  * JSON output. No real browser, no network: every external effect is a fake.
  */
 import { describe, expect, it } from 'vitest'
+import { mkdirSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { capture, insertLink, tempDb, unlimitedLimits, type TempDb } from './helpers.js'
 import { createContext, type CliContext } from '../src/context.js'
@@ -11,6 +13,7 @@ import {
   profileDirFor,
   requeueHostLinks,
   renderLoginReport,
+  runLogin,
   runLoginFlow,
   runLoginPending,
   type LoginLauncher,
@@ -314,6 +317,33 @@ describe('interactive login flow', () => {
       const after = await queryPendingLogins(db.store)
       expect(after.pending).toEqual([])
       expect(after.done.map((d) => d.host)).toEqual(['x.com'])
+    } finally {
+      await db.cleanup()
+    }
+  })
+
+  it('rewrites a stored legacy profile path even though <profiles>/<host> remains', async () => {
+    const db = await tempDb()
+    try {
+      const configDir = mkdtempSync(join(tmpdir(), 'lb-cfg-'))
+      const profilesDir = join(configDir, 'profiles')
+      // The migrated target exists; the legacy <host> dir remains as its
+      // parent, so its existence must not block the rewrite.
+      mkdirSync(join(profilesDir, 'x.com', 'headless'), { recursive: true })
+      const legacyPath = join(profilesDir, 'x.com')
+      await db.store.upsertProfile({ host: 'x.com', path: legacyPath })
+      const ctx = await createContext({
+        env: { LINKINBOX_DB: db.path, LINKINBOX_CONFIG_DIR: configDir },
+        store: db.store,
+        quiet: true,
+        logPath: join(db.dir, 'log.jsonl'),
+      })
+      const launch: LoginLauncher = async () => 0
+      await capture(() =>
+        runLogin(ctx, 'x.com', { launch, waitForEnter: async () => undefined }),
+      )
+      const profile = await db.store.getProfile('x.com')
+      expect(profile?.path).toBe(join(profilesDir, 'x.com', 'headless'))
     } finally {
       await db.cleanup()
     }

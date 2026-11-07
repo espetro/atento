@@ -197,6 +197,9 @@ importers:
 
   packages/app:
     dependencies:
+      '@linkinbox/browser':
+        specifier: workspace:*
+        version: link:../browser
       '@linkinbox/core':
         specifier: workspace:*
         version: link:../core
@@ -229,11 +232,36 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@24.19.2)(jiti@2.7.0)(jsdom@26.1.0)(lightningcss@1.32.0)(tsx@4.23.15)
 
+  packages/browser:
+    dependencies:
+      '@linkinbox/core':
+        specifier: workspace:*
+        version: link:../core
+      '@linkinbox/extractors':
+        specifier: workspace:*
+        version: link:../extractors
+      patchright:
+        specifier: ^1.64.2
+        version: 1.64.2
+    devDependencies:
+      '@types/node':
+        specifier: ^25.0.0
+        version: 25.9.9
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@25.9.9)(jiti@2.7.0)(jsdom@26.1.0)(lightningcss@1.32.0)(tsx@4.23.15)
+
   packages/cli:
     dependencies:
       '@linkinbox/app':
         specifier: workspace:*
         version: link:../app
+      '@linkinbox/browser':
+        specifier: workspace:*
+        version: link:../browser
       '@linkinbox/core':
         specifier: workspace:*
         version: link:../core

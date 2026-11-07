@@ -2,10 +2,10 @@
  * The browse adapter: turns the core `browseRead` into a command and an
  * MCP tool, and wires the browser engine for the host.
  *
- * The engine is chosen by the config, never hardcoded: the default engine
- * for every host, and the stealth engine for the hosts the owner listed in
- * `stealth_hosts`. The share allowlist (`[share] hosts`) decides whether
- * a host may be read at all, and it ships empty.
+ * The engine is chosen by the config through the browser registry, never
+ * hardcoded: `[browser.hosts]` mappings win, then the `reader` default.
+ * The share allowlist (`[share] hosts`) decides whether a host may be read
+ * at all, and it ships empty.
  */
 import {
   browseRead,
@@ -16,13 +16,18 @@ import {
   type ShareConfig,
   type ShareHostEntry,
 } from '@linkinbox/core'
+import { DEFAULT_BROWSER_CONFIG, isStealthHost, normalizeBrowserConfig, type BrowserConfig } from '@linkinbox/core'
 import { createBrowseReader, type BrowseReader } from '@linkinbox/extractors'
-import { isStealthHost, type BrowserConfig } from '@linkinbox/core'
+import {
+  browserAdapterReaders,
+  createBrowserRegistry,
+  type BrowserRegistry,
+} from '@linkinbox/browser'
 
 export interface BrowseFnOptions {
   /** The share allowlist. */
   share: ShareConfig
-  /** The browser engine config: the stealth hosts and the binary. */
+  /** The browser config: adapters, host mappings, reader default. */
   browser?: BrowserConfig
   /** Directory holding the saved login profiles. */
   profilesDir: string
@@ -32,19 +37,32 @@ export interface BrowseFnOptions {
   reader?: BrowseReader
   /** The agent-browser binary, overridable for tests. */
   command?: string
+  /** A prebuilt registry (tests). */
+  browserRegistry?: BrowserRegistry
 }
 
 /**
- * Build the read primitive for one host. The engine follows the config:
- * the stealth engine for the hosts in `stealth_hosts`, the default engine
- * for the rest.
+ * Build the read primitive for one host. The adapter follows the config:
+ * the registry's reader resolution, with the legacy stealth_hosts rule as
+ * the fallback for hand-built configs.
  */
 export function createBrowseFn(options: BrowseFnOptions): BrowseFn {
+  const browser = normalizeBrowserConfig(options.browser ?? DEFAULT_BROWSER_CONFIG)
+  const registry =
+    options.browserRegistry ??
+    createBrowserRegistry(browser, { profilesDir: options.profilesDir })
+  const adapterReaders = browserAdapterReaders(registry, {
+    profilesDir: options.profilesDir,
+  })
   const reader =
     options.reader ??
     createBrowseReader({
       profilesDir: options.profilesDir,
-      stealthHost: (host) => (options.browser ? isStealthHost(options.browser, host) : false),
+      adapterFor: (host) => registry.resolve('reader', host),
+      adapterReaders,
+      // Legacy fallback for configs without an adapters table: the
+      // stealth_hosts rule still picks the built-in pair.
+      stealthHost: (host) => isStealthHost(browser, host),
     })
   return async (url: string, host: string) => {
     const outcome = await reader(url, host)
@@ -67,6 +85,7 @@ export interface BrowseDeps {
   guard?: BrowseOptions['guard']
   reader?: BrowseReader
   command?: string
+  browserRegistry?: BrowserRegistry
 }
 
 /** Read one page. The result is the core `BrowseResult`. */

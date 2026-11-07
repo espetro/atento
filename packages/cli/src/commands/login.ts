@@ -16,15 +16,24 @@
  * logs or stores passwords, cookies or tokens: only the profile directory
  * path is recorded.
  */
-import { spawn } from 'node:child_process'
 import { existsSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { Command } from 'commander'
 import type { CliContext } from '../context.js'
 import { hostPolicy } from '@linkinbox/app'
 import { renderTable } from '../render.js'
-import { runPatchrightLogin, hostUsesPatchright, type PatchrightLoginLaunch, type WaitForEnter } from '../patchright-login.js'
+import {
+  browserAdapterConfig,
+  browserProfileDir,
+  migrateBrowserProfiles,
+  normalizeBrowserConfig,
+  remapLegacyProfilePath,
+  resolveBrowserAdapter,
+  type BrowserConfig,
+  type SessionLoginPort,
+} from '@linkinbox/core'
+import { createAgentBrowserAdapter, createBrowserRegistry, createPatchrightAdapter } from '@linkinbox/browser'
+import type { PatchrightLoginLaunch, WaitForEnter } from '../patchright-login.js'
 import {
   buildLoginReport,
   loadPendingLogins,
@@ -37,9 +46,9 @@ import {
 
 const AGENT_BROWSER = process.env['LINKINBOX_AGENT_BROWSER'] ?? 'agent-browser'
 
-/** Profile directory for a host: <profilesDir>/<host>. */
-export function profileDirFor(profilesDir: string, host: string): string {
-  return join(profilesDir, host)
+/** Profile directory for a host on an adapter: <profilesDir>/<host>/<adapterId>. */
+export function profileDirFor(profilesDir: string, host: string, adapterId = 'headless'): string {
+  return browserProfileDir(profilesDir, host, adapterId)
 }
 
 export interface LoginResult {
@@ -86,22 +95,19 @@ export interface LoginFlowDeps {
   prompt?: WalkPrompt
 }
 
-function runCommand(command: string, args: string[]): Promise<number> {
-  return new Promise<number>((resolve) => {
-    const child = spawn(command, args, { stdio: 'inherit' })
-    child.on('error', () => resolve(-1))
-    child.on('exit', (c) => resolve(c ?? 0))
-  })
-}
-
 function waitForEnter(prompt: string): Promise<void> {
   const rl = createInterface({ input: process.stdin, output: process.stdout })
   return new Promise<void>((resolve) => rl.question(prompt, () => (rl.close(), resolve())))
 }
 
 /**
- * Spawn `agent-browser --headed --profile <dir> open https://<host>` and wait
- * for the user to close the window. Records the profile in the store.
+ * Spawn the login browser through the host's SessionLoginPort and wait
+ * for the user to finish. Records the profile in the store.
+ *
+ * M1: the engine is no longer an if/else — the `[browser]` registry
+ * resolves the login adapter for the host (host mapping -> login
+ * default), and the adapter's SessionLoginPort runs the flow. Test seams
+ * (`launch`, `patchrightLaunch`, `waitForEnter`) map onto the ports.
  */
 export async function runLogin(
   ctx: CliContext,
@@ -117,38 +123,29 @@ export async function runLogin(
   } = {},
 ): Promise<LoginResult> {
   const normalizedHost = normalizeHost(host)
-  const profilePath = profileDirFor(ctx.config.profilesDir, normalizedHost)
-  const url = options.url ?? `https://${normalizedHost}/`
+  const browser = normalizeBrowserConfig(ctx.config.browser)
+  await migrateStoredBrowserProfiles(ctx, browser)
+  const adapterId = resolveBrowserAdapter(browser, 'login', normalizedHost)
+  const profilePath = profileDirFor(ctx.config.profilesDir, normalizedHost, adapterId)
 
-  // The engine follows the config: a host the pipeline extracts with
-  // patchright logs in through the same engine, so the saved session is the
-  // one the extractor reuses.
-  if (hostUsesPatchright(ctx.config.browser, normalizedHost)) {
-    return await runPatchrightLoginFlow(ctx, normalizedHost, url, options)
+  const port = loginPortFor(ctx, normalizedHost, adapterId, browser, options)
+  if (!port) {
+    console.error(`adapter "${adapterId}" has no login port; it cannot capture a session`)
+    process.exitCode = 1
+    return { host: normalizedHost, profilePath, code: -1, requeued: 0 }
   }
 
-  const command = options.command ?? AGENT_BROWSER
-  const launch: LoginLauncher =
-    options.launch ??
-    (async () => {
-      // `open` returns once the page loads while the browser keeps running,
-      // so the login is finished by the user, not by this process exiting.
-      const code = await runCommand(command, ['--headed', '--profile', profilePath, 'open', url])
-      if (code !== 0) return code
-      await waitForEnter(
-        `Log in to ${normalizedHost} in the browser window, then press Enter here to save the session... `,
-      )
-      // Closing flushes the session into the profile directory.
-      await runCommand(command, ['--profile', profilePath, 'close'])
-      return 0
-    })
+  const result = await port.login(
+    normalizedHost,
+    { host: normalizedHost, adapterId, path: profilePath },
+    { waitForUser: options.waitForEnter ?? waitForEnter },
+    options.url,
+  )
 
-  const code = await launch(normalizedHost, profilePath)
-
-  if (code === -1) {
-    console.error(`could not start the login browser; is agent-browser installed?`)
+  if (!result.ok) {
+    if (result.detail) console.error(result.detail)
     process.exitCode = 1
-    return { host: normalizedHost, profilePath, code, requeued: 0 }
+    return { host: normalizedHost, profilePath, code: -1, requeued: 0 }
   }
 
   const profile = await ctx.store.upsertProfile({ host: normalizedHost, path: profilePath })
@@ -156,41 +153,95 @@ export async function runLogin(
   return {
     host: profile.host,
     profilePath: profile.path,
-    code,
+    code: 0,
     requeued: await requeueHostLinks(ctx, profile.host),
   }
 }
 
 /**
- * The patchright login path: a headed persistent context, wait for Enter,
- * close cleanly so the cookies persist, then save the profile row exactly
- * like the agent-browser flow does. Returns code -1 when the browser could
- * not start, so callers treat it like the agent-browser failure path.
+ * The SessionLoginPort for one host's resolved login adapter. Test seams
+ * wrap the built-in ports; cdp-attach and external adapters come straight
+ * from the registry.
  */
-async function runPatchrightLoginFlow(
+function loginPortFor(
   ctx: CliContext,
   host: string,
-  url: string,
-  options: { patchrightLaunch?: PatchrightLoginLaunch; waitForEnter?: WaitForEnter } = {},
-): Promise<LoginResult> {
-  const result = await runPatchrightLogin(host, {
-    profilesDir: ctx.config.profilesDir,
-    url,
-    executablePath: ctx.config.browser.executablePath,
-    ...(options.patchrightLaunch ? { launch: options.patchrightLaunch } : {}),
-    ...(options.waitForEnter ? { waitForEnter: options.waitForEnter } : {}),
-  })
-  if (!result.ok) {
-    process.exitCode = 1
-    return { host, profilePath: result.profilePath, code: -1, requeued: 0 }
+  adapterId: string,
+  browser: BrowserConfig,
+  options: {
+    command?: string
+    launch?: LoginLauncher
+    patchrightLaunch?: PatchrightLoginLaunch
+  },
+): SessionLoginPort | undefined {
+  const adapterConfig = browserAdapterConfig(browser, adapterId)
+  const executablePath =
+    (typeof adapterConfig?.options['executablePath'] === 'string'
+      ? (adapterConfig.options['executablePath'] as string)
+      : undefined) ?? browser.executablePath
+
+  if (adapterConfig?.kind === 'agent-browser') {
+    if (options.launch) {
+      // The legacy launcher seam: it owns the whole headed flow and
+      // resolves the exit code (-1 = could not start).
+      const launch = options.launch
+      return {
+        id: adapterId,
+        async login(_host, profile) {
+          const code = await launch(host, profile.path)
+          return { ok: code !== -1, ...(code !== 0 ? { detail: `exit code ${code}` } : {}) }
+        },
+        async verify() {
+          return false
+        },
+      }
+    }
+    return createAgentBrowserAdapter({
+      id: adapterId,
+      profilesDir: ctx.config.profilesDir,
+      ...(options.command ? { command: options.command } : {}),
+      ...(executablePath ? { executablePath } : {}),
+    }).login
   }
-  const profile = await ctx.store.upsertProfile({ host, path: result.profilePath })
-  console.log(`saved profile for ${profile.host} at ${profile.path}`)
-  return {
-    host: profile.host,
-    profilePath: profile.path,
-    code: 0,
-    requeued: await requeueHostLinks(ctx, profile.host),
+
+  if (adapterConfig?.kind === 'patchright') {
+    return createPatchrightAdapter({
+      id: adapterId,
+      profilesDir: ctx.config.profilesDir,
+      ...(options.patchrightLaunch ? { launch: options.patchrightLaunch } : {}),
+      ...(executablePath ? { executablePath } : {}),
+    }).login
+  }
+
+  // cdp-attach (login is a no-op + verify) and external plugins resolve
+  // through the registry like every other adapter.
+  const registry = createBrowserRegistry(browser, {
+    profilesDir: ctx.config.profilesDir,
+  })
+  return registry.loginFor(host)
+}
+
+/**
+ * The one-time profile migration plus the stored-path rewrite, run before
+ * a login so the session lands where the extractors will look for it.
+ */
+async function migrateStoredBrowserProfiles(ctx: CliContext, browser: BrowserConfig): Promise<void> {
+  try {
+    migrateBrowserProfiles(ctx.config.profilesDir, browser, (m) =>
+      ctx.logger.info(m),
+    )
+    for (const profile of await ctx.store.listProfiles()) {
+      const next = remapLegacyProfilePath(ctx.config.profilesDir, browser, profile.path)
+      if (next === undefined || next === profile.path) continue
+      // Rewrite whenever the migrated target exists: the legacy source
+      // (<profiles>/<host>) remains as the parent dir, so its existence
+      // proves nothing.
+      if (existsSync(next)) {
+        await ctx.store.upsertProfile({ host: profile.host, path: next })
+      }
+    }
+  } catch {
+    // Best effort: a migration failure must never block a login.
   }
 }
 
@@ -581,6 +632,7 @@ async function pickHosts(
 
 /** The default browser launcher: the real agent-browser spawn. */
 async function spawnBrowser(host: string, profilePath: string): Promise<number> {
+  const { spawn } = await import('node:child_process')
   return await new Promise<number>((resolve) => {
     const child = spawn(AGENT_BROWSER, ['--headed', '--profile', profilePath, 'open', `https://${host}/`], {
       stdio: 'inherit',
