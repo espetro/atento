@@ -139,6 +139,7 @@ export async function runLogin(
     normalizedHost,
     { host: normalizedHost, adapterId, path: profilePath },
     { waitForUser: options.waitForEnter ?? waitForEnter },
+    options.url,
   )
 
   if (!result.ok) {
@@ -232,7 +233,10 @@ async function migrateStoredBrowserProfiles(ctx: CliContext, browser: BrowserCon
     for (const profile of await ctx.store.listProfiles()) {
       const next = remapLegacyProfilePath(ctx.config.profilesDir, browser, profile.path)
       if (next === undefined || next === profile.path) continue
-      if (existsSync(next) && !existsSync(profile.path)) {
+      // Rewrite whenever the migrated target exists: the legacy source
+      // (<profiles>/<host>) remains as the parent dir, so its existence
+      // proves nothing.
+      if (existsSync(next)) {
         await ctx.store.upsertProfile({ host: profile.host, path: next })
       }
     }

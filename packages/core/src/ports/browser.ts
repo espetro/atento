@@ -86,12 +86,14 @@ export interface SessionLoginPort {
   /**
    * Open a headed browser on the host's profile, let the user log in,
    * then close so the session persists. `profile.path` receives the
-   * session data.
+   * session data. `url` overrides the landing page (default
+   * `https://<host>/`); adapters that cannot honour it may ignore it.
    */
   login(
     host: string,
     profile: ProfileRef,
     ui: SessionLoginUi,
+    url?: string,
   ): Promise<LoginResult>
   /**
    * Check whether the saved profile still holds a usable session for the

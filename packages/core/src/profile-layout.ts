@@ -172,5 +172,10 @@ export function remapLegacyProfilePath(
     // <profilesDir>/<host>/patchright was the stealth profile.
     return browserProfileDir(profilesDir, host, ids.patchright)
   }
+  if (segments.length === 2 && segments[1] === 'agent-browser') {
+    // <profilesDir>/<host>/agent-browser was an intermediate Phase-1
+    // agent-browser profile layout.
+    return browserProfileDir(profilesDir, host, ids.agentBrowser)
+  }
   return undefined
 }

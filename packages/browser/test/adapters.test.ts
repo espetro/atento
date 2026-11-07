@@ -62,6 +62,21 @@ describe('agent-browser adapter contract', () => {
     expect(await adapter.login.verify('example.com', profile)).toBe(false) // /tmp/profiles/... does not exist
   })
 
+  it('login honours a custom url in the spawned open command', async () => {
+    const spawned: string[][] = []
+    const adapter = createAgentBrowserAdapter({
+      id: 'headless',
+      profilesDir: '/tmp/p',
+      spawn: async (_cmd, args) => {
+        spawned.push(args)
+        return 0
+      },
+    })
+    await adapter.login.login('example.com', profile, ui, 'https://example.com/login?next=/feed')
+    expect(spawned[0]).toContain('https://example.com/login?next=/feed')
+    expect(spawned[0]).not.toContain('https://example.com/')
+  })
+
   it('health runs <bin> --version through the injected exec', async () => {
     const adapter = createAgentBrowserAdapter({
       id: 'headless',
@@ -75,9 +90,15 @@ describe('agent-browser adapter contract', () => {
 
 // ---- patchright ----------------------------------------------------------
 
-function fakePatchrightPage(html = '<html><body>ok</body></html>'): PatchrightPage {
+function fakePatchrightPage(
+  html = '<html><body>ok</body></html>',
+  visited: string[] = [],
+): PatchrightPage {
   return {
-    goto: async () => ({}),
+    goto: async (url) => {
+      visited.push(url)
+      return {}
+    },
     content: async () => html,
     evaluate: async () => 'ok',
     close: async () => undefined,
@@ -138,46 +159,163 @@ describe('patchright adapter contract', () => {
     expect(prompts[0]).toContain('example.com')
     expect(closed).toBe(1)
   })
+
+  it('login honours a custom url in page.goto', async () => {
+    const visited: string[] = []
+    const adapter = createPatchrightAdapter({
+      id: 'stealth',
+      profilesDir: '/tmp/p',
+      launch: async () => ({
+        pages: () => [fakePatchrightPage(undefined, visited)],
+        newPage: async () => fakePatchrightPage(undefined, visited),
+        close: async () => undefined,
+      }),
+    })
+    await adapter.login.login('example.com', profile, ui, 'https://example.com/login?next=/feed')
+    expect(visited).toEqual(['https://example.com/login?next=/feed'])
+  })
 })
 
 // ---- cdp-attach ----------------------------------------------------------
 
-function fakeCdpConnect(): { connect: CdpConnect; closed: () => number } {
-  let closed = 0
+function fakeCdpPage(html = '<html><body>hi</body></html>', pageUrl = 'https://example.com/') {
+  const state = { closed: 0, gotoUrls: [] as string[] }
   const page = {
-    goto: async () => ({ status: () => 200 }),
-    content: async () => '<html><body>hi</body></html>',
-    url: () => 'https://example.com/',
+    goto: async (url: string) => {
+      state.gotoUrls.push(url)
+      return { status: () => 200 }
+    },
+    content: async () => html,
+    url: () => pageUrl,
+    close: async () => {
+      state.closed += 1
+    },
   }
-  const context = { pages: () => [page], newPage: async () => page }
+  return { page, state }
+}
+
+/**
+ * A fake CDP browser whose context already has a "user tab". `pages()` is
+ * tracked: the adapter must never pick an existing page to navigate — it
+ * always creates its own via newPage().
+ */
+function fakeCdpConnect(
+  html = '<html><body>hi</body></html>',
+  pageUrl = 'https://example.com/',
+): {
+  connect: CdpConnect
+  closed: () => number
+  pagesRead: () => number
+  newPages: () => number
+  pageClosed: () => number
+  gotoUrls: () => string[]
+} {
+  let closed = 0
+  let pagesRead = 0
+  let newPages = 0
+  const { page, state } = fakeCdpPage(html, pageUrl)
+  const userTab = { ...page }
+  const context = {
+    pages: () => {
+      pagesRead += 1
+      return [userTab]
+    },
+    newPage: async () => {
+      newPages += 1
+      return page
+    },
+  }
   const browser: CdpBrowser = {
     contexts: () => [context],
     close: async () => {
       closed += 1
     },
   }
-  return { connect: async () => browser, closed: () => closed }
+  return {
+    connect: async () => browser,
+    closed: () => closed,
+    pagesRead: () => pagesRead,
+    newPages: () => newPages,
+    pageClosed: () => state.closed,
+    gotoUrls: () => state.gotoUrls,
+  }
 }
 
 describe('cdp-attach adapter contract', () => {
-  it('reader: attaches over CDP, reads html, disconnects without closing tabs', async () => {
-    const { connect, closed } = fakeCdpConnect()
-    const adapter = createCdpAttachAdapter({ id: 'user-session', endpoint: 'http://x', connect })
+  it('reader: attaches over CDP, reads html, closes its own page then disconnects', async () => {
+    const fake = fakeCdpConnect()
+    const adapter = createCdpAttachAdapter({ id: 'user-session', endpoint: 'http://x', connect: fake.connect })
     const session = await adapter.reader.open({ host: 'example.com' })
     const nav = await session.goto('https://example.com/a')
     expect(nav.status).toBe(200)
     expect(await session.html()).toContain('<html>')
     await session.close()
-    expect(closed()).toBe(1)
+    await session.close() // idempotent
+    expect(fake.newPages()).toBe(1)
+    expect(fake.pageClosed()).toBe(1)
+    expect(fake.closed()).toBe(1)
     expect(adapter.reader.caps.persistentProfile).toBe(false)
   })
 
-  it('login is a no-op that reuses the running session; verify opens the host', async () => {
-    const { connect } = fakeCdpConnect()
-    const adapter = createCdpAttachAdapter({ id: 'user-session', endpoint: 'http://x', connect })
+  it('never navigates an existing user tab: pages() is not used for selection', async () => {
+    const fake = fakeCdpConnect()
+    const adapter = createCdpAttachAdapter({ id: 'user-session', endpoint: 'http://x', connect: fake.connect })
+    const session = await adapter.reader.open({ host: 'example.com' })
+    await session.goto('https://example.com/a')
+    await session.html()
+    await session.close()
+    // The context reported its user tab zero times for selection and the
+    // only navigation went to the page the adapter created.
+    expect(fake.pagesRead()).toBe(0)
+    expect(fake.gotoUrls()).toEqual(['https://example.com/a'])
+  })
+
+  it('close() is safe without a prior navigation', async () => {
+    const fake = fakeCdpConnect()
+    const adapter = createCdpAttachAdapter({ id: 'user-session', endpoint: 'http://x', connect: fake.connect })
+    const session = await adapter.reader.open({ host: 'example.com' })
+    await session.close()
+    expect(fake.pageClosed()).toBe(1)
+    expect(fake.closed()).toBe(1)
+  })
+
+  it('login verifies the session in a dedicated tab; verify does the same', async () => {
+    const fake = fakeCdpConnect()
+    const adapter = createCdpAttachAdapter({ id: 'user-session', endpoint: 'http://x', connect: fake.connect })
     const login = await adapter.login.login('example.com', profile, ui)
     expect(login.ok).toBe(true)
     expect(await adapter.login.verify('example.com', profile)).toBe(true)
+    // Each probe created and closed its own page: two probes, two pages.
+    expect(fake.newPages()).toBe(2)
+    expect(fake.pageClosed()).toBe(2)
+    expect(fake.gotoUrls()).toEqual(['https://example.com/', 'https://example.com/'])
+  })
+
+  it('login fails when the endpoint is dead or the session is a login wall', async () => {
+    const dead = createCdpAttachAdapter({
+      id: 'user-session',
+      endpoint: 'http://x',
+      connect: async () => {
+        throw new Error('connect ECONNREFUSED')
+      },
+    })
+    const deadLogin = await dead.login.login('example.com', profile, ui)
+    expect(deadLogin.ok).toBe(false)
+    expect(await dead.login.verify('example.com', profile)).toBe(false)
+
+    // The probe lands on a login path: the session is not usable.
+    const wall = fakeCdpConnect('<html><body>hi</body></html>', 'https://example.com/login')
+    const walled = createCdpAttachAdapter({ id: 'user-session', endpoint: 'http://x', connect: wall.connect })
+    const wallLogin = await walled.login.login('example.com', profile, ui)
+    expect(wallLogin.ok).toBe(false)
+    expect(await walled.login.verify('example.com', profile)).toBe(false)
+  })
+
+  it('login honours a custom url', async () => {
+    const fake = fakeCdpConnect()
+    const adapter = createCdpAttachAdapter({ id: 'user-session', endpoint: 'http://x', connect: fake.connect })
+    await adapter.login.login('example.com', profile, ui, 'https://example.com/login?next=/feed')
+    expect(fake.gotoUrls()).toEqual(['https://example.com/login?next=/feed'])
   })
 
   it('health probes /json/version through the injected fetch', async () => {

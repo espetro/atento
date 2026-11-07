@@ -152,12 +152,17 @@ export function createAgentBrowserAdapter(
 
   const login: SessionLoginPort = {
     id: options.id,
-    async login(host: string, profile: ProfileRef, ui: SessionLoginUi): Promise<LoginResult> {
+    async login(
+      host: string,
+      profile: ProfileRef,
+      ui: SessionLoginUi,
+      url?: string,
+    ): Promise<LoginResult> {
       const dir = profile.path
-      const url = `https://${host}/`
+      const target = url ?? `https://${host}/`
       // `open` returns once the page loads while the browser keeps running,
       // so the login is finished by the user, not by this process exiting.
-      const code = await run(command, [...baseArgs(dir), '--headed', 'open', url])
+      const code = await run(command, [...baseArgs(dir), '--headed', 'open', target])
       if (code !== 0) return { ok: false, detail: `browser exited with code ${code}` }
       await ui.waitForUser(
         `Log in to ${host} in the browser window, then press Enter here to save the session... `,

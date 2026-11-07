@@ -123,13 +123,18 @@ export function createPatchrightAdapter(
 
   const login: SessionLoginPort = {
     id: options.id,
-    async login(host: string, profile: ProfileRef, ui: SessionLoginUi): Promise<LoginResult> {
-      const url = `https://${host}/`
+    async login(
+      host: string,
+      profile: ProfileRef,
+      ui: SessionLoginUi,
+      url?: string,
+    ): Promise<LoginResult> {
+      const target = url ?? `https://${host}/`
       let context: PatchrightContext | undefined
       try {
         context = await launchContext(profile.path, false, null)
         const page = context.pages()[0] ?? (await context.newPage())
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
+        await page.goto(target, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
         await ui.waitForUser(
           `Log in to ${host} in the browser window, then press Enter here to save the session... `,
         )

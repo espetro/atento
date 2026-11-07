@@ -109,6 +109,13 @@ describe('remapLegacyProfilePath', () => {
     )
   })
 
+  it('maps the Phase-1 <host>/agent-browser layout onto the agent-browser adapter', () => {
+    const dir = tmpProfiles()
+    expect(
+      remapLegacyProfilePath(dir, migrated, join(dir, 'x.com', 'agent-browser')),
+    ).toBe(join(dir, 'x.com', 'headless'))
+  })
+
   it('returns undefined for new-layout and foreign paths', () => {
     const dir = tmpProfiles()
     expect(remapLegacyProfilePath(dir, migrated, join(dir, 'x.com', 'headless'))).toBeUndefined()

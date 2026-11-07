@@ -94,12 +94,12 @@ export function createExternalAdapter(options: ExternalAdapterOptions): External
 
   const login: SessionLoginPort = {
     id: options.id,
-    async login(host, profile, ui) {
+    async login(host, profile, ui, url) {
       const ports = await load()
       if (!ports.login) {
         throw new Error(`external adapter ${options.id} exports no SessionLoginPort`)
       }
-      return ports.login.login(host, profile, ui)
+      return ports.login.login(host, profile, ui, url)
     },
     async verify(host, profile) {
       const ports = await load()

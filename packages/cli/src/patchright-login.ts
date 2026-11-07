@@ -82,16 +82,12 @@ export async function runPatchrightLogin(
     { host, adapterId: 'patchright', path: profilePath },
     {
       waitForUser: async (prompt) => {
-        // Navigate first is the port's job only for its own URL; the legacy
-        // flow opened `url` (which may differ from https://host/). The port
-        // always opens https://host/ — close enough for the login use case,
-        // and `url` is honoured by passing it through the profile host when
-        // it matches. Keep the legacy behaviour: open the given URL by
-        // wrapping waitForUser only; the port navigates to https://host/.
-        void url
+        // The port navigates to the landing URL itself (the `url` argument
+        // below); this seam only waits for the user to finish logging in.
         await (options.waitForEnter ?? realWaitForEnter)(prompt)
       },
     },
+    url,
   )
   if (!result.ok) {
     say(`could not start the patchright login browser: ${result.detail ?? 'unknown error'}`)

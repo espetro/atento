@@ -95,7 +95,13 @@ export function createCdpAttachAdapter(options: CdpAttachAdapterOptions): CdpAtt
   const fetchImpl = options.fetchImpl ?? fetch
   const timeoutMs = options.timeoutMs ?? 120_000
 
-  async function openPage(host: string): Promise<{ browser: CdpBrowser; page: CdpPage }> {
+  /**
+   * Open a DEDICATED page in the user's running browser. Existing tabs are
+   * never touched: `context.pages()` is never read for selection — the
+   * adapter always navigates a page it created via `newPage()`. The caller
+   * owns the page it gets back and must close it (see `closeCreated`).
+   */
+  async function openPage(): Promise<{ browser: CdpBrowser; page: CdpPage }> {
     const browser = await connect(options.endpoint)
     try {
       let context = browser.contexts()[0]
@@ -103,7 +109,7 @@ export function createCdpAttachAdapter(options: CdpAttachAdapterOptions): CdpAtt
         context = await browser.newContext()
       }
       if (!context) throw new Error('cdp-attach: the browser exposed no context')
-      const page = context.pages()[0] ?? (await context.newPage())
+      const page = await context.newPage()
       return { browser, page }
     } catch (error) {
       try {
@@ -115,12 +121,61 @@ export function createCdpAttachAdapter(options: CdpAttachAdapterOptions): CdpAtt
     }
   }
 
+  /** Close the page we created, then disconnect. Idempotent and safe after a failed goto. */
+  async function closeCreated(browser: CdpBrowser, page: CdpPage): Promise<void> {
+    try {
+      await page.close?.()
+    } catch {
+      // The tab may already be gone; disconnecting is still correct.
+    }
+    try {
+      // Disconnecting never closes the user's browser; only our connection.
+      await browser.close()
+    } catch {
+      // best effort
+    }
+  }
+
+  /**
+   * Probe the host in a dedicated tab: navigate, read the text, check it is
+   * not a login wall. Used by both login (verify internally) and verify.
+   */
+  async function probeHost(host: string, url?: string): Promise<boolean> {
+    let browser: CdpBrowser | undefined
+    let page: CdpPage | undefined
+    try {
+      const opened = await openPage()
+      browser = opened.browser
+      page = opened.page
+      const target = url ?? `https://${host}/`
+      await page.goto(target, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
+      const html = await page.content()
+      const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+      if (!text) return false
+      return !isLoginWall({
+        url: safeUrl(page) || target,
+        body: text,
+        hasProfile: true,
+      })
+    } catch {
+      return false
+    } finally {
+      if (browser && page) await closeCreated(browser, page)
+    }
+  }
+
   const reader: PageReaderPort = {
     id: options.id,
     caps: CAPS,
     contentFormat: 'html',
     async open({ host }): Promise<PageSession> {
-      const { browser, page } = await openPage(host)
+      const { browser, page } = await openPage()
+      let closed = false
+      const closeOnce = async (): Promise<void> => {
+        if (closed) return
+        closed = true
+        await closeCreated(browser, page)
+      }
       return {
         async goto(url: string): Promise<PageNavigation> {
           const response = (await page.goto(url, {
@@ -142,12 +197,7 @@ export function createCdpAttachAdapter(options: CdpAttachAdapterOptions): CdpAtt
           }
         },
         async close(): Promise<void> {
-          // Disconnecting never closes the user's browser; the tab stays.
-          try {
-            await browser.close()
-          } catch {
-            // best effort
-          }
+          await closeOnce()
         },
       }
     },
@@ -155,36 +205,22 @@ export function createCdpAttachAdapter(options: CdpAttachAdapterOptions): CdpAtt
 
   const login: SessionLoginPort = {
     id: options.id,
-    async login(_host: string, _profile: ProfileRef, _ui: SessionLoginUi): Promise<LoginResult> {
-      // The user's own session is reused: there is nothing to capture.
-      return { ok: true, detail: 'session reused from the running browser' }
+    async login(
+      host: string,
+      _profile: ProfileRef,
+      _ui: SessionLoginUi,
+      url?: string,
+    ): Promise<LoginResult> {
+      // The user's own session is reused: there is nothing to capture, but
+      // we still prove the session works by probing the host in a dedicated
+      // tab — a dead endpoint or a login wall must not report success.
+      const ok = await probeHost(host, url)
+      return ok
+        ? { ok: true, detail: 'session verified in the running browser' }
+        : { ok: false, detail: `no usable session for ${host} in the running browser` }
     },
     async verify(host: string, _profile: ProfileRef): Promise<boolean> {
-      let browser: CdpBrowser | undefined
-      try {
-        const opened = await openPage(host)
-        browser = opened.browser
-        const url = `https://${host}/`
-        await opened.page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
-        const html = await opened.page.content()
-        const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-        if (!text) return false
-        return !isLoginWall({
-          url: safeUrl(opened.page) || url,
-          body: text,
-          hasProfile: true,
-        })
-      } catch {
-        return false
-      } finally {
-        if (browser) {
-          try {
-            await browser.close()
-          } catch {
-            // best effort
-          }
-        }
-      }
+      return probeHost(host)
     },
   }
 
