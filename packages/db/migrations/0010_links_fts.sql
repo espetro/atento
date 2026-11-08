@@ -58,7 +58,10 @@ AFTER UPDATE OF title, url, note, tags, enrichment ON links BEGIN
 END;
 
 -- Backfill every existing row so the index is complete the moment the
--- migration lands.
+-- migration lands. The DELETE first makes the backfill self-healing: if a
+-- pre-transactional crash ever left fts rows behind without the meta row,
+-- the re-run rebuilds the index instead of dying on duplicate rowids.
+DELETE FROM links_fts;
 INSERT INTO links_fts (rowid, title, url, note, tags, summary)
 SELECT
   id,

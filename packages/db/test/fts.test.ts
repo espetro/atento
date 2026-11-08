@@ -101,6 +101,34 @@ describe('links_fts migration', () => {
     sqlite.close()
   })
 
+  it('rebuilds a partially-backfilled index left without a meta row', async () => {
+    // Simulate the pre-transactional crash shape: fts objects exist and
+    // some rows are indexed, but migration:0010_links_fts was never
+    // recorded. migrate() must rebuild the index, not die on rowids.
+    const sqlite = new Database(join(dir, 'partial.db'))
+    sqlite.pragma('foreign_keys = ON')
+    for (const m of MIGRATIONS.filter((m) => m.name !== '0010_links_fts')) {
+      sqlite.exec(m.sql)
+      sqlite
+        .prepare(`INSERT INTO meta (key, value) VALUES (?, ?)`)
+        .run(`migration:${m.name}`, 'test')
+    }
+    const store = new SqliteStore(sqlite)
+    const a = await store.upsertLink(linkInput({ title: 'alpha' }))
+    const b = await store.upsertLink(linkInput({ title: 'beta' }))
+    // Run the 0010 DDL+backfill directly (no meta row), then drop one fts
+    // row to fake a crash mid-backfill.
+    const m0010 = MIGRATIONS.find((m) => m.name === '0010_links_fts')!
+    sqlite.exec(m0010.sql)
+    sqlite.prepare(`DELETE FROM links_fts WHERE rowid = ?`).run(b.id)
+    expect(ftsRowids(sqlite)).toEqual([a.id])
+
+    await store.migrate()
+    expect(store.appliedMigrations()).toContain('0010_links_fts')
+    expect(ftsRowids(sqlite).sort((x, y) => x - y)).toEqual([a.id, b.id].sort((x, y) => x - y))
+    sqlite.close()
+  })
+
   it('is recorded as an applied migration and migrate() is idempotent', async () => {
     const { store, sqlite } = await open('idem.db')
     expect(store.appliedMigrations()).toContain('0010_links_fts')

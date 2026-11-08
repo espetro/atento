@@ -325,7 +325,10 @@ AFTER UPDATE OF title, url, note, tags, enrichment ON links BEGIN
 END;
 
 -- Backfill every existing row so the index is complete the moment the
--- migration lands.
+-- migration lands. The DELETE first makes the backfill self-healing: if a
+-- pre-transactional crash ever left fts rows behind without the meta row,
+-- the re-run rebuilds the index instead of dying on duplicate rowids.
+DELETE FROM links_fts;
 INSERT INTO links_fts (rowid, title, url, note, tags, summary)
 SELECT
   id,
@@ -343,8 +346,11 @@ FROM links;
 
 const META_TABLE = `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`
 
-/** Apply pending migrations. Safe to call on every open. */
-export function runMigrations(sqlite: Database): string[] {
+/**
+ * Apply pending migrations. Safe to call on every open. The `migrations`
+ * parameter exists for tests; production callers always use MIGRATIONS.
+ */
+export function runMigrations(sqlite: Database, migrations: Migration[] = MIGRATIONS): string[] {
   sqlite.exec(META_TABLE)
   const applied: string[] = []
   const done = new Set<string>()
@@ -353,12 +359,19 @@ export function runMigrations(sqlite: Database): string[] {
   }>
   for (const row of rows) done.add(row.key.slice('migration:'.length))
 
-  for (const migration of MIGRATIONS) {
+  for (const migration of migrations) {
     if (done.has(migration.name)) continue
-    sqlite.exec(migration.sql)
-    sqlite
-      .prepare(`INSERT INTO meta (key, value) VALUES (?, ?)`)
-      .run(`migration:${migration.name}`, new Date().toISOString())
+    // One transaction per migration: the DDL and its meta row commit
+    // together or not at all. Without this a crash mid-migration (e.g.
+    // during 0010's backfill) would leave objects behind with no meta row,
+    // and the re-run would fail forever on duplicate rowids.
+    const apply = sqlite.transaction(() => {
+      sqlite.exec(migration.sql)
+      sqlite
+        .prepare(`INSERT INTO meta (key, value) VALUES (?, ?)`)
+        .run(`migration:${migration.name}`, new Date().toISOString())
+    })
+    apply()
     applied.push(migration.name)
   }
   return applied
