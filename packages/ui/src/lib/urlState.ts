@@ -1,10 +1,14 @@
-import { COLLECTION_NAMES, PREVIEW_TABS, type CollectionName, type PreviewTab } from './types'
+import { COLLECTION_NAMES, LAYOUT_MODES, type CollectionName, type LayoutMode } from './types'
+
+export type { LayoutMode } from './types'
 
 export type ViewName = 'triage' | 'attention' | 'run' | 'settings' | 'metrics'
 
 export const VIEW_NAMES: readonly ViewName[] = ['triage', 'attention', 'run', 'settings', 'metrics']
 
 export const DEFAULT_COLLECTION: CollectionName = 'enriched'
+
+export const DEFAULT_LAYOUT: LayoutMode = 'right'
 
 export interface UrlState {
   view: ViewName
@@ -18,19 +22,20 @@ export interface UrlState {
   host: string
   stale: boolean
   selected: number | null
-  tab: PreviewTab
-  /** Open dialog, e.g. 'ingest'. */
-  dialog: '' | 'ingest'
+  /** Preview panel placement: right column | bottom dock | hidden. */
+  layout: LayoutMode
+  /** Open dialog, e.g. 'ingest' or 'help'. */
+  dialog: '' | 'ingest' | 'help'
 }
 
 const COLLECTION_SET = new Set<string>(COLLECTION_NAMES)
-const TAB_SET = new Set<string>(PREVIEW_TABS)
+const LAYOUT_SET = new Set<string>(LAYOUT_MODES)
 
 export function parseUrlState(search: URLSearchParams): UrlState {
   const v = search.get('view')
   const view = (VIEW_NAMES as readonly string[]).includes(v ?? '') ? (v as ViewName) : 'triage'
   const sel = search.get('selected')
-  const tab = search.get('tab')
+  const layout = search.get('layout')
   const dialog = search.get('dialog')
   const collection = search.get('collection') ?? ''
   return {
@@ -42,8 +47,8 @@ export function parseUrlState(search: URLSearchParams): UrlState {
     host: search.get('host') ?? '',
     stale: search.get('stale') === '1' || search.get('stale') === 'true',
     selected: sel != null && sel !== '' && !Number.isNaN(Number(sel)) ? Number(sel) : null,
-    tab: TAB_SET.has(tab ?? '') ? (tab as PreviewTab) : 'reader',
-    dialog: dialog === 'ingest' ? 'ingest' : '',
+    layout: LAYOUT_SET.has(layout ?? '') ? (layout as LayoutMode) : DEFAULT_LAYOUT,
+    dialog: dialog === 'ingest' || dialog === 'help' ? dialog : '',
   }
 }
 
@@ -65,7 +70,7 @@ export function toUrlState(state: UrlState): URLSearchParams {
   if (state.host) p.set('host', state.host)
   if (state.stale) p.set('stale', '1')
   if (state.selected != null) p.set('selected', String(state.selected))
-  if (state.tab !== 'reader') p.set('tab', state.tab)
+  if (state.layout !== DEFAULT_LAYOUT) p.set('layout', state.layout)
   if (state.dialog) p.set('dialog', state.dialog)
   return p
 }

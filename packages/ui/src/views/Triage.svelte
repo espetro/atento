@@ -12,6 +12,8 @@
 
   const queryClient = useQueryClient()
   const collection = $derived(effectiveCollection(url))
+  // Preview placement (A2): right column | bottom dock | hidden.
+  const layout = $derived(url.layout)
 
   let listActions = $state<{
     selectedIds: () => number[]
@@ -97,7 +99,7 @@
   }
 </script>
 
-<div class="triage-shell" data-testid="triage-shell">
+<div class="triage-shell" class:layout-bottom={layout === 'bottom'} class:layout-hidden={layout === 'hidden'} data-testid="triage-shell">
   <div class="list-col" class:has-selection={url.selected != null}>
     {#if triageError}
       <div class="triage-error notice notice-bad" role="alert">
@@ -116,14 +118,16 @@
     />
   </div>
 
-  <div class="preview-col" class:mobile-overlay={url.selected != null} data-testid="preview-col">
-    {#if url.selected != null}
-      <button type="button" class="preview-back" onclick={() => setUrl({ selected: null })}>
-        ‹ back
-      </button>
-    {/if}
-    <PreviewPane id={url.selected} {url} {setUrl} {onTriage} {collection} />
-  </div>
+  {#if layout !== 'hidden' && (layout === 'right' || url.selected != null)}
+    <div class="preview-col" class:mobile-overlay={url.selected != null} data-testid="preview-col">
+      {#if url.selected != null}
+        <button type="button" class="preview-back" onclick={() => setUrl({ selected: null })}>
+          ‹ back
+        </button>
+      {/if}
+      <PreviewPane id={url.selected} {onTriage} {collection} />
+    </div>
+  {/if}
 </div>
 
 {#if undo}
@@ -148,6 +152,24 @@
     display: flex;
     flex-direction: column;
     position: relative;
+  }
+  /* ?layout=bottom: the list goes full-width on top, the preview docks
+     below it (Gmail-style). ?layout=hidden drops the preview entirely. */
+  .triage-shell.layout-bottom,
+  .triage-shell.layout-hidden {
+    flex-direction: column;
+  }
+  .layout-bottom .list-col,
+  .layout-hidden .list-col {
+    width: 100%;
+    flex: 1;
+    border-right: none;
+  }
+  .layout-bottom .preview-col {
+    flex: none;
+    height: 46%;
+    min-height: 220px;
+    border-top: 1px solid var(--color-line);
   }
   .preview-col {
     flex: 1;

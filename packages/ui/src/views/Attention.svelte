@@ -290,7 +290,7 @@
           />
         </div>
         <div class="att-preview">
-          <PreviewPane id={url.selected} {url} {setUrl} {onTriage} {collection} />
+          <PreviewPane id={url.selected} {onTriage} {collection} />
         </div>
       </div>
     </div>
