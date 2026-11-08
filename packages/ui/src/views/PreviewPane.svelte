@@ -29,18 +29,23 @@
 
   const queryClient = useQueryClient()
 
-  const detailQuery = createQuery(() => ({
-    queryKey: ['link', id],
-    queryFn: () => api.link(id!),
-    enabled: id != null,
-  }))
-
-  const detail = $derived<LinkDetail | null>(detailQuery.data ?? null)
-
   // Desktop shell (B1): inside Electrobun the preview slot hosts a real
   // native webview; on plain web this stays false and the reader/snapshot
   // fallback below renders exactly as before.
   const nativePreview = isDesktopShell()
+
+  const detailQuery = createQuery(() => ({
+    queryKey: ['link', id],
+    queryFn: () => api.link(id!),
+    enabled: id != null,
+    // Desktop only: keep the previous link's detail while the next one
+    // fetches. Without it the preview (and its pooled webviews) unmounts on
+    // every selection change, defeating the warm pool. Web behavior is
+    // unchanged — placeholderData stays undefined there.
+    placeholderData: nativePreview ? (prev: LinkDetail | undefined) => prev : undefined,
+  }))
+
+  const detail = $derived<LinkDetail | null>(detailQuery.data ?? null)
 
   // Browsers for the re-extract adapter picker.
   const browsersQuery = createQuery(() => ({
