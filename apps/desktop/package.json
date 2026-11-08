@@ -1,0 +1,10 @@
+{
+	"name": "@linkinbox/desktop",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "linkinbox desktop shell (Electrobun) — hosts the web UI and provides native preview webviews",
+	"devDependencies": {
+		"@types/bun": "latest"
+	}
+}
