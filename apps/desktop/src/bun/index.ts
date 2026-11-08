@@ -1,10 +1,19 @@
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { BrowserWindow, BrowserView, Session } from "electrobun/main";
 
 // linkinbox desktop shell (Workstream B1).
 //
-// The window loads the running linkinbox server — `linkinbox serve` on
-// :4173 serves the built packages/ui/dist plus the API. Override with
-// LINKINBOX_URL (e.g. the vite dev server on :5173 while iterating on the UI).
+// Dev: the window loads LINKINBOX_URL — `linkinbox serve` on :4173 serves
+// the built packages/ui/dist plus the API (vite dev server :5173 while
+// iterating on the UI).
+//
+// Packaged: LINKINBOX_URL is unset and Resources/server exists, so the
+// shell spawns the bundled sidecar server (node binary + pnpm-deployed
+// workspace + ui-dist) and loads it on 127.0.0.1. The sidecar exists
+// because better-sqlite3 cannot run under this process's Bun runtime.
+// resourcesDir() doubles as the packaged-mode check — in dev the exec
+// path has no Resources/server sibling, so this stays inert.
 //
 // LINKINBOX_SELFTEST=partition-set | partition-check runs the D0 cookie
 // persistence probe: main-process BrowserViews (same code path as
@@ -12,9 +21,78 @@ import { BrowserWindow, BrowserView, Session } from "electrobun/main";
 // document.cookie back to a tiny collector. See README.md →
 // "Verifying partition persistence".
 
-const UI_URL = process.env.LINKINBOX_URL ?? "http://localhost:4173";
 const SELFTEST = process.env.LINKINBOX_SELFTEST ?? "";
 const SELFTEST_PORT = Number(process.env.LINKINBOX_SELFTEST_PORT ?? "4799");
+
+interface SidecarServer {
+	url: string;
+	port: number;
+	proc: ReturnType<typeof Bun.spawn>;
+}
+
+const SIDECAR_PORTS = [4173, 4174, 4175];
+
+function resourcesDir(): string | null {
+	// Packaged: <App>.app/Contents/MacOS/<exe> -> ../Resources/server
+	const candidate = join(dirname(process.execPath), "..", "Resources", "server");
+	return existsSync(join(candidate, "server-entry.mjs")) ? candidate : null;
+}
+
+async function waitForServer(port: number, proc: SidecarServer["proc"], timeoutMs = 20000): Promise<boolean> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		if (proc.exitCode !== null) return false;
+		try {
+			const res = await fetch(`http://127.0.0.1:${port}/api/links?limit=1`);
+			if (res.ok) return true;
+		} catch {
+			// not up yet
+		}
+		await new Promise((r) => setTimeout(r, 250));
+	}
+	return false;
+}
+
+async function startSidecar(): Promise<SidecarServer | null> {
+	const dir = resourcesDir();
+	if (dir === null) return null;
+	for (const port of SIDECAR_PORTS) {
+		let proc: SidecarServer["proc"];
+		try {
+			proc = Bun.spawn(
+				[join(dir, "node"), join(dir, "server-entry.mjs")],
+				{
+					cwd: dir,
+					env: {
+						...process.env,
+						LINKINBOX_PORT: String(port),
+						LINKINBOX_UI_DIST: join(dir, "ui-dist"),
+					},
+					stdout: "inherit",
+					stderr: "inherit",
+				},
+			);
+		} catch (e) {
+			console.error(`[desktop] sidecar spawn failed on :${port}:`, e);
+			continue;
+		}
+		if (await waitForServer(port, proc)) {
+			console.log(`[desktop] sidecar server up on :${port}`);
+			return { url: `http://127.0.0.1:${port}`, port, proc };
+		}
+		console.log(`[desktop] sidecar on :${port} failed to start, trying next port`);
+		proc.kill();
+	}
+	return null;
+}
+
+const sidecar =
+	process.env.LINKINBOX_URL === undefined ? await startSidecar() : null;
+if (process.env.LINKINBOX_URL === undefined && sidecar === null) {
+	console.error("[desktop] no LINKINBOX_URL and no sidecar server available");
+}
+
+const UI_URL = process.env.LINKINBOX_URL ?? sidecar?.url ?? "http://localhost:4173";
 
 const mainWindow = new BrowserWindow({
 	title: "linkinbox",
@@ -26,6 +104,10 @@ const mainWindow = new BrowserWindow({
 });
 
 console.log(`[desktop] window created, loading ${UI_URL}`);
+
+process.on("exit", () => {
+	sidecar?.proc.kill();
+});
 
 mainWindow.webview.on("did-navigate", (event: unknown) => {
 	console.log("[desktop] did-navigate", JSON.stringify(event).slice(0, 200));

@@ -101,8 +101,12 @@ expects `dom-probe-count: 2` with one element per host.
 - App icons live in `icon.iconset/` (macOS) and `icon.png` (Linux/Windows),
   declared in `electrobun.config.ts`. They were generated from the UI logo;
   replace them when a real brand icon exists.
-- No bundled-API mode yet: the window always loads `LINKINBOX_URL`
-  (dev-mode only). Bundling `packages/ui/dist` + the server into the app
-  is future work.
+- No bundled-API mode in dev: the window loads `LINKINBOX_URL`. The
+  **packaged** app is self-contained — `scripts/package.sh` builds a
+  sidecar server (`Contents/Resources/server`: a Node 26 binary, a
+  `pnpm deploy --prod` of `@linkinbox/cli`, `server-entry.mjs` and the
+  built UI) which the shell spawns on 127.0.0.1 (ports 4173–4175) when
+  `LINKINBOX_URL` is unset. The sidecar exists because better-sqlite3
+  cannot run under the Bun runtime hosting the main process.
 - Killing the app ungracefully can lose recently-set cookies (normal
   WKWebView flush behavior).
