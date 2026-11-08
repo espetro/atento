@@ -28,7 +28,7 @@
   const fmt = (n: number) => n.toLocaleString('en-US')
 </script>
 
-<div class="mx-auto w-full max-w-4xl p-3 md:p-6 space-y-4">
+<div class="metrics-view mx-auto w-full max-w-4xl p-3 md:p-6 space-y-4">
   <header class="flex items-center justify-between gap-2 flex-wrap">
     <h1 class="text-xl font-semibold">Metrics</h1>
     {#if sparkPoints}
@@ -95,3 +95,10 @@
     </section>
   {/if}
 </div>
+
+<style>
+  .metrics-view {
+    height: 100%;
+    overflow-y: auto;
+  }
+</style>

@@ -8,7 +8,6 @@
   import { reextractBus } from '../lib/events'
   import { collectionMeta } from '../lib/copy'
   import { copyText } from '../lib/format'
-  import CollectionsRail from './CollectionsRail.svelte'
   import LinkList from './LinkList.svelte'
   import PreviewPane from './PreviewPane.svelte'
   import CopyButton from '../components/CopyButton.svelte'
@@ -37,7 +36,6 @@
 
   const loginHosts = $derived(summary?.needsLoginHosts ?? [])
 
-  let sheetOpen = $state(false)
   let triageError = $state('')
   let undo = $state<{ ids: number[]; label: string } | null>(null)
   let undoTimer: ReturnType<typeof setTimeout> | undefined
@@ -185,16 +183,6 @@
 </script>
 
 <div class="att-shell">
-  <header class="mobile-bar">
-    <button type="button" class="btn btn-ghost btn-icon" aria-label="Open collections" onclick={() => (sheetOpen = true)}>☰</button>
-    <span class="mobile-wordmark">attention</span>
-    <span class="spacer"></span>
-    <button type="button" class="btn btn-ghost btn-sm" onclick={() => setUrl({ view: 'triage', collection: 'enriched', selected: null })}>triage</button>
-    <button type="button" class="btn btn-ghost btn-sm" onclick={() => setUrl({ view: 'settings', selected: null })}>⚙</button>
-  </header>
-
-  <CollectionsRail {url} {setUrl} open={sheetOpen} onClose={() => (sheetOpen = false)} />
-
   <div class="att-main">
     {#if bridgeBanner}
       <div class="bridge-banner notice notice-warn" role="status" data-testid="attention-bridge">
@@ -338,9 +326,7 @@
     display: flex;
     height: 100%;
     min-height: 0;
-  }
-  .mobile-bar {
-    display: none;
+    flex: 1;
   }
   .att-main {
     flex: 1;
@@ -481,12 +467,6 @@
     box-shadow: var(--shadow-pop);
     z-index: 60;
   }
-  .mobile-wordmark {
-    font-weight: 700;
-  }
-  .spacer {
-    flex: 1;
-  }
   @media (max-width: 900px) {
     .att-cols {
       flex-direction: column;
@@ -494,19 +474,6 @@
     .att-list {
       width: 100%;
       max-height: 40%;
-    }
-  }
-  @media (max-width: 759px) {
-    .att-shell {
-      flex-direction: column;
-    }
-    .mobile-bar {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 10px;
-      border-bottom: 1px solid var(--color-line);
-      background: var(--color-surface-raised);
     }
   }
 </style>

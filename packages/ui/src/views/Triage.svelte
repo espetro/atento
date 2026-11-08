@@ -5,7 +5,6 @@
   import type { LinkAction, LinkSummary } from '../lib/types'
   import { api, ApiError } from '../lib/api'
   import { reextractBus } from '../lib/events'
-  import CollectionsRail from './CollectionsRail.svelte'
   import LinkList from './LinkList.svelte'
   import PreviewPane from './PreviewPane.svelte'
 
@@ -14,7 +13,6 @@
   const queryClient = useQueryClient()
   const collection = $derived(effectiveCollection(url))
 
-  let sheetOpen = $state(false)
   let listActions = $state<{
     selectedIds: () => number[]
     selectedLink: () => LinkSummary | null
@@ -100,28 +98,6 @@
 </script>
 
 <div class="triage-shell" data-testid="triage-shell">
-  <!-- mobile top bar (<760px): the rail lives behind the sheet toggle -->
-  <header class="mobile-bar">
-    <button
-      type="button"
-      class="btn btn-ghost btn-icon"
-      aria-label="Open collections"
-      onclick={() => (sheetOpen = true)}
-      data-testid="rail-toggle"
-    >
-      ☰
-    </button>
-    <button type="button" class="mobile-wordmark" onclick={() => setUrl({ view: 'triage', collection: 'enriched', selected: null })}>
-      linkinbox
-    </button>
-    <span class="spacer"></span>
-    <button type="button" class="btn btn-ghost btn-sm" onclick={() => setUrl({ view: 'run', selected: null })}>run</button>
-    <button type="button" class="btn btn-ghost btn-sm" onclick={() => setUrl({ view: 'settings', selected: null })}>⚙</button>
-    <button type="button" class="btn btn-sm btn-primary" onclick={() => setUrl({ dialog: 'ingest' })} data-testid="mobile-ingest">⊕</button>
-  </header>
-
-  <CollectionsRail {url} {setUrl} open={sheetOpen} onClose={() => (sheetOpen = false)} />
-
   <div class="list-col" class:has-selection={url.selected != null}>
     {#if triageError}
       <div class="triage-error notice notice-bad" role="alert">
@@ -162,9 +138,7 @@
     display: flex;
     height: 100%;
     min-height: 0;
-  }
-  .mobile-bar {
-    display: none;
+    flex: 1;
   }
   .list-col {
     width: 400px;
@@ -210,28 +184,9 @@
     box-shadow: var(--shadow-pop);
     z-index: 60;
   }
-  .spacer {
-    flex: 1;
-  }
-  .mobile-wordmark {
-    font-weight: 700;
-    font-size: 15px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--color-ink);
-  }
   @media (max-width: 759px) {
     .triage-shell {
       flex-direction: column;
-    }
-    .mobile-bar {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 10px;
-      border-bottom: 1px solid var(--color-line);
-      background: var(--color-surface-raised);
     }
     .list-col {
       width: 100%;
