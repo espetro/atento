@@ -13,6 +13,8 @@
   import StateChip from '../components/StateChip.svelte'
   import CopyButton from '../components/CopyButton.svelte'
   import Dialog from '../components/Dialog.svelte'
+  import NativePreview from '../components/NativePreview.svelte'
+  import { isDesktopShell } from '../lib/desktop'
   import { m } from '../paraglide/messages.js'
 
   let {
@@ -27,10 +29,20 @@
 
   const queryClient = useQueryClient()
 
+  // Desktop shell (B1): inside Electrobun the preview slot hosts a real
+  // native webview; on plain web this stays false and the reader/snapshot
+  // fallback below renders exactly as before.
+  const nativePreview = isDesktopShell()
+
   const detailQuery = createQuery(() => ({
     queryKey: ['link', id],
     queryFn: () => api.link(id!),
     enabled: id != null,
+    // Desktop only: keep the previous link's detail while the next one
+    // fetches. Without it the preview (and its pooled webviews) unmounts on
+    // every selection change, defeating the warm pool. Web behavior is
+    // unchanged — placeholderData stays undefined there.
+    placeholderData: nativePreview ? (prev: LinkDetail | undefined) => prev : undefined,
   }))
 
   const detail = $derived<LinkDetail | null>(detailQuery.data ?? null)
@@ -234,7 +246,9 @@
 
     <div class="preview-body scroll-thin" data-testid="preview-body">
       <section class="panel-section" data-testid="section-preview">
-        {#if readerHtml !== ''}
+        {#if nativePreview && detail.url !== ''}
+          <NativePreview url={detail.url} />
+        {:else if readerHtml !== ''}
           <article class="markdown-body" data-testid="reader-markdown">
             <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized with DOMPurify -->
             {@html readerHtml}

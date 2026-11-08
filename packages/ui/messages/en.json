@@ -97,6 +97,7 @@
   "preview_select_hint": "Select a link to preview it.",
   "preview_shortcuts_hint": "j/k move · / search · a archive · s schedule · d discard",
   "preview_load_error": "Failed to load link #{id}.",
+  "native_preview_label": "Live page preview",
   "preview_none_title": "No preview available.",
   "preview_none_body": "Nothing extracted yet and no snapshot captured — the preview appears here after the extract stage runs.",
   "snapshot_alt": "Page snapshot",
