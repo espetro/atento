@@ -97,6 +97,24 @@ describe('GET /api/links', () => {
     expect(body.total).toBeGreaterThanOrEqual(2)
     expect(body.items.length).toBe(1)
   })
+
+  it('q searches the FTS index and sort=relevance orders by rank', async () => {
+    const id = await seed({ title: 'relevance needle title' })
+    const res = await createApp(store).request('/api/links?q=relevance&sort=relevance')
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { items: { id: number; title: string }[]; total: number }
+    expect(body.total).toBeGreaterThanOrEqual(1)
+    expect(body.items[0]!.id).toBe(id)
+    expect(body.items[0]!.title).toBe('relevance needle title')
+
+    // q reaches the enrichment summary (why_it_matters) too.
+    const bySummary = await createApp(store).request('/api/links?q=shapes')
+    const summaryBody = (await bySummary.json()) as { total: number }
+    expect(summaryBody.total).toBeGreaterThanOrEqual(1)
+
+    const bad = await createApp(store).request('/api/links?q=x&sort=bogus')
+    expect(bad.status).toBe(400)
+  })
 })
 
 describe('GET /api/links/:id', () => {

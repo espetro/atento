@@ -762,6 +762,15 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
         },
         { name: 'limit', in: 'query', required: false, schema: { type: 'integer' } },
         { name: 'offset', in: 'query', required: false, schema: { type: 'integer' } },
+        {
+          name: 'sort',
+          in: 'query',
+          required: false,
+          description:
+            "Ordering. 'relevance' ranks q hits by bm25 (requires q); " +
+            'the default is created_at DESC, id DESC.',
+          schema: { type: 'string', enum: ['relevance'] },
+        },
       ],
       responses: okJson('Links page', LinkListResponse),
     }),
@@ -795,6 +804,15 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
         }
         collection = q['collection']
       }
+      // Optional ordering: 'relevance' ranks q hits by bm25. Anything else
+      // is a client error, like an unknown status/state/collection.
+      let sort: 'relevance' | undefined
+      if (q['sort'] !== undefined && q['sort'] !== '') {
+        if (q['sort'] !== 'relevance') {
+          return c.json({ error: `invalid sort "${q['sort']}"; expected relevance` }, 400)
+        }
+        sort = 'relevance'
+      }
       const filter = {
         status: status as Status | undefined,
         state,
@@ -807,14 +825,16 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
         ...filter,
         stale,
         q: q['q'] || undefined,
+        sort,
         limit,
         offset,
         fields: PIPELINE_SUMMARY_FIELDS,
       })
-      // The free-text match, the host filter and the collection filter live
-      // in ops (post-filters over full rows), so for those the total is the
-      // filtered length, not the raw store count. The store count handles
-      // the state filter on the FSM discriminant.
+      // The host filter and the collection filter post-filter inside ops
+      // over full rows, and q counts every FTS match — not just the page —
+      // so for those the total is the filtered length, not the raw store
+      // count. The store count handles the state filter on the FSM
+      // discriminant.
       const storeFilter = {
         status: (state ?? status) as Status | undefined,
         byState: state !== undefined,
