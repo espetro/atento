@@ -9,10 +9,11 @@
   import { collectionMeta, reasonLabel } from '../lib/copy'
   import type { UrlState } from '../lib/urlState'
   import type { LinkAction, LinkSummary } from '../lib/types'
-  import { PIPELINE_STATES } from '../lib/types'
   import { density } from '../lib/prefs'
   import StateChip from '../components/StateChip.svelte'
   import IconChip from '../components/IconChip.svelte'
+  import FilterMenu from '../components/FilterMenu.svelte'
+  import IconListFilter from '~icons/lucide/list-filter'
   import IconSparkles from '~icons/lucide/sparkles'
   import IconCode from '~icons/lucide/code'
   import IconPalette from '~icons/lucide/palette'
@@ -234,7 +235,6 @@
   })
 
   const ATTENTION = new Set(['needs_login', 'blocked', 'errored', 'review'])
-  const categories = ['ai', 'engineering', 'design', 'product', 'security', 'ops', 'reading']
 
   // Category → lucide icon (A3): type chips are icon-only with title/aria.
   const CATEGORY_ICONS: Record<string, Component> = {
@@ -259,6 +259,29 @@
     qInput = ''
   }
 
+  // ---- filter dropdown (A4) --------------------------------------------------
+  let filterOpen = $state(false)
+  let filterAnchor = $state<HTMLElement | null>(null)
+
+  $effect(() => {
+    if (!filterOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (filterAnchor && !filterAnchor.contains(e.target as Node)) filterOpen = false
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        filterOpen = false
+      }
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey, true)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey, true)
+    }
+  })
+
   function isStale(link: LinkSummary): boolean {
     return link.expires_at != null && new Date(link.expires_at).getTime() < Date.now()
   }
@@ -275,48 +298,38 @@
       <span class="meta" data-testid="total-count">{total} items</span>
     </div>
     <div class="search-row">
-      <input
-        bind:this={searchEl}
-        class="input search-input"
-        type="search"
-        placeholder="/ search titles & urls"
-        aria-label="Search links"
-        data-testid="search-input"
-        bind:value={qInput}
-        oninput={onSearchInput}
-      />
-      <select
-        class="select filter-select"
-        aria-label="Filter by state"
-        data-testid="state-filter"
-        value={url.state}
-        onchange={(e) => setUrl({ state: (e.currentTarget as HTMLSelectElement).value, selected: null })}
-      >
-        <option value="">all states</option>
-        {#each PIPELINE_STATES as s (s)}
-          <option value={s}>{s.replace(/_/g, ' ')}</option>
-        {/each}
-      </select>
-      <select
-        class="select filter-select"
-        aria-label="Filter by category"
-        data-testid="category-filter"
-        value={url.category}
-        onchange={(e) => setUrl({ category: (e.currentTarget as HTMLSelectElement).value, selected: null })}
-      >
-        <option value="">all categories</option>
-        {#each categories as c (c)}
-          <option value={c}>{c}</option>
-        {/each}
-      </select>
-      <label class="chip chip-toggle" class:chip-accent={url.stale}>
+      <div class="search-side">
+        <button
+          type="button"
+          class="btn btn-sm filter-btn"
+          aria-haspopup="true"
+          aria-expanded={filterOpen}
+          onclick={() => (filterOpen = !filterOpen)}
+          data-testid="filter-button"
+        >
+          <IconListFilter width={13} height={13} aria-hidden="true" />
+          filters
+          {#if hasActiveFilters}<span class="filter-dot" aria-hidden="true"></span>{/if}
+        </button>
+        <div class="filter-anchor" bind:this={filterAnchor}>
+          {#if filterOpen}
+            <FilterMenu {url} {setUrl} />
+          {/if}
+        </div>
+      </div>
+      <div class="search-center">
         <input
-          type="checkbox"
-          checked={url.stale}
-          onchange={(e) => setUrl({ stale: (e.currentTarget as HTMLInputElement).checked, selected: null })}
+          bind:this={searchEl}
+          class="input search-input"
+          type="search"
+          placeholder="/ search titles & urls"
+          aria-label="Search links"
+          data-testid="search-input"
+          bind:value={qInput}
+          oninput={onSearchInput}
         />
-        stale
-      </label>
+      </div>
+      <div class="search-side search-side-end"></div>
     </div>
     {#if hasActiveFilters}
       <div class="filter-chips">
@@ -472,27 +485,46 @@
   .list-title {
     font-size: 20px;
   }
+  /* A4: filter button on the left, search centered, spare column on the
+     right so the input sits in the middle of the header. */
   .search-row {
-    display: flex;
-    gap: 6px;
+    display: grid;
+    grid-template-columns: 1fr minmax(0, 440px) 1fr;
+    gap: 8px;
     align-items: center;
   }
-  .search-input {
-    flex: 1;
+  .search-side {
+    position: relative;
+    display: flex;
+    align-items: center;
     min-width: 0;
   }
-  .filter-select {
-    width: auto;
-    padding: 6px 8px;
-    font-size: 12.5px;
+  .search-side-end {
+    justify-content: flex-end;
   }
-  .chip-toggle {
-    cursor: pointer;
-    user-select: none;
+  .filter-anchor {
+    display: contents;
   }
-  .chip-toggle input {
-    accent-color: var(--color-accent);
-    margin: 0;
+  .filter-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .filter-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--color-accent);
+    flex: none;
+  }
+  .search-center {
+    display: flex;
+    min-width: 0;
+  }
+  .search-input {
+    width: 100%;
+    min-width: 0;
   }
   .chip-button {
     cursor: pointer;
