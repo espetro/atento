@@ -14,6 +14,7 @@
   import IconChip from '../components/IconChip.svelte'
   import FilterMenu from '../components/FilterMenu.svelte'
   import IconListFilter from '~icons/lucide/list-filter'
+  import IconCircleQuestionMark from '~icons/lucide/circle-question-mark'
   import IconSparkles from '~icons/lucide/sparkles'
   import IconCode from '~icons/lucide/code'
   import IconPalette from '~icons/lucide/palette'
@@ -417,6 +418,21 @@
       {/if}
     </div>
   {/if}
+
+  <!-- A5: footer key-hints are gone; the ? button opens the help dialog
+       (?dialog=help — same URL mechanism as the ingest dialog). -->
+  <footer class="list-foot">
+    <button
+      type="button"
+      class="btn btn-ghost btn-icon help-btn"
+      aria-label="Keyboard shortcuts"
+      title="Keyboard shortcuts (?)"
+      onclick={() => setUrl({ dialog: 'help' })}
+      data-testid="help-button"
+    >
+      <IconCircleQuestionMark width={15} height={15} aria-hidden="true" />
+    </button>
+  </footer>
 </div>
 
 {#snippet Row(props: {
@@ -544,6 +560,18 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+  }
+  .list-foot {
+    display: flex;
+    justify-content: flex-end;
+    padding: 2px 8px;
+    border-top: 1px solid var(--color-line);
+  }
+  .help-btn {
+    color: var(--color-ink-faint);
+  }
+  .help-btn:hover {
+    color: var(--color-ink);
   }
   .empty {
     display: flex;

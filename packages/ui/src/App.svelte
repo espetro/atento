@@ -18,7 +18,6 @@
   const queryClient = createQueryClient()
 
   let url = $state<UrlState>(parseUrlState(new URLSearchParams(window.location.search)))
-  let keymapOpen = $state(false)
   let sheetOpen = $state(false)
 
   function setUrl(next: Partial<UrlState>) {
@@ -33,7 +32,11 @@
       url = parseUrlState(new URLSearchParams(window.location.search))
     }
     window.addEventListener('popstate', onPop)
-    const offKeymap = onShortcut('?', () => (keymapOpen = true))
+    // '?' toggles the keyboard-help dialog; its open state lives in the URL
+    // (?dialog=help) like the ingest dialog (A5).
+    const offKeymap = onShortcut('?', () =>
+      setUrl({ dialog: url.dialog === 'help' ? '' : 'help' }),
+    )
     return () => {
       window.removeEventListener('popstate', onPop)
       offKeymap()
@@ -96,7 +99,8 @@
   </div>
 </QueryClientProvider>
 
-<Dialog open={keymapOpen} labelledBy="keymap-title" onClose={() => (keymapOpen = false)}>
+{#if url.dialog === 'help'}
+  <Dialog open={true} labelledBy="keymap-title" onClose={() => setUrl({ dialog: '' })}>
   <div class="keymap">
     <h2 id="keymap-title" class="keymap-title">Keyboard</h2>
     <table class="keymap-table">
@@ -110,7 +114,8 @@
       </tbody>
     </table>
   </div>
-</Dialog>
+  </Dialog>
+{/if}
 
 <style>
   .app-shell {
