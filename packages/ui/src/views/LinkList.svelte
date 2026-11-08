@@ -9,7 +9,6 @@
   import type { UrlState } from '../lib/urlState'
   import type { LinkAction, LinkSummary } from '../lib/types'
   import { density } from '../lib/prefs'
-  import StateChip from '../components/StateChip.svelte'
   import IconChip from '../components/IconChip.svelte'
   import FilterMenu from '../components/FilterMenu.svelte'
   import IconListFilter from '~icons/lucide/list-filter'
@@ -164,6 +163,22 @@
     estimateSize: () => ($density === 'compact' ? 58 : 76),
     overscan: 8,
   })
+
+  // Rows vary (why line optional, wrapped text) — measure each one so the
+  // absolute offsets always match real heights. Fixed estimates drift and
+  // make rows overlap after a few dozen entries. The virtualizer keys the
+  // measurement off the wrapper's data-index attribute.
+  function measureRow(node: HTMLElement) {
+    get(virtualizerStore).measureElement(node)
+    return {
+      update() {
+        get(virtualizerStore).measureElement(node)
+      },
+      destroy() {
+        get(virtualizerStore).measureElement(null)
+      },
+    }
+  }
 
   $effect(() => {
     // Re-subscribe options when density flips so row-height estimates track.
@@ -371,6 +386,8 @@
               class="absolute top-0 left-0 w-full"
               style={`transform: translateY(${row.start}px);`}
               data-testid="virtual-row"
+              data-index={row.index}
+              use:measureRow
             >
               {@render Row({
                 link,
@@ -379,6 +396,7 @@
                 checked: checked.has(link.id),
                 isStale,
                 rowTitle,
+                showHost: items[row.index - 1]?.host !== link.host,
                 onClick: (e: MouseEvent) => onRowClick(link, e),
               })}
             </div>
@@ -387,7 +405,7 @@
         </div>
       {:else}
         <div class="plain-list">
-          {#each items as link (link.id)}
+          {#each items as link, i (link.id)}
             {@render Row({
               link,
               collection,
@@ -395,6 +413,7 @@
               checked: checked.has(link.id),
               isStale,
               rowTitle,
+              showHost: items[i - 1]?.host !== link.host,
               onClick: (e: MouseEvent) => onRowClick(link, e),
             })}
           {/each}
@@ -432,6 +451,7 @@
   checked: boolean
   isStale: (l: LinkSummary) => boolean
   rowTitle: (l: LinkSummary) => string
+  showHost: boolean
   onClick: (e: MouseEvent) => void
 })}
   {@const link = props.link}
@@ -448,9 +468,15 @@
     <span class="row-check" aria-hidden="true">{props.checked ? '☑' : ''}</span>
     <span class="row-main">
       <span class="row-line1">
-        <StateChip collection={props.collection} state={link.state} label={undefined} />
-        <span class="row-host meta">{link.host ?? hostOf(link.url)}</span>
-        <span class="meta row-time">{timeAgo(link.updatedAt)}</span>
+        <span
+          class="row-dot chip-state-{meta.tone}"
+          title={meta.label}
+          data-testid="state-dot"
+        ></span>
+        {#if props.showHost}
+          <span class="row-host meta">{link.host ?? hostOf(link.url)}</span>
+        {/if}
+        <span class="meta row-time">{timeAgo(link.updated_at)}</span>
         {#if link.read_minutes > 0}<span class="meta">{link.read_minutes}m</span>{/if}
         {#if link.reason}
           <span class="row-reason meta">
@@ -606,6 +632,13 @@
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
+  }
+  .row-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: currentColor;
+    flex: none;
   }
   .row-host {
     overflow: hidden;
