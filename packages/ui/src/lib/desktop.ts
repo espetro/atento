@@ -108,9 +108,16 @@ function applyVisibility(activeHost: string) {
 	}
 }
 
-function scheduleVisibilityRetries(activeHost: string) {
+// Bumped on every showNativePreview/reset so stale visibility retries
+// scheduled for a previous selection bail instead of hiding the new
+// active webview during rapid selection changes.
+let visibilityGen = 0
+
+function scheduleVisibilityRetries(activeHost: string, gen: number) {
 	for (const delay of [100, 400, 1200]) {
-		setTimeout(() => applyVisibility(activeHost), delay)
+		setTimeout(() => {
+			if (gen === visibilityGen) applyVisibility(activeHost)
+		}, delay)
 	}
 }
 
@@ -150,8 +157,9 @@ export function showNativePreview(container: HTMLElement, url: string) {
 		container.appendChild(entry.el)
 	}
 
+	const gen = ++visibilityGen
 	applyVisibility(host)
-	scheduleVisibilityRetries(host)
+	scheduleVisibilityRetries(host, gen)
 
 	if (entry.url !== url) {
 		entry.url = url
@@ -161,6 +169,7 @@ export function showNativePreview(container: HTMLElement, url: string) {
 
 /** Destroy the whole pool (called when the preview component unmounts). */
 export function resetNativePreviewPool() {
+	visibilityGen++
 	for (const entry of pool.values()) {
 		entry.el.remove()
 	}
