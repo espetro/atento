@@ -115,6 +115,28 @@ describe('GET /api/links', () => {
     const bad = await createApp(store).request('/api/links?q=x&sort=bogus')
     expect(bad.status).toBe(400)
   })
+
+  it('q alone returns bm25 relevance order; sort=newest keeps chronological', async () => {
+    // The older link matches in the title (bm25 weight 10), the newer only
+    // in the url (weight 1): relevance must put the older first even though
+    // newest-first would put the newer first.
+    const older = await seed({ title: 'rankterm title hit' })
+    const newer = await seed({ title: 'plain page', url: 'https://example.com/rankterm-url' })
+
+    const rel = await createApp(store).request('/api/links?q=rankterm')
+    const relBody = (await rel.json()) as { items: { id: number }[] }
+    expect(relBody.items.length).toBeGreaterThanOrEqual(2)
+    expect(relBody.items[0]!.id).toBe(older)
+
+    const chronological = await createApp(store).request('/api/links?q=rankterm&sort=newest')
+    const chronBody = (await chronological.json()) as { items: { id: number }[] }
+    expect(chronBody.items[0]!.id).toBe(newer)
+
+    // Explicit relevance matches the q-only default.
+    const explicit = await createApp(store).request('/api/links?q=rankterm&sort=relevance')
+    const explBody = (await explicit.json()) as { items: { id: number }[] }
+    expect(explBody.items[0]!.id).toBe(older)
+  })
 })
 
 describe('GET /api/links/:id', () => {

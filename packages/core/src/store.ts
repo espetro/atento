@@ -298,13 +298,20 @@ export interface LinkFilter {
    * index (title, url, note, tags, enrichment summary); other stores fall
    * back to a substring match over the same fields. Raw user input — the
    * store sanitizes it into a safe query.
+   *
+   * Degradation note: on a database that has not run the FTS migration the
+   * sqlite fallback is a whole-query substring LIKE over the raw column
+   * text — semantics diverge from FTS5 in both directions (no per-token
+   * AND, and it matches inside the raw enrichment JSON rather than the
+   * extracted summary).
    */
   match?: string
   /**
-   * 'relevance' orders `match` hits by rank (bm25 on sqlite). Ignored
-   * without `match`; the default order stays created_at DESC, id DESC.
+   * 'relevance' orders `match` hits by rank (bm25 on sqlite). 'newest' —
+   * and the default — keeps created_at DESC, id DESC. Ignored without
+   * `match`. ops.listLinks defaults to 'relevance' when q is present.
    */
-  sort?: 'relevance'
+  sort?: 'relevance' | 'newest'
   limit?: number
   offset?: number
 }

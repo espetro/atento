@@ -292,11 +292,19 @@ export class SqliteStore implements Store {
       cond: sql`${links.id} IN (SELECT rowid FROM links_fts WHERE links_fts MATCH ${query})`,
       // bm25 weights per fts column (title, url, note, tags, summary): the
       // title counts most, the url least. Lower bm25 = better rank.
+      // Perf note: the correlated subquery runs one MATCH probe per output
+      // row — O(N) probes, acceptable at current corpus sizes; revisit with
+      // a join against links_fts if corpora grow large.
       rank: sql`(SELECT bm25(links_fts, 10.0, 1.0, 3.0, 2.0, 5.0) FROM links_fts WHERE links_fts.rowid = ${links.id} AND links_fts MATCH ${query})`,
     }
   }
 
-  /** True when the links_fts virtual table exists (post-0010 migration). */
+  /**
+   * True when the links_fts virtual table exists (post-0010 migration).
+   * The cache assumes this store's own migrate() is the only way the table
+   * appears — a second process migrating the same file underneath us is
+   * already outside the single-writer contract.
+   */
   private hasFtsTable(): boolean {
     if (this.ftsTable === undefined) {
       this.ftsTable =

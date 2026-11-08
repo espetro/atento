@@ -135,11 +135,29 @@ describe('ops.listLinks', () => {
     expect(page.map((r) => r['title'])).toEqual(['needle one'])
   })
 
-  it('accepts sort=relevance with q (rank ordering is store-side)', async () => {
-    const store = new FakeStore()
-    await seedLink(store, 'https://example.com/a', { title: 'alpha beta' })
-    const rows = await listLinks(store, { now: NOW, q: 'alpha', sort: 'relevance' })
-    expect(rows).toHaveLength(1)
+  it('defaults q to relevance, honors explicit newest, ignores sort without q', async () => {
+    const store = await seeded()
+    const seen: Array<import('../src/index.js').LinkFilter | undefined> = []
+    const orig = store.listLinks.bind(store)
+    store.listLinks = async (f) => {
+      seen.push(f)
+      return orig(f)
+    }
+
+    await listLinks(store, { now: NOW, q: 'example' })
+    expect(seen[0]?.sort).toBe('relevance')
+    expect(seen[0]?.match).toBe('example')
+
+    await listLinks(store, { now: NOW, q: 'example', sort: 'newest' })
+    expect(seen[1]?.sort).toBe('newest')
+
+    await listLinks(store, { now: NOW, sort: 'relevance' })
+    expect(seen[2]?.sort).toBe('relevance')
+    expect(seen[2]?.match).toBeUndefined()
+
+    await listLinks(store, { now: NOW })
+    expect(seen[3]?.sort).toBeUndefined()
+    expect(seen[3]?.match).toBeUndefined()
   })
 
   it('respects the limit', async () => {

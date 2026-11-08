@@ -180,10 +180,12 @@ export interface ListLinksOptions {
   /** Free-text query: FTS5 match over title/url/note/tags/summary. */
   q?: string
   /**
-   * 'relevance' orders q hits by rank (bm25 on sqlite stores). Requires q;
-   * the default order stays created_at DESC, id DESC.
+   * Ordering. 'relevance' ranks q hits by bm25 (sqlite stores); 'newest'
+   * is created_at DESC, id DESC. When q is present and sort is absent the
+   * order defaults to relevance — pass 'newest' to keep chronological
+   * order. Ignored without q.
    */
-  sort?: 'relevance'
+  sort?: 'relevance' | 'newest'
   /** Filter on the host of the url, e.g. `example.com`. */
   host?: string
   /** Restrict to links belonging to one pipeline collection. */
@@ -204,16 +206,24 @@ export async function listLinks(
   // link rows, so they share one store read; limit/offset are applied after
   // filtering (correct pages). The free-text query is pushed down to the
   // store (`match`), which answers it with the FTS5 index — it narrows the
-  // candidates before the post-filters run, and `sort=relevance` orders by
-  // bm25 rank. When only q is present the store paginates directly.
+  // candidates before the post-filters run. Ordering: an explicit
+  // sort='newest' keeps chronological order; otherwise a present q
+  // defaults to relevance (bm25 rank), matching the spec's "q present —
+  // then relevance". When only q is present the store paginates directly.
   const postFilter = options.host !== undefined || options.collection !== undefined
+  const sort =
+    options.sort === 'newest'
+      ? 'newest'
+      : options.q
+        ? 'relevance'
+        : options.sort
   const filter: LinkFilter = {
     status: options.state !== undefined ? (options.state as Status) : options.status,
     byState: options.state !== undefined,
     category: options.category,
     staleAsOf: options.stale ? now : undefined,
     match: options.q ? options.q : undefined,
-    sort: options.sort === 'relevance' && options.q ? 'relevance' : undefined,
+    sort,
     offset: postFilter ? undefined : options.offset,
   }
   const links = await store.listLinks(

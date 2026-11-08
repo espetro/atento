@@ -767,9 +767,10 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
           in: 'query',
           required: false,
           description:
-            "Ordering. 'relevance' ranks q hits by bm25 (requires q); " +
-            'the default is created_at DESC, id DESC.',
-          schema: { type: 'string', enum: ['relevance'] },
+            "Ordering. 'relevance' ranks q hits by bm25 and is the default " +
+            'when q is present; ' +
+            "'newest' is created_at DESC, id DESC (the default without q).",
+          schema: { type: 'string', enum: ['relevance', 'newest'] },
         },
       ],
       responses: okJson('Links page', LinkListResponse),
@@ -804,14 +805,18 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
         }
         collection = q['collection']
       }
-      // Optional ordering: 'relevance' ranks q hits by bm25. Anything else
-      // is a client error, like an unknown status/state/collection.
-      let sort: 'relevance' | undefined
+      // Optional ordering: 'relevance' ranks q hits by bm25 (and is the
+      // default when q is present), 'newest' keeps chronological order.
+      // Anything else is a client error, like an unknown status/state.
+      let sort: 'relevance' | 'newest' | undefined
       if (q['sort'] !== undefined && q['sort'] !== '') {
-        if (q['sort'] !== 'relevance') {
-          return c.json({ error: `invalid sort "${q['sort']}"; expected relevance` }, 400)
+        if (q['sort'] !== 'relevance' && q['sort'] !== 'newest') {
+          return c.json(
+            { error: `invalid sort "${q['sort']}"; expected relevance or newest` },
+            400,
+          )
         }
-        sort = 'relevance'
+        sort = q['sort'] as 'relevance' | 'newest'
       }
       const filter = {
         status: status as Status | undefined,
