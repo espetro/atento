@@ -1032,6 +1032,8 @@ export interface operations {
                 collection?: "enriched" | "pending" | "needs_login" | "blocked" | "errored" | "review" | "triaged";
                 limit?: number;
                 offset?: number;
+                /** @description Ordering. 'relevance' ranks q hits by bm25 and is the default when q is present; 'newest' is created_at DESC, id DESC (the default without q). */
+                sort?: "relevance" | "newest";
             };
             header?: never;
             path?: never;

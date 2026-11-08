@@ -210,4 +210,4 @@ export type MetaRow = typeof meta.$inferSelect
 export type LinkEventRow = typeof linkEvents.$inferSelect
 export type IngestJobRow = typeof ingestJobs.$inferSelect
 
-export const SCHEMA_VERSION = '9'
+export const SCHEMA_VERSION = '10'

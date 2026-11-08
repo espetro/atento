@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
-import { eq, inArray, and, gt, gte, lte, or, sql } from 'drizzle-orm'
+import { eq, inArray, and, gt, gte, lte, or, sql, type SQLWrapper } from 'drizzle-orm'
 import {
   SCHEMA_VERSION,
   links,
@@ -81,6 +81,8 @@ export class SqliteStore implements Store {
   private readonly sqlite: Database.Database
   private readonly db: Db
   private readonly ownsSqlite: boolean
+  /** Cached links_fts existence check; reset by migrate(). */
+  private ftsTable: boolean | undefined
 
   constructor(options: SqliteStoreOptions)
   /** Wrap an existing better-sqlite3 handle (does not close it on close()). */
@@ -142,6 +144,8 @@ export class SqliteStore implements Store {
     if (applied.length > 0 || (await this.getMeta('schema_version')) === null) {
       this.setMetaSync('schema_version', SCHEMA_VERSION)
     }
+    // The FTS table may have just been created: re-check on next use.
+    this.ftsTable = undefined
   }
 
   /** Migration names recorded as applied on this database. */
@@ -232,8 +236,15 @@ export class SqliteStore implements Store {
     return row ? fromRow(row) : null
   }
 
-  async listLinks(filter?: LinkFilter): Promise<Link[]> {
-    const conds = []
+  /**
+   * Shared WHERE parts for listLinks/countLinks. Returns 'empty' when a
+   * `match` filter carries no searchable tokens — the query matches nothing.
+   */
+  private linkConds(filter?: LinkFilter): {
+    conds: SQLWrapper[]
+    ftsRank?: SQLWrapper
+  } | 'empty' {
+    const conds: SQLWrapper[] = []
     if (filter?.status) {
       if (filter.byState === true) {
         conds.push(eq(links.state, filter.status))
@@ -245,29 +256,88 @@ export class SqliteStore implements Store {
     if (filter?.staleAsOf) {
       conds.push(sql`${links.expiresAt} IS NOT NULL AND ${links.expiresAt} < ${filter.staleAsOf.getTime()}`)
     }
+    if (filter?.match !== undefined) {
+      const fts = this.matchConds(filter.match)
+      if (fts === 'empty') return 'empty'
+      conds.push(fts.cond)
+      if (filter.sort === 'relevance') return { conds, ftsRank: fts.rank }
+    }
+    return { conds }
+  }
+
+  /**
+   * Translate free-text `match` into a condition over the links row.
+   * With the links_fts table (migration 0010) it is an FTS5 MATCH narrowed
+   * to rowids, plus a bm25 rank expression for `sort=relevance`. On a
+   * database that has not migrated yet it degrades to substring LIKEs over
+   * the same fields, with a constant rank (relevance order is unavailable).
+   */
+  private matchConds(match: string): { cond: SQLWrapper; rank: SQLWrapper } | 'empty' {
+    const query = toFts5Query(match)
+    if (query === null) return 'empty'
+    if (!this.hasFtsTable()) {
+      const like = `%${escapeLike(match.trim())}%`
+      return {
+        cond: or(
+          sql`${links.title} LIKE ${like} ESCAPE '\\'`,
+          sql`${links.url} LIKE ${like} ESCAPE '\\'`,
+          sql`${links.note} LIKE ${like} ESCAPE '\\'`,
+          sql`${links.tags} LIKE ${like} ESCAPE '\\'`,
+          sql`${links.enrichment} LIKE ${like} ESCAPE '\\'`,
+        )!,
+        rank: sql`0`,
+      }
+    }
+    return {
+      cond: sql`${links.id} IN (SELECT rowid FROM links_fts WHERE links_fts MATCH ${query})`,
+      // bm25 weights per fts column (title, url, note, tags, summary): the
+      // title counts most, the url least. Lower bm25 = better rank.
+      // Perf note: the correlated subquery runs one MATCH probe per output
+      // row — O(N) probes, acceptable at current corpus sizes; revisit with
+      // a join against links_fts if corpora grow large.
+      rank: sql`(SELECT bm25(links_fts, 10.0, 1.0, 3.0, 2.0, 5.0) FROM links_fts WHERE links_fts.rowid = ${links.id} AND links_fts MATCH ${query})`,
+    }
+  }
+
+  /**
+   * True when the links_fts virtual table exists (post-0010 migration).
+   * The cache assumes this store's own migrate() is the only way the table
+   * appears — a second process migrating the same file underneath us is
+   * already outside the single-writer contract.
+   */
+  private hasFtsTable(): boolean {
+    if (this.ftsTable === undefined) {
+      this.ftsTable =
+        this.sqlite
+          .prepare(
+            `SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'links_fts'`,
+          )
+          .get() !== undefined
+    }
+    return this.ftsTable
+  }
+
+  async listLinks(filter?: LinkFilter): Promise<Link[]> {
+    const parts = this.linkConds(filter)
+    if (parts === 'empty') return []
     const q = this.db.select().from(links)
-    const filtered = conds.length ? q.where(and(...conds)) : q
-    const ordered = filtered.orderBy(sql`${links.createdAt} DESC, ${links.id} DESC`)
+    const filtered = parts.conds.length ? q.where(and(...parts.conds)) : q
+    const ordered =
+      parts.ftsRank !== undefined
+        ? filtered.orderBy(
+            sql`${parts.ftsRank} ASC, ${links.createdAt} DESC, ${links.id} DESC`,
+          )
+        : filtered.orderBy(sql`${links.createdAt} DESC, ${links.id} DESC`)
     const paged = filter?.limit !== undefined ? ordered.limit(filter.limit) : ordered
     const final = filter?.offset !== undefined ? paged.offset(filter.offset) : paged
     return final.all().map(fromRow)
   }
 
   async countLinks(filter?: LinkFilter): Promise<number> {
-    const conds = []
-    if (filter?.status) {
-      if (filter.byState === true) {
-        conds.push(eq(links.state, filter.status))
-      } else {
-        conds.push(eq(links.status, filter.status))
-      }
-    }
-    if (filter?.category) conds.push(eq(links.category, filter.category))
-    if (filter?.staleAsOf) {
-      conds.push(sql`${links.expiresAt} IS NOT NULL AND ${links.expiresAt} < ${filter.staleAsOf.getTime()}`)
-    }
+    const parts = this.linkConds(filter)
+    if (parts === 'empty') return 0
     const q = this.db.select({ n: sql<number>`count(*)` }).from(links)
-    const filtered = conds.length ? q.where(and(...conds)) : q
+    const filtered = parts.conds.length ? q.where(and(...parts.conds)) : q
     const r = filtered.get()
     return Number(r?.n ?? 0)
   }
@@ -1187,6 +1257,33 @@ export class SqliteStore implements Store {
       .onConflictDoUpdate({ target: meta.key, set: { value } })
       .run()
   }
+}
+
+// ---- FTS helpers ----
+
+/**
+ * Sanitize free-text into a safe FTS5 MATCH expression: alphanumeric tokens,
+ * each emitted as a quoted prefix term (`"term"*`), ANDed together. The
+ * token regex excludes every FTS5 operator and quote character, so raw user
+ * input can never break the MATCH syntax. Returns null when the input has
+ * no searchable tokens — callers treat that as "match nothing".
+ */
+export function toFts5Query(text: string): string | null {
+  const tokens = text.match(/[\p{L}\p{N}]+/gu) ?? []
+  const seen = new Set<string>()
+  const terms: string[] = []
+  for (const token of tokens) {
+    const key = token.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    terms.push(`"${token}"*`)
+  }
+  return terms.length > 0 ? terms.join(' AND ') : null
+}
+
+/** Escape LIKE wildcards for the pre-FTS5 substring fallback. */
+function escapeLike(text: string): string {
+  return text.replace(/[\\%_]/g, (c) => `\\${c}`)
 }
 
 // ---- FSM helpers ----

@@ -104,6 +104,62 @@ describe('ops.listLinks', () => {
     expect(rows[0]!['id']).toBe(3)
   })
 
+  it('matches q over note, tags and the enrichment summary too', async () => {
+    const store = new FakeStore()
+    await seedLink(store, 'https://example.com/a', { title: 'A', note: 'uniquephrase' })
+    await seedLink(store, 'https://example.com/b', { title: 'B', tags: ['uniquetag'] })
+    await seedLink(store, 'https://example.com/c', { title: 'C' })
+    const rows = await listLinks(store, { now: NOW, q: 'unique' })
+    expect(rows.map((r) => r['id']).sort()).toEqual([1, 2])
+  })
+
+  it('composes q with host and paginates the filtered set', async () => {
+    const store = new FakeStore()
+    await seedLink(store, 'https://a.example.com/one', { title: 'needle one' })
+    await seedLink(store, 'https://b.example.com/two', { title: 'needle two' })
+    await seedLink(store, 'https://a.example.com/three', { title: 'needle three' })
+
+    const all = await listLinks(store, { now: NOW, q: 'needle' })
+    expect(all).toHaveLength(3)
+
+    const onA = await listLinks(store, { now: NOW, q: 'needle', host: 'a.example.com' })
+    expect(onA.map((r) => r['title'])).toEqual(['needle three', 'needle one'])
+
+    const page = await listLinks(store, {
+      now: NOW,
+      q: 'needle',
+      host: 'a.example.com',
+      limit: 1,
+      offset: 1,
+    })
+    expect(page.map((r) => r['title'])).toEqual(['needle one'])
+  })
+
+  it('defaults q to relevance, honors explicit newest, ignores sort without q', async () => {
+    const store = await seeded()
+    const seen: Array<import('../src/index.js').LinkFilter | undefined> = []
+    const orig = store.listLinks.bind(store)
+    store.listLinks = async (f) => {
+      seen.push(f)
+      return orig(f)
+    }
+
+    await listLinks(store, { now: NOW, q: 'example' })
+    expect(seen[0]?.sort).toBe('relevance')
+    expect(seen[0]?.match).toBe('example')
+
+    await listLinks(store, { now: NOW, q: 'example', sort: 'newest' })
+    expect(seen[1]?.sort).toBe('newest')
+
+    await listLinks(store, { now: NOW, sort: 'relevance' })
+    expect(seen[2]?.sort).toBe('relevance')
+    expect(seen[2]?.match).toBeUndefined()
+
+    await listLinks(store, { now: NOW })
+    expect(seen[3]?.sort).toBeUndefined()
+    expect(seen[3]?.match).toBeUndefined()
+  })
+
   it('respects the limit', async () => {
     const store = await seeded()
     expect(await listLinks(store, { now: NOW, limit: 2 })).toHaveLength(2)

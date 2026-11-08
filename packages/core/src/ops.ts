@@ -177,8 +177,15 @@ export interface ListLinksOptions {
   category?: string
   /** Include only links whose expiresAt has passed as of now. */
   stale?: boolean
-  /** Free-text query over url/title. */
+  /** Free-text query: FTS5 match over title/url/note/tags/summary. */
   q?: string
+  /**
+   * Ordering. 'relevance' ranks q hits by bm25 (sqlite stores); 'newest'
+   * is created_at DESC, id DESC. When q is present and sort is absent the
+   * order defaults to relevance — pass 'newest' to keep chronological
+   * order. Ignored without q.
+   */
+  sort?: 'relevance' | 'newest'
   /** Filter on the host of the url, e.g. `example.com`. */
   host?: string
   /** Restrict to links belonging to one pipeline collection. */
@@ -195,18 +202,28 @@ export async function listLinks(
   options: ListLinksOptions = {},
 ): Promise<LinkProjection[]> {
   const now = options.now ?? new Date()
-  // Collection membership, the host filter and the free-text query are all
-  // post-filters over full link rows, so they share one unbounded store
-  // read; limit/offset are applied after filtering (correct pages).
-  const postFilter =
-    options.q !== undefined ||
-    options.host !== undefined ||
-    options.collection !== undefined
+  // The host filter and the collection filter are post-filters over full
+  // link rows, so they share one store read; limit/offset are applied after
+  // filtering (correct pages). The free-text query is pushed down to the
+  // store (`match`), which answers it with the FTS5 index — it narrows the
+  // candidates before the post-filters run. Ordering: an explicit
+  // sort='newest' keeps chronological order; otherwise a present q
+  // defaults to relevance (bm25 rank), matching the spec's "q present —
+  // then relevance". When only q is present the store paginates directly.
+  const postFilter = options.host !== undefined || options.collection !== undefined
+  const sort =
+    options.sort === 'newest'
+      ? 'newest'
+      : options.q
+        ? 'relevance'
+        : options.sort
   const filter: LinkFilter = {
     status: options.state !== undefined ? (options.state as Status) : options.status,
     byState: options.state !== undefined,
     category: options.category,
     staleAsOf: options.stale ? now : undefined,
+    match: options.q ? options.q : undefined,
+    sort,
     offset: postFilter ? undefined : options.offset,
   }
   const links = await store.listLinks(
@@ -219,12 +236,6 @@ export async function listLinks(
   if (options.host !== undefined && options.host !== '') {
     const host = options.host.toLowerCase()
     out = out.filter((l) => hostOfUrl(l.url) === host)
-  }
-  if (options.q) {
-    const q = options.q.toLowerCase()
-    out = out.filter(
-      (l) => l.url.toLowerCase().includes(q) || (l.title ?? '').toLowerCase().includes(q),
-    )
   }
   if (postFilter && options.offset !== undefined && options.offset > 0) {
     out = out.slice(options.offset)

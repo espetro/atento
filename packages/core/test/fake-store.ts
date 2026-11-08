@@ -150,6 +150,30 @@ export class FakeStore implements Store {
         (l) => l.expiresAt !== null && l.expiresAt.getTime() < filter.staleAsOf!.getTime(),
       )
     }
+    if (filter?.match !== undefined) {
+      // Substring approximation of the sqlite FTS5 match: every query token
+      // must appear in the searchable text (title, url, note, tags, the
+      // enrichment summary). `sort: 'relevance'` has no rank here — the
+      // created_at order below stands in.
+      const tokens = filter.match.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
+      if (tokens.length === 0) {
+        out = []
+      } else {
+        out = out.filter((l) => {
+          const hay = [
+            l.title,
+            l.url,
+            l.note,
+            l.tags?.join(' '),
+            l.enrichment?.why_it_matters,
+          ]
+            .filter((s): s is string => typeof s === 'string')
+            .join('\n')
+            .toLowerCase()
+          return tokens.every((t) => hay.includes(t))
+        })
+      }
+    }
     out.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id - a.id)
     if (filter?.offset !== undefined) out = out.slice(filter.offset)
     if (filter?.limit !== undefined) out = out.slice(0, filter.limit)
