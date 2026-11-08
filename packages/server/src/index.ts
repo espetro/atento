@@ -1429,6 +1429,13 @@ function readStaticFile(
     const headers = new Headers()
     headers.set('content-type', CONTENT_TYPES[extname(target)] ?? 'application/octet-stream')
     headers.set('content-length', String(body.byteLength))
+    // Hashed assets are immutable; everything else (index.html, manifest)
+    // must revalidate so a rebuilt ui shows up on reload instead of the
+    // webview reusing a heuristically cached document.
+    headers.set(
+      'cache-control',
+      rel.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+    )
     return { body: body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer, headers }
   } catch {
     return null
