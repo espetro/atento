@@ -300,7 +300,6 @@
             {onTriage}
             {onReextract}
             {onOpenUrl}
-            registerActions={() => {}}
           />
         </div>
         <div class="att-preview">

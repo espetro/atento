@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
   import { createQuery } from '@tanstack/svelte-query'
   import { createVirtualizer } from '@tanstack/svelte-virtual'
   import { get } from 'svelte/store'
@@ -35,7 +34,6 @@
     onTriage,
     onReextract,
     onOpenUrl,
-    registerActions,
   }: {
     url: UrlState
     setUrl: (next: Partial<UrlState>) => void
@@ -44,11 +42,6 @@
     onTriage: (ids: number[], action: LinkAction) => Promise<void>
     onReextract: (link: LinkSummary) => void
     onOpenUrl: (url: string) => void
-    /** Lets the parent read the current selection for its own shortcuts. */
-    registerActions?: (actions: {
-      selectedIds: () => number[]
-      selectedLink: () => LinkSummary | null
-    }) => void
   } = $props()
 
   const PAGE = 50
@@ -89,14 +82,6 @@
   const actionIds = $derived.by((): number[] => {
     if (checked.size > 0) return [...checked]
     return cursorId != null ? [cursorId] : []
-  })
-
-  // Register once on mount; the closures read reactive state at call time.
-  onMount(() => {
-    registerActions?.({
-      selectedIds: () => actionIds,
-      selectedLink: () => items.find((l) => l.id === cursorId) ?? null,
-    })
   })
 
   function moveCursor(delta: number) {
@@ -304,7 +289,7 @@
         <button
           type="button"
           class="btn btn-sm filter-btn"
-          aria-haspopup="true"
+          aria-haspopup="dialog"
           aria-expanded={filterOpen}
           onclick={() => (filterOpen = !filterOpen)}
           data-testid="filter-button"

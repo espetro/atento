@@ -71,8 +71,8 @@
         </button>
         <span class="spacer"></span>
         <button type="button" class="btn btn-ghost btn-sm" onclick={() => setUrl({ view: 'run', selected: null })}>{m.nav_run()}</button>
-        <button type="button" class="btn btn-ghost btn-sm" onclick={() => setUrl({ view: 'settings', selected: null })}>⚙</button>
-        <button type="button" class="btn btn-sm btn-primary" onclick={() => setUrl({ dialog: 'ingest' })} data-testid="mobile-ingest">⊕</button>
+        <button type="button" class="btn btn-ghost btn-sm" aria-label={m.nav_settings()} onclick={() => setUrl({ view: 'settings', selected: null })}>⚙</button>
+        <button type="button" class="btn btn-sm btn-primary" aria-label={m.nav_ingest()} onclick={() => setUrl({ dialog: 'ingest' })} data-testid="mobile-ingest">⊕</button>
       </header>
       <main class="app-main">
         {#if url.view === 'attention'}

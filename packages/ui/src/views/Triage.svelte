@@ -16,11 +16,6 @@
   // Preview placement (A2): right column | bottom dock | hidden.
   const layout = $derived(url.layout)
 
-  let listActions = $state<{
-    selectedIds: () => number[]
-    selectedLink: () => LinkSummary | null
-  } | null>(null)
-
   let triageError = $state('')
   let undo = $state<{ ids: number[]; action: LinkAction; label: string } | null>(null)
   let undoTimer: ReturnType<typeof setTimeout> | undefined
@@ -122,7 +117,6 @@
       {onTriage}
       onReextract={onReextract}
       {onOpenUrl}
-      registerActions={(a) => (listActions = a)}
     />
   </div>
 
