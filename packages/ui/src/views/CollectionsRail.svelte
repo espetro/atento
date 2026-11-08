@@ -4,6 +4,7 @@
   import { collectionMeta } from '../lib/copy'
   import type { UrlState } from '../lib/urlState'
   import { COLLECTION_NAMES, type CollectionName } from '../lib/types'
+  import { m } from '../paraglide/messages.js'
 
   let {
     url,
@@ -143,8 +144,8 @@
     if (f.category) bits.push(f.category)
     if (f.state) bits.push(f.state.replace(/_/g, ' '))
     if (f.host) bits.push(f.host)
-    if (f.stale) bits.push('stale')
-    return bits.length > 0 ? bits.join(' ') : 'all'
+    if (f.stale) bits.push(m.saved_filter_stale())
+    return bits.length > 0 ? bits.join(' ') : m.saved_filter_all()
   }
 
   function applyFilter(f: SavedFilter) {
@@ -239,16 +240,16 @@
 {#if open}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div class="sheet-overlay" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose?.()}>
-    <nav class="rail sheet" aria-label="Collections" data-testid="collections-rail">
+    <nav class="rail sheet" aria-label={m.rail_aria_label()} data-testid="collections-rail">
       {@render railBody()}
     </nav>
   </div>
 {:else if !collapsed}
-  <nav class="rail" aria-label="Collections" data-testid="collections-rail">
+  <nav class="rail" aria-label={m.rail_aria_label()} data-testid="collections-rail">
     {@render railBody()}
   </nav>
 {:else}
-  <nav class="rail rail-collapsed" aria-label="Collections" data-testid="collections-rail">
+  <nav class="rail rail-collapsed" aria-label={m.rail_aria_label()} data-testid="collections-rail">
     {@render railBody()}
   </nav>
 {/if}
@@ -262,14 +263,14 @@
         onclick={() => selectCollection('enriched')}
         data-testid="wordmark"
       >
-        linkinbox
+        {m.app_name()}
       </button>
     {:else}
       <button
         type="button"
         class="wordmark-icon"
-        title="linkinbox — enriched"
-        aria-label="linkinbox — go to enriched"
+        title={m.wordmark_title()}
+        aria-label={m.wordmark_aria()}
         onclick={() => selectCollection('enriched')}
       >
         l
@@ -279,15 +280,15 @@
       type="button"
       class="btn btn-ghost btn-icon rail-collapse"
       onclick={toggleCollapsed}
-      aria-label={collapsed ? 'Expand collections' : 'Collapse collections'}
-      title={collapsed ? 'Expand' : 'Collapse'}
+      aria-label={collapsed ? m.aria_expand_collections() : m.aria_collapse_collections()}
+      title={collapsed ? m.collapsed_expand() : m.collapsed_collapse()}
     >
       {collapsed ? '»' : '«'}
     </button>
   </header>
 
   <div class="rail-scroll scroll-thin">
-    <div class="rail-group">collections</div>
+    <div class="rail-group">{m.rail_group_collections()}</div>
     {#each COLLECTION_NAMES as name (name)}
       {@const count = summary?.collections?.[name] ?? 0}
       {@const meta = collectionMeta(name)}
@@ -315,7 +316,7 @@
     {#if !collapsed}
       <div class="rail-group">
         <button type="button" class="group-toggle" onclick={() => (hostsExpanded = !hostsExpanded)}>
-          hosts {hostsExpanded ? '▾' : '▸'}
+          {m.rail_group_hosts()} {hostsExpanded ? '▾' : '▸'}
         </button>
       </div>
       {#each shownHosts as h (h.host)}
@@ -325,7 +326,7 @@
           class="rail-row"
           class:is-selected={url.host === h.host}
           onclick={() => selectHost(h.host)}
-          title={loginCount ? `${h.host} — needs login (${loginCount})` : h.host}
+          title={loginCount ? m.host_needs_login_title({ host: h.host, count: loginCount }) : h.host}
         >
           <span class="rail-label rail-host">{h.host}</span>
           {#if loginCount}<span class="chip chip-state-needs-login rail-chip"><span class="dot"></span>{loginCount}</span>{/if}
@@ -334,24 +335,24 @@
       {/each}
       {#if hosts.length > VISIBLE_HOSTS && !hostsExpanded}
         <button type="button" class="rail-more" onclick={() => (hostsExpanded = true)}>
-          show {hosts.length - VISIBLE_HOSTS} more
+          {m.rail_show_more({ count: hosts.length - VISIBLE_HOSTS })}
         </button>
       {/if}
 
       {#if savedFilters.length > 0}
-        <div class="rail-group">saved filters</div>
+        <div class="rail-group">{m.rail_group_saved_filters()}</div>
         {#each savedFilters as f (f.name)}
           <div
             class="rail-row saved-row"
             role="group"
-            aria-label="Saved filter {f.name}"
+            aria-label={m.saved_filter_aria({ name: f.name })}
             oncontextmenu={(e) => openMenu(e, f.name)}
           >
             {#if renaming === f.name}
               <input
                 class="input save-input"
                 bind:value={renameValue}
-                aria-label="Rename filter"
+                aria-label={m.saved_filter_rename_input()}
                 onkeydown={(e) => {
                   if (e.key === 'Enter') commitRename()
                   if (e.key === 'Escape') renaming = null
@@ -367,7 +368,7 @@
             <button
               type="button"
               class="saved-delete"
-              aria-label="Filter options for {f.name}"
+              aria-label={m.saved_filter_options_aria({ name: f.name })}
               aria-haspopup="menu"
               onclick={(e) => {
                 e.stopPropagation()
@@ -384,8 +385,8 @@
             style:left={`${menuPos.x}px`}
             style:top={`${menuPos.y}px`}
           >
-            <button type="button" role="menuitem" onclick={() => startRename(menuFor!)}>rename</button>
-            <button type="button" role="menuitem" onclick={() => deleteFilter(menuFor!)}>delete</button>
+            <button type="button" role="menuitem" onclick={() => startRename(menuFor!)}>{m.saved_filter_rename()}</button>
+            <button type="button" role="menuitem" onclick={() => deleteFilter(menuFor!)}>{m.saved_filter_delete()}</button>
           </div>
         {/if}
       {/if}
@@ -395,15 +396,15 @@
           <div class="save-filter">
             <input
               class="input save-input"
-              placeholder="filter name"
+              placeholder={m.saved_filter_name_placeholder()}
               bind:value={savingName}
               onkeydown={(e) => e.key === 'Enter' && saveCurrent()}
             />
-            <button type="button" class="btn btn-sm btn-primary" onclick={saveCurrent}>save</button>
+            <button type="button" class="btn btn-sm btn-primary" onclick={saveCurrent}>{m.saved_filter_save()}</button>
           </div>
         {:else}
           <button type="button" class="rail-more" onclick={() => (showSave = true)}>
-            + save current filter
+            {m.saved_filter_save_current()}
           </button>
         {/if}
       {/if}
@@ -414,20 +415,20 @@
     {#if !collapsed}
       <button type="button" class="rail-row" onclick={() => go({ view: 'settings', selected: null })} data-testid="nav-settings">
         <span class="rail-glyph" aria-hidden="true">⚙</span>
-        <span class="rail-label">settings</span>
+        <span class="rail-label">{m.nav_settings()}</span>
       </button>
       <button type="button" class="rail-row" onclick={() => go({ view: 'run', selected: null })} data-testid="nav-run">
         <span class="rail-glyph" aria-hidden="true">▶</span>
-        <span class="rail-label">run</span>
+        <span class="rail-label">{m.nav_run()}</span>
       </button>
       <button type="button" class="rail-row" onclick={() => go({ dialog: 'ingest' })} data-testid="nav-ingest">
         <span class="rail-glyph" aria-hidden="true">⊕</span>
-        <span class="rail-label">ingest</span>
+        <span class="rail-label">{m.nav_ingest()}</span>
       </button>
     {:else}
-      <button type="button" class="rail-row" title="settings" aria-label="settings" onclick={() => go({ view: 'settings', selected: null })}>⚙</button>
-      <button type="button" class="rail-row" title="run" aria-label="run" onclick={() => go({ view: 'run', selected: null })}>▶</button>
-      <button type="button" class="rail-row" title="ingest" aria-label="ingest" onclick={() => go({ dialog: 'ingest' })}>⊕</button>
+      <button type="button" class="rail-row" title={m.nav_settings()} aria-label={m.nav_settings()} onclick={() => go({ view: 'settings', selected: null })}>⚙</button>
+      <button type="button" class="rail-row" title={m.nav_run()} aria-label={m.nav_run()} onclick={() => go({ view: 'run', selected: null })}>▶</button>
+      <button type="button" class="rail-row" title={m.nav_ingest()} aria-label={m.nav_ingest()} onclick={() => go({ dialog: 'ingest' })}>⊕</button>
     {/if}
   </footer>
 {/snippet}

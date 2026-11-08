@@ -6,3 +6,6 @@ dist
 .turbo
 .xdg-*
 dist-scripts
+
+# Paraglide compile cache
+**/project.inlang/cache/

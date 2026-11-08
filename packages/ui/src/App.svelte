@@ -14,6 +14,7 @@
   import Dialog from './components/Dialog.svelte'
   import LiveSync from './components/LiveSync.svelte'
   import { sseConnected } from './lib/events'
+  import { m } from './paraglide/messages.js'
 
   const queryClient = createQueryClient()
 
@@ -55,7 +56,7 @@
         <button
           type="button"
           class="btn btn-ghost btn-icon"
-          aria-label="Open collections"
+          aria-label={m.aria_open_collections()}
           onclick={() => (sheetOpen = true)}
           data-testid="rail-toggle"
         >
@@ -66,10 +67,10 @@
           class="mobile-wordmark"
           onclick={() => setUrl({ view: 'triage', collection: 'enriched', selected: null })}
         >
-          linkinbox
+          {m.app_name()}
         </button>
         <span class="spacer"></span>
-        <button type="button" class="btn btn-ghost btn-sm" onclick={() => setUrl({ view: 'run', selected: null })}>run</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick={() => setUrl({ view: 'run', selected: null })}>{m.nav_run()}</button>
         <button type="button" class="btn btn-ghost btn-sm" onclick={() => setUrl({ view: 'settings', selected: null })}>⚙</button>
         <button type="button" class="btn btn-sm btn-primary" onclick={() => setUrl({ dialog: 'ingest' })} data-testid="mobile-ingest">⊕</button>
       </header>
@@ -94,7 +95,7 @@
       <IngestDialog open={true} {setUrl} />
     {/if}
     {#if !$sseConnected}
-      <div class="sse-chip" role="status" data-testid="sse-reconnecting">reconnecting…</div>
+      <div class="sse-chip" role="status" data-testid="sse-reconnecting">{m.sse_reconnecting()}</div>
     {/if}
   </div>
 </QueryClientProvider>
@@ -102,15 +103,15 @@
 {#if url.dialog === 'help'}
   <Dialog open={true} labelledBy="keymap-title" onClose={() => setUrl({ dialog: '' })}>
   <div class="keymap">
-    <h2 id="keymap-title" class="keymap-title">Keyboard</h2>
+    <h2 id="keymap-title" class="keymap-title">{m.keymap_title()}</h2>
     <table class="keymap-table">
       <tbody>
-        <tr><td><kbd class="kbd">j</kbd> <kbd class="kbd">k</kbd></td><td>move selection</td></tr>
-        <tr><td><kbd class="kbd">/</kbd></td><td>focus search</td></tr>
-        <tr><td><kbd class="kbd">a</kbd> <kbd class="kbd">s</kbd> <kbd class="kbd">d</kbd></td><td>archive / schedule / discard</td></tr>
-        <tr><td><kbd class="kbd">r</kbd></td><td>re-extract</td></tr>
-        <tr><td><kbd class="kbd">o</kbd></td><td>open link in browser</td></tr>
-        <tr><td><kbd class="kbd">?</kbd></td><td>this overlay</td></tr>
+        <tr><td><kbd class="kbd">j</kbd> <kbd class="kbd">k</kbd></td><td>{m.keymap_move()}</td></tr>
+        <tr><td><kbd class="kbd">/</kbd></td><td>{m.keymap_search()}</td></tr>
+        <tr><td><kbd class="kbd">a</kbd> <kbd class="kbd">s</kbd> <kbd class="kbd">d</kbd></td><td>{m.keymap_actions()}</td></tr>
+        <tr><td><kbd class="kbd">r</kbd></td><td>{m.keymap_reextract()}</td></tr>
+        <tr><td><kbd class="kbd">o</kbd></td><td>{m.keymap_open()}</td></tr>
+        <tr><td><kbd class="kbd">?</kbd></td><td>{m.keymap_help()}</td></tr>
       </tbody>
     </table>
   </div>

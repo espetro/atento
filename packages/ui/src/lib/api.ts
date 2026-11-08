@@ -1,4 +1,5 @@
 import { QueryClient } from '@tanstack/svelte-query'
+import { m } from '../paraglide/messages.js'
 import type {
   BrowserAdaptersResponse,
   CollectionsSummary,
@@ -44,7 +45,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const message =
       body !== null && typeof body === 'object' && 'error' in body
         ? String((body as { error: unknown }).error)
-        : `API ${res.status} on ${path}`
+        : m.api_error_fallback({ status: res.status, path })
     throw new ApiError(res.status, message, body)
   }
   return body as T

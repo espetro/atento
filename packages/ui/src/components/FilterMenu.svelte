@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query'
   import { api } from '../lib/api'
+  import { m } from '../paraglide/messages.js'
   import { density, setDensity } from '../lib/prefs'
   import type { UrlState } from '../lib/urlState'
   import { LAYOUT_MODES, LINK_CATEGORIES, PIPELINE_STATES } from '../lib/types'
@@ -27,9 +28,9 @@
   const hosts = $derived(pipelineQuery.data?.byHost ?? [])
 
   const LAYOUT_LABELS: Record<string, string> = {
-    right: 'right',
-    bottom: 'bottom',
-    hidden: 'hidden',
+    right: m.layout_mode_right(),
+    bottom: m.layout_mode_bottom(),
+    hidden: m.layout_mode_hidden(),
   }
 
   function pick(next: Partial<UrlState>) {
@@ -45,46 +46,46 @@
   )
 </script>
 
-<div class="filter-menu" role="group" aria-label="Filters and layout" data-testid="filter-menu">
+<div class="filter-menu" role="group" aria-label={m.filters_aria_label()} data-testid="filter-menu">
   <div class="menu-section">
-    <div class="menu-label">filters</div>
+    <div class="menu-label">{m.menu_filters()}</div>
     <label class="field">
-      <span class="field-label">state</span>
+      <span class="field-label">{m.filter_state()}</span>
       <select
         class="select"
         data-testid="state-filter"
         value={url.state}
         onchange={(e) => pick({ state: (e.currentTarget as HTMLSelectElement).value })}
       >
-        <option value="">all states</option>
+        <option value="">{m.filter_all_states()}</option>
         {#each PIPELINE_STATES as s (s)}
           <option value={s}>{s.replace(/_/g, ' ')}</option>
         {/each}
       </select>
     </label>
     <label class="field">
-      <span class="field-label">category</span>
+      <span class="field-label">{m.filter_category()}</span>
       <select
         class="select"
         data-testid="category-filter"
         value={url.category}
         onchange={(e) => pick({ category: (e.currentTarget as HTMLSelectElement).value })}
       >
-        <option value="">all categories</option>
+        <option value="">{m.filter_all_categories()}</option>
         {#each LINK_CATEGORIES as c (c)}
           <option value={c}>{c}</option>
         {/each}
       </select>
     </label>
     <label class="field">
-      <span class="field-label">host</span>
+      <span class="field-label">{m.filter_host()}</span>
       <select
         class="select"
         data-testid="host-filter"
         value={url.host}
         onchange={(e) => pick({ host: (e.currentTarget as HTMLSelectElement).value })}
       >
-        <option value="">all hosts</option>
+        <option value="">{m.filter_all_hosts()}</option>
         {#each hosts as h (h.host)}
           <option value={h.host}>{h.host}</option>
         {/each}
@@ -97,7 +98,7 @@
         checked={url.stale}
         onchange={(e) => pick({ stale: (e.currentTarget as HTMLInputElement).checked })}
       />
-      <span class="field-label">stale only</span>
+      <span class="field-label">{m.filter_stale_only()}</span>
     </label>
     <button
       type="button"
@@ -106,13 +107,13 @@
       onclick={resetFilters}
       data-testid="filter-reset"
     >
-      reset filters
+      {m.filter_reset()}
     </button>
   </div>
 
   <div class="menu-section">
-    <div class="menu-label">layout</div>
-    <div class="density-row" role="group" aria-label="Density">
+    <div class="menu-label">{m.menu_layout()}</div>
+    <div class="density-row" role="group" aria-label={m.density_aria_label()}>
       <button
         type="button"
         class="density-btn"
@@ -121,7 +122,7 @@
         onclick={() => setDensity('compact')}
         data-testid="density-compact"
       >
-        compact
+        {m.density_compact()}
       </button>
       <button
         type="button"
@@ -131,11 +132,11 @@
         onclick={() => setDensity('comfortable')}
         data-testid="density-comfortable"
       >
-        comfortable
+        {m.density_comfortable()}
       </button>
     </div>
     <label class="field">
-      <span class="field-label">preview</span>
+      <span class="field-label">{m.filter_preview()}</span>
       <select
         class="select"
         data-testid="layout-select"
@@ -147,7 +148,7 @@
         {/each}
       </select>
     </label>
-    <p class="meta-faint menu-note">preview: right column · bottom dock · hidden</p>
+    <p class="meta-faint menu-note">{m.layout_note()}</p>
   </div>
 </div>
 

@@ -2,12 +2,19 @@ import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import tailwindcss from '@tailwindcss/vite'
 import Icons from 'unplugin-icons/vite'
+import { paraglideVitePlugin } from '@inlang/paraglide-js'
 import { mockApiPlugin } from './src/mock/plugin.js'
 
 const mock = process.env.VITE_MOCK === '1'
 
 export default defineConfig({
-  plugins: [tailwindcss(), svelte(), Icons({ compiler: 'svelte' }), mockApiPlugin(mock)],
+  plugins: [
+    tailwindcss(),
+    svelte(),
+    Icons({ compiler: 'svelte' }),
+    paraglideVitePlugin({ project: './project.inlang' }),
+    mockApiPlugin(mock),
+  ],
   server: {
     port: 5173,
     proxy: mock

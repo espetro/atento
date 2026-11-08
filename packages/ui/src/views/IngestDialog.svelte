@@ -7,6 +7,7 @@
   import type { IngestJob, IngestJobSummary } from '../lib/types'
   import Dialog from '../components/Dialog.svelte'
   import CopyButton from '../components/CopyButton.svelte'
+  import { m } from '../paraglide/messages.js'
   import type { UrlState } from '../lib/urlState'
 
   let {
@@ -41,10 +42,10 @@
     text: v.pipe(
       v.string(),
       v.trim(),
-      v.nonEmpty('paste at least one URL or some text'),
+      v.nonEmpty(m.val_paste_required()),
       v.check(
         (t) => detectUrls(t).length <= MAX_URLS,
-        `too many urls — the limit is ${MAX_URLS}`,
+        m.val_too_many_urls({ max: MAX_URLS }),
       ),
     ),
     note: v.string(),
@@ -53,11 +54,11 @@
   type PasteForm = v.InferInput<typeof pasteSchema>
 
   const fileSchema = v.pipe(
-    v.custom<File>((i) => i instanceof File, 'choose a file'),
-    v.check((f) => f.size <= FILE_MAX_BYTES, 'file too large (max 10 MB)'),
+    v.custom<File>((i) => i instanceof File, m.val_choose_file()),
+    v.check((f) => f.size <= FILE_MAX_BYTES, m.val_file_too_large()),
     v.check(
       (f) => /\.(md|markdown|txt|html?|jsonl?|csv)$/i.test(f.name),
-      'unsupported file type — .md .txt .html .json .csv',
+      m.val_file_type(),
     ),
   )
 
@@ -210,7 +211,7 @@
     submitError = ''
     const parsed = v.safeParse(fileSchema, file)
     if (!parsed.success) {
-      submitError = parsed.issues[0]?.message ?? 'invalid file'
+      submitError = parsed.issues[0]?.message ?? m.ingest_invalid_file()
       return
     }
     const f = parsed.output
@@ -268,14 +269,14 @@
 
 <Dialog {open} labelledBy="ingest-title" onClose={close} initialFocus="[data-testid=ingest-textarea]">
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div class="ingest-dialog" role="group" aria-label="Ingest links" onkeydown={onKeydown} data-testid="ingest-dialog">
+  <div class="ingest-dialog" role="group" aria-label={m.ingest_title()} onkeydown={onKeydown} data-testid="ingest-dialog">
     <header class="ingest-head">
-      <h2 id="ingest-title" class="ingest-title">Ingest links</h2>
-      <button type="button" class="btn btn-ghost btn-icon" aria-label="Close" onclick={close}>✕</button>
+      <h2 id="ingest-title" class="ingest-title">{m.ingest_title()}</h2>
+      <button type="button" class="btn btn-ghost btn-icon" aria-label={m.aria_close()} onclick={close}>✕</button>
     </header>
 
     {#if job == null}
-      <div class="mode-tabs" role="tablist" aria-label="Ingest mode">
+      <div class="mode-tabs" role="tablist" aria-label={m.ingest_mode_aria()}>
         <button
           type="button"
           class="mode-tab"
@@ -283,7 +284,7 @@
           role="tab"
           aria-selected={mode === 'paste'}
           onclick={() => (mode = 'paste')}
-        >Paste URLs / text</button>
+        >{m.ingest_mode_paste()}</button>
         <button
           type="button"
           class="mode-tab"
@@ -291,7 +292,7 @@
           role="tab"
           aria-selected={mode === 'file'}
           onclick={() => (mode = 'file')}
-        >Upload file</button>
+        >{m.ingest_mode_file()}</button>
       </div>
 
       {#if mode === 'paste'}
@@ -303,8 +304,8 @@
                 <textarea
                   class="textarea ingest-text"
                   rows="10"
-                  placeholder={'https://example.com/a\nhttps://example.com/b\n\n- [title](https://…) also works'}
-                  aria-label="URLs or text to ingest"
+                  placeholder={m.ingest_placeholder()}
+                  aria-label={m.ingest_textarea_aria()}
                   value={String(field.input ?? '')}
                   oninput={(e) => {
                     field.onInput(e.currentTarget.value)
@@ -316,19 +317,19 @@
               {/snippet}
             </Field>
             <p class="meta ingest-hint">
-              one URL per line · markdown `- [t](url)` also works · ≤ {MAX_URLS} urls
+              {m.ingest_hint({ max: MAX_URLS })}
               {#if detected.length > 0}
-                · <strong data-testid="url-count">{detected.length} urls detected</strong>
+                · <strong data-testid="url-count">{m.ingest_urls_detected({ count: detected.length })}</strong>
               {/if}
             </p>
             {#if overLimit}
               <p class="notice notice-bad" role="alert" data-testid="over-limit">
-                {detected.length} urls detected — the limit is {MAX_URLS}. Split the list.
+                {m.ingest_over_limit({ count: detected.length, max: MAX_URLS })}
               </p>
             {/if}
             <div class="field-row">
               <label class="field">
-                <span class="field-label">note (optional)</span>
+                <span class="field-label">{m.ingest_note_label()}</span>
                 <Field of={pasteForm} path={["note"]}>
                   {#snippet children(field)}
                     <input
@@ -339,13 +340,13 @@
                         field.onInput(e.currentTarget.value)
                         note = e.currentTarget.value
                       }}
-                      placeholder="why these links"
+                      placeholder={m.ingest_note_placeholder()}
                     />
                   {/snippet}
                 </Field>
               </label>
               <label class="field">
-                <span class="field-label">tags (optional)</span>
+                <span class="field-label">{m.ingest_tags_label()}</span>
                 <Field of={pasteForm} path={["tags"]}>
                   {#snippet children(field)}
                     <input
@@ -356,7 +357,7 @@
                         field.onInput(e.currentTarget.value)
                         tagsInput = e.currentTarget.value
                       }}
-                      placeholder="ai, eng"
+                      placeholder={m.ingest_tags_placeholder()}
                     />
                   {/snippet}
                 </Field>
@@ -366,14 +367,14 @@
               <p class="notice notice-bad" role="alert" data-testid="ingest-error">{submitError}</p>
             {/if}
             <footer class="ingest-foot">
-              <button type="button" class="btn" onclick={close}>Cancel</button>
+              <button type="button" class="btn" onclick={close}>{m.ingest_cancel()}</button>
               <button
                 type="submit"
                 class="btn btn-primary"
                 disabled={submitting || overLimit}
                 data-testid="ingest-submit"
               >
-                {submitting ? 'Ingesting…' : detected.length > 0 ? `Ingest ${detected.length} link${detected.length === 1 ? '' : 's'}` : 'Ingest'}
+                {submitting ? m.ingest_busy() : detected.length > 0 ? (detected.length === 1 ? m.ingest_submit_one({ count: detected.length }) : m.ingest_submit_other({ count: detected.length })) : m.ingest_submit()}
               </button>
             </footer>
           </Form>
@@ -395,10 +396,10 @@
           {#if file}
             <p class="drop-file">{file.name} <span class="meta">({Math.ceil(file.size / 1024)} KB)</span></p>
           {:else}
-            <p class="meta">drop a file here or</p>
+            <p class="meta">{m.dropzone_hint()}</p>
           {/if}
           <label class="btn btn-sm">
-            choose file
+            {m.dropzone_choose()}
             <input
               type="file"
               accept={ACCEPT}
@@ -407,7 +408,7 @@
               data-testid="ingest-file-input"
             />
           </label>
-          <p class="meta">.md .txt .html .json .csv</p>
+          <p class="meta">{m.dropzone_types()}</p>
         </div>
       {/if}
 
@@ -417,7 +418,7 @@
         {/if}
 
         <footer class="ingest-foot">
-          <button type="button" class="btn" onclick={close}>Cancel</button>
+          <button type="button" class="btn" onclick={close}>{m.ingest_cancel()}</button>
           <button
             type="button"
             class="btn btn-primary"
@@ -425,7 +426,7 @@
             onclick={() => void submitFile()}
             data-testid="ingest-submit"
           >
-            {submitting ? 'Ingesting…' : 'Ingest'}
+            {submitting ? m.ingest_busy() : m.ingest_submit()}
           </button>
         </footer>
       {/if}
@@ -434,15 +435,15 @@
       <div class="job-view" data-testid="ingest-job">
         {#if status === 'busy'}
           <p class="notice notice-warn" role="status">
-            another ingest is running{job.busy?.pid != null ? ` (pid ${job.busy.pid})` : ''}
-            {#if job.busy?.runId != null}· run {job.busy.runId}{/if}
+            {m.ingest_busy_notice()}{job.busy?.pid != null ? ` (pid ${job.busy.pid})` : ''}
+            {#if job.busy?.runId != null}· {m.ingest_busy_run({ runId: job.busy.runId })}{/if}
           </p>
           <footer class="ingest-foot">
-            <button type="button" class="btn" onclick={close}>Close</button>
+            <button type="button" class="btn" onclick={close}>{m.ingest_close()}</button>
           </footer>
         {:else}
           <p class="job-line meta">
-            job {job.jobId || '—'} · {status}
+            {m.ingest_job_line({ id: job.jobId || '—', status })}
           </p>
           {#if status !== 'failed'}
             <div
@@ -451,19 +452,19 @@
               aria-valuemin="0"
               aria-valuemax={total || 1}
               aria-valuenow={done}
-              aria-label="Ingest progress"
+              aria-label={m.ingest_progress_aria()}
             >
               <div class="progress-fill" style={`width: ${pct}%`}></div>
             </div>
-            <p class="meta">{done} / {total} · {pct}%</p>
+            <p class="meta">{m.ingest_progress_line({ done, total, pct })}</p>
           {/if}
 
           {#if status === 'failed'}
             <p class="notice notice-bad" role="alert" data-testid="ingest-failed">
-              {effectiveJob?.error ?? 'ingest failed'}
+              {effectiveJob?.error ?? m.ingest_failed_fallback()}
             </p>
             <footer class="ingest-foot">
-              <button type="button" class="btn" onclick={close}>Close</button>
+              <button type="button" class="btn" onclick={close}>{m.ingest_close()}</button>
               <button
                 type="button"
                 class="btn btn-primary"
@@ -471,12 +472,12 @@
                 onclick={() => void retryLast()}
                 data-testid="ingest-retry"
               >
-                {submitting ? 'Retrying…' : 'Retry'}
+                {submitting ? m.ingest_retrying() : m.action_retry()}
               </button>
             </footer>
           {:else if status === 'done'}
             <p class="job-summary" data-testid="ingest-summary">
-              accepted {job.accepted} · duplicates {job.duplicates} · rejected {job.rejected}
+              {m.ingest_counters({ accepted: job.accepted, duplicates: job.duplicates, rejected: job.rejected })}
             </p>
             {#each job.warnings as w, i (i)}
               <p class="meta warning-line">{w}</p>
@@ -489,12 +490,12 @@
                   close()
                   setUrl({ view: 'triage', collection: 'pending', selected: null })
                 }}
-              >view in pending</button>
-              <button type="button" class="btn btn-primary" onclick={close}>Done</button>
+              >{m.ingest_view_pending()}</button>
+              <button type="button" class="btn btn-primary" onclick={close}>{m.action_done()}</button>
             </footer>
           {:else}
             <p class="job-summary meta" data-testid="ingest-counters">
-              accepted {job.accepted} · duplicates {job.duplicates} · rejected {job.rejected}
+              {m.ingest_counters({ accepted: job.accepted, duplicates: job.duplicates, rejected: job.rejected })}
             </p>
             {#if visibleWarnings.length > 0}
               <div class="warnings">
@@ -503,15 +504,15 @@
                 {/each}
                 {#if !warningsAll && warnings.length > 5}
                   <button type="button" class="chip chip-button" onclick={() => (warningsAll = true)}>
-                    +{warnings.length - 5} more
+                    {m.warnings_more({ count: warnings.length - 5 })}
                   </button>
                 {/if}
               </div>
             {/if}
             <footer class="ingest-foot">
               <span class="spacer"></span>
-              <CopyButton text={job.jobId} label="copy job id" />
-              <button type="button" class="btn" onclick={close}>Close</button>
+              <CopyButton text={job.jobId} label={m.copy_job_id()} />
+              <button type="button" class="btn" onclick={close}>{m.ingest_close()}</button>
             </footer>
           {/if}
         {/if}

@@ -1,3 +1,4 @@
+import { m } from '../paraglide/messages.js'
 import type { RunJournalRow, RunResult } from './types'
 
 export type RunVerdict = {
@@ -23,8 +24,8 @@ export function runVerdict(input: {
   liveRunning: boolean
 }): RunVerdict | null {
   const { runResult, latestRun, runError, busyInfo, liveRunning } = input
-  if (runError) return { code: 1, tone: 'bad', text: `Run failed — ${runError}` }
-  if (busyInfo) return { code: 3, tone: 'neutral', text: 'Another run is in progress' }
+  if (runError) return { code: 1, tone: 'bad', text: m.run_failed({ error: runError }) }
+  if (busyInfo) return { code: 3, tone: 'neutral', text: m.run_busy() }
   if (liveRunning && !runResult) return null // live panel covers it
   if (runResult) {
     const sum = runResult.summary
@@ -32,18 +33,18 @@ export function runVerdict(input: {
       return {
         code: 3,
         tone: 'neutral',
-        text: 'A stage was skipped — another run held the lock',
+        text: m.run_stage_skipped(),
       }
     }
     return sum.needsAction
-      ? { code: 2, tone: 'warn', text: 'Last run finished — needs you' }
-      : { code: 0, tone: 'ok', text: 'Last run finished — all clear' }
+      ? { code: 2, tone: 'warn', text: m.run_needs_you() }
+      : { code: 0, tone: 'ok', text: m.run_all_clear() }
   }
   if (latestRun) {
     if (latestRun.errorCount > 0 || latestRun.status === 'failed') {
-      return { code: 1, tone: 'bad', text: `Last run had errors (#${latestRun.id})` }
+      return { code: 1, tone: 'bad', text: m.run_had_errors({ id: latestRun.id }) }
     }
-    return { code: 0, tone: 'ok', text: 'Last run finished' }
+    return { code: 0, tone: 'ok', text: m.run_finished() }
   }
   return null
 }

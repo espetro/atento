@@ -13,6 +13,7 @@
   import StateChip from '../components/StateChip.svelte'
   import CopyButton from '../components/CopyButton.svelte'
   import Dialog from '../components/Dialog.svelte'
+  import { m } from '../paraglide/messages.js'
 
   let {
     id,
@@ -160,11 +161,11 @@
     try {
       const res = await api.reextract(id, adapter !== undefined ? { adapter } : {})
       if (res.ok) {
-        reextractMsg = 're-extract started'
+        reextractMsg = m.reextract_started()
         await queryClient.invalidateQueries({ queryKey: ['link', id] })
         await queryClient.invalidateQueries({ queryKey: ['links'] })
       } else {
-        reextractMsg = res.reason ?? 're-extract rejected'
+        reextractMsg = res.reason ?? m.reextract_rejected()
       }
     } catch (err) {
       reextractMsg = err instanceof ApiError ? err.message : String(err)
@@ -190,17 +191,17 @@
     if (detail.state) parts.push(detail.state.replace(/_/g, ' '))
     const reason = detail.reason ?? detail.stateData?.reason ?? detail.stateData?.error
     if (reason) parts.push(reasonLabel(String(reason)))
-    if (detail.next_attempt_at) parts.push(`retry ${timeAgo(detail.next_attempt_at)}`)
-    if (detail.stateData?.stage) parts.push(`stage: ${detail.stateData.stage}`)
-    if (detail.stateData?.retryable === false) parts.push("won't retry")
+    if (detail.next_attempt_at) parts.push(m.row_retry({ time: timeAgo(detail.next_attempt_at) }))
+    if (detail.stateData?.stage) parts.push(m.state_stage({ stage: String(detail.stateData.stage) }))
+    if (detail.stateData?.retryable === false) parts.push(m.state_wont_retry())
     return parts.join(' · ')
   })
 </script>
 
 {#if id == null}
   <div class="preview-empty">
-    <p class="meta">Select a link to preview it.</p>
-    <p class="meta-faint">j/k move · / search · a archive · s schedule · d discard</p>
+    <p class="meta">{m.preview_select_hint()}</p>
+    <p class="meta-faint">{m.preview_shortcuts_hint()}</p>
   </div>
 {:else if detailQuery.isPending}
   <div class="preview-body">
@@ -210,8 +211,8 @@
 {:else if detailQuery.isError}
   <div class="preview-body">
     <div class="notice notice-bad" role="alert">
-      Failed to load link #{id}.
-      <button class="btn btn-sm" onclick={() => void detailQuery.refetch()}>retry</button>
+      {m.preview_load_error({ id })}
+      <button class="btn btn-sm" onclick={() => void detailQuery.refetch()}>{m.action_retry()}</button>
     </div>
   </div>
 {:else if detail}
@@ -222,7 +223,7 @@
     <header class="preview-head">
       <div class="preview-url-row">
         <span class="preview-url mono" title={detail.url}>{truncate(detail.url, 90)}</span>
-        <CopyButton text={detail.url} label="copy url" />
+        <CopyButton text={detail.url} label={m.action_copy_url()} />
       </div>
       <h2 class="preview-title">{detail.title !== '' ? detail.title : detail.url}</h2>
       <div class="preview-state">
@@ -242,43 +243,42 @@
           <img
             class="snapshot-img"
             src={api.artifactUrl(id, 'snapshot.png')}
-            alt="Page snapshot"
+            alt={m.snapshot_alt()}
             data-testid="snapshot-img"
             onerror={() => (snapshotMissing = true)}
           />
         {:else}
           <div class="notice notice-neutral" data-testid="preview-empty-state">
-            <p class="meta">No preview available.</p>
+            <p class="meta">{m.preview_none_title()}</p>
             <p class="meta-faint">
-              Nothing extracted yet and no snapshot captured — the preview appears here
-              after the extract stage runs.
+              {m.preview_none_body()}
             </p>
           </div>
         {/if}
       </section>
 
       <section class="panel-section" data-testid="metadata-pane">
-        <h3 class="section-title">Enrichment</h3>
-        <p class="meta-faint section-note">generated — re-extract to change</p>
+        <h3 class="section-title">{m.section_enrichment()}</h3>
+        <p class="meta-faint section-note">{m.enrichment_note()}</p>
         <dl class="facts">
-          <div class="fact"><dt>category</dt><dd>{detail.category || '—'}</dd></div>
-          <div class="fact"><dt>priority</dt><dd>{detail.priority}</dd></div>
-          <div class="fact"><dt>read time</dt><dd>{detail.read_minutes > 0 ? `${detail.read_minutes} min` : '—'}</dd></div>
-          <div class="fact"><dt>expires</dt><dd>{detail.expires_at ? `${timeAgo(detail.expires_at)}${detail.expiry_reason ? ` · ${detail.expiry_reason}` : ''}` : '—'}</dd></div>
-          <div class="fact"><dt>confidence</dt><dd>{detail.confidence > 0 ? `${Math.round(detail.confidence * 100)}%` : '—'}</dd></div>
-          <div class="fact fact-wide"><dt>why it matters</dt><dd>{detail.why_it_matters || '—'}</dd></div>
+          <div class="fact"><dt>{m.fact_category()}</dt><dd>{detail.category || '—'}</dd></div>
+          <div class="fact"><dt>{m.fact_priority()}</dt><dd>{detail.priority}</dd></div>
+          <div class="fact"><dt>{m.fact_read_time()}</dt><dd>{detail.read_minutes > 0 ? `${detail.read_minutes} min` : '—'}</dd></div>
+          <div class="fact"><dt>{m.fact_expires()}</dt><dd>{detail.expires_at ? `${timeAgo(detail.expires_at)}${detail.expiry_reason ? ` · ${detail.expiry_reason}` : ''}` : '—'}</dd></div>
+          <div class="fact"><dt>{m.fact_confidence()}</dt><dd>{detail.confidence > 0 ? `${Math.round(detail.confidence * 100)}%` : '—'}</dd></div>
+          <div class="fact fact-wide"><dt>{m.fact_why()}</dt><dd>{detail.why_it_matters || '—'}</dd></div>
           {#each Object.entries(detail.enrichment ?? {}).filter(([k]) => !['why_it_matters'].includes(k)) as [k, val] (k)}
             <div class="fact"><dt>{k}</dt><dd>{typeof val === 'object' ? JSON.stringify(val) : String(val)}</dd></div>
           {/each}
         </dl>
 
-        <h3 class="section-title">Your fields</h3>
-        <p class="meta-faint section-note">title, note and tags — saved on blur</p>
+        <h3 class="section-title">{m.section_your_fields()}</h3>
+        <p class="meta-faint section-note">{m.your_fields_note()}</p>
         {#if metaForm}
           <div class="meta-form">
           <Form of={metaForm} onsubmit={onMetaSubmit} onfocusout={saveMetaBlur}>
             <label class="field">
-              <span class="field-label">title</span>
+              <span class="field-label">{m.field_title()}</span>
               <Field of={metaForm} path={["title"]}>
                 {#snippet children(field)}
                   <input
@@ -292,7 +292,7 @@
               </Field>
             </label>
             <label class="field">
-              <span class="field-label">note</span>
+              <span class="field-label">{m.field_note()}</span>
               <Field of={metaForm} path={["note"]}>
                 {#snippet children(field)}
                   <textarea
@@ -306,7 +306,7 @@
               </Field>
             </label>
             <label class="field">
-              <span class="field-label">tags</span>
+              <span class="field-label">{m.field_tags()}</span>
               <Field of={metaForm} path={["tags"]}>
                 {#snippet children(field)}
                   <input
@@ -328,14 +328,14 @@
             type="button"
             class="btn btn-sm"
             disabled={reextracting || adapters.length === 0}
-            title={adapters.length === 0 ? 'no browser adapters configured' : undefined}
+            title={adapters.length === 0 ? m.no_adapters() : undefined}
             onclick={onReextractClick}
             data-testid="reextract-button"
           >
-            {reextracting ? 're-extracting…' : 'Re-extract with adapter…'}
+            {reextracting ? m.reextract_busy() : m.reextract_button()}
           </button>
           {#if adapters.length === 0}
-            <span class="meta-faint">no browser adapters configured</span>
+            <span class="meta-faint">{m.no_adapters()}</span>
           {:else if reextractMsg}
             <span class="meta">{reextractMsg}</span>
           {/if}
@@ -343,19 +343,19 @@
       </section>
 
       <section class="panel-section" data-testid="section-actions">
-        <h3 class="section-title">Actions</h3>
+        <h3 class="section-title">{m.section_actions()}</h3>
         <div class="action-buttons">
           <button type="button" class="btn btn-sm" onclick={() => void act('archive')} data-testid="action-archive">
-            <span class="kbd">a</span> archive
+            <span class="kbd">a</span> {m.action_archive()}
           </button>
           <button type="button" class="btn btn-sm" onclick={() => void act('schedule')} data-testid="action-schedule">
-            <span class="kbd">s</span> schedule
+            <span class="kbd">s</span> {m.action_schedule()}
           </button>
           <button type="button" class="btn btn-sm btn-danger" onclick={() => void act('discard')} data-testid="action-discard">
-            <span class="kbd">d</span> discard
+            <span class="kbd">d</span> {m.action_discard()}
           </button>
           <button type="button" class="btn btn-sm" onclick={onReextractClick} data-testid="action-reextract">
-            <span class="kbd">r</span> re-extract
+            <span class="kbd">r</span> {m.action_reextract()}
           </button>
           <button
             type="button"
@@ -363,7 +363,7 @@
             onclick={() => detail?.url && window.open(detail.url, '_blank', 'noopener')}
             data-testid="action-open"
           >
-            <span class="kbd">o</span> open
+            <span class="kbd">o</span> {m.action_open()}
           </button>
         </div>
       </section>
@@ -373,8 +373,8 @@
 
 <Dialog open={pickerOpen} labelledBy="adapter-picker-title" onClose={() => (pickerOpen = false)}>
   <div class="picker">
-    <h2 id="adapter-picker-title" class="picker-title">Re-extract with adapter</h2>
-    <p class="meta">Pick the browser adapter for link #{id}.</p>
+    <h2 id="adapter-picker-title" class="picker-title">{m.picker_title()}</h2>
+    <p class="meta">{m.picker_subtitle({ id: id ?? 0 })}</p>
     <div class="picker-list">
       {#each adapters as a (a.id)}
         <button
@@ -387,14 +387,14 @@
             <span class="adapter-id mono">{a.id}</span>
             <span class="meta">
               {a.kind}{a.roles.length ? ` · ${a.roles.join('+')}` : ''}
-              {a.health.ok ? ' · healthy' : ` · ${a.health.detail}`}
+              {a.health.ok ? ` · ${m.adapter_healthy()}` : ` · ${a.health.detail}`}
             </span>
           </span>
         </button>
       {/each}
     </div>
     <div class="picker-foot">
-      <button type="button" class="btn btn-sm" onclick={() => (pickerOpen = false)}>cancel</button>
+      <button type="button" class="btn btn-sm" onclick={() => (pickerOpen = false)}>{m.action_cancel()}</button>
     </div>
   </div>
 </Dialog>

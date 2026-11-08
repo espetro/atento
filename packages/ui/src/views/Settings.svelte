@@ -3,6 +3,7 @@
   import { api } from '../lib/api'
   import { timeAgo } from '../lib/format'
   import CopyButton from '../components/CopyButton.svelte'
+  import { m } from '../paraglide/messages.js'
   import type { UrlState } from '../lib/urlState'
 
   let { url, setUrl }: { url: UrlState; setUrl: (next: Partial<UrlState>) => void } = $props()
@@ -64,7 +65,7 @@
     void queryClient
   }
 
-  const CRON_HINT = '0 * * * * linkinbox run  # hourly — pick your own cadence'
+  const CRON_HINT = m.cron_hint()
 
   function capsChips(a: { caps: { stealth: boolean; headless: boolean; persistentProfile: boolean } | null }) {
     if (!a.caps) return '—'
@@ -78,22 +79,22 @@
 
 <div class="settings" data-testid="settings-view">
   <header class="settings-head">
-    <h1 class="settings-title">Settings</h1>
-    <button type="button" class="btn btn-sm" onclick={() => void refresh()}>refresh</button>
+    <h1 class="settings-title">{m.settings_title()}</h1>
+    <button type="button" class="btn btn-sm" onclick={() => void refresh()}>{m.action_refresh()}</button>
   </header>
 
   <!-- Browser adapters -->
   <section class="pane card" data-testid="settings-browsers">
-    <h2 class="card-title">Browser adapters</h2>
-    <p class="card-note">read-only — edit <code>[browser]</code> in config.toml</p>
+    <h2 class="card-title">{m.settings_browsers()}</h2>
+    <p class="card-note">{m.settings_browsers_note()}</p>
     {#if browsersQuery.isPending}
       <div class="skeleton" style="height: 80px;"></div>
     {:else if browsers == null}
-      <p class="meta">adapter info unavailable — run <code>linkinbox browsers</code> in a terminal.</p>
+      <p class="meta">{m.settings_browsers_unavailable()}</p>
     {:else}
       <table class="table">
         <thead>
-          <tr><th>id</th><th>kind</th><th>caps</th><th>roles</th><th>health</th></tr>
+          <tr><th>id</th><th>{m.th_kind()}</th><th>{m.th_caps()}</th><th>{m.th_roles()}</th><th>{m.th_health()}</th></tr>
         </thead>
         <tbody>
           {#each browsers.adapters as a (a.id)}
@@ -101,12 +102,12 @@
               <td class="mono">{a.id}</td>
               <td class="mono">{a.kind}</td>
               <td class="meta">{capsChips(a)}</td>
-              <td class="meta">{a.roles.join(' + ') || '—'}{#if a.inEscalate} · escalate{/if}</td>
+              <td class="meta">{a.roles.join(' + ') || '—'}{#if a.inEscalate} · {m.adapter_escalate()}{/if}</td>
               <td>
                 {#if a.health.ok}
-                  <span class="chip chip-state-enriched">ok</span>
+                  <span class="chip chip-state-enriched">{m.health_ok()}</span>
                 {:else}
-                  <span class="chip chip-state-errored" title={a.health.detail}>fail</span>
+                  <span class="chip chip-state-errored" title={a.health.detail}>{m.health_fail()}</span>
                   <div class="meta adapter-detail">{a.health.detail}</div>
                 {/if}
               </td>
@@ -116,25 +117,25 @@
       </table>
       {#if Object.keys(browsers.hostMappings).length > 0}
         <p class="meta host-map">
-          host overrides:
+          {m.settings_host_overrides()}
           {#each Object.entries(browsers.hostMappings) as [host, adapter] (host)}
             <code class="mono">{host} → {adapter}</code>
           {/each}
         </p>
       {/if}
       <p class="meta">
-        reader: <code class="mono">{browsers.reader}</code> ·
-        login: <code class="mono">{browsers.login}</code>
-        {#if browsers.escalate.length > 0}· escalate: {browsers.escalate.join(' → ')}{/if}
+        {m.settings_reader()} <code class="mono">{browsers.reader}</code> ·
+        {m.settings_login()} <code class="mono">{browsers.login}</code>
+        {#if browsers.escalate.length > 0}· {m.settings_escalate()} {browsers.escalate.join(' → ')}{/if}
       </p>
-      <p class="meta-faint">refresh the page to re-check adapter health.</p>
+      <p class="meta-faint">{m.settings_refresh_note()}</p>
     {/if}
   </section>
 
   <!-- Sources -->
   <section class="pane card" data-testid="settings-sources">
-    <h2 class="card-title">Sources</h2>
-    <p class="card-note">[sources] paths in <code>config.toml</code></p>
+    <h2 class="card-title">{m.settings_sources()}</h2>
+    <p class="card-note">{m.settings_sources_note_pre()} <code>[sources]</code> {m.settings_sources_note_post()}</p>
     {#if config}
       {#if config.sources.length > 0}
         <ul class="source-list">
@@ -143,56 +144,56 @@
           {/each}
         </ul>
       {:else}
-        <p class="meta">no source paths configured — add them under <code>[sources]</code> in config.toml</p>
+        <p class="meta">{m.settings_no_sources_pre()} <code>[sources]</code> {m.settings_no_sources_post()}</p>
       {/if}
-      <p class="meta">config: <code class="mono">{config.configPath}</code></p>
+      <p class="meta">{m.settings_config_path()} <code class="mono">{config.configPath}</code></p>
     {:else}
-      <p class="meta">config unreadable — see <code>linkinbox config</code>.</p>
+      <p class="meta">{m.settings_config_unreadable_pre()} <code>linkinbox config</code>{m.settings_config_unreadable_post()}</p>
     {/if}
   </section>
 
   <!-- Schedule -->
   <section class="pane card" data-testid="settings-schedule">
-    <h2 class="card-title">Schedule</h2>
-    <p class="card-note">recurrence is owned by your harness (cron / launchd / CI) — linkinbox never self-schedules.</p>
-    <p class="meta">suggested: <code class="mono">{CRON_HINT}</code></p>
+    <h2 class="card-title">{m.settings_schedule()}</h2>
+    <p class="card-note">{m.settings_schedule_note()}</p>
+    <p class="meta">{m.settings_suggested()} <code class="mono">{CRON_HINT}</code></p>
     {#if latestRun}
       <p class="meta">
-        last run: <code class="mono">#{latestRun.id} {latestRun.stage}</code>
+        {m.settings_last_run()} <code class="mono">#{latestRun.id} {latestRun.stage}</code>
         {timeAgo(latestRun.startedAt)}
-        {#if latestRun.errorCount > 0}· {latestRun.errorCount} errors{/if}
-        <button type="button" class="btn btn-sm btn-ghost" onclick={() => setUrl({ view: 'run', selected: null })}>view run →</button>
+        {#if latestRun.errorCount > 0}· {m.settings_last_run_errors({ count: latestRun.errorCount })}{/if}
+        <button type="button" class="btn btn-sm btn-ghost" onclick={() => setUrl({ view: 'run', selected: null })}>{m.settings_view_run()}</button>
       </p>
     {:else}
-      <p class="meta">last run: none yet</p>
+      <p class="meta">{m.settings_last_run_none()}</p>
     {/if}
-    <p class="meta-faint">next run: unknown — set it in your scheduler</p>
-    <CopyButton text={CRON_HINT} label="copy suggested crontab line" />
+    <p class="meta-faint">{m.settings_next_run()}</p>
+    <CopyButton text={CRON_HINT} label={m.copy_cron()} />
     <details class="legend">
-      <summary class="meta">exit codes</summary>
+      <summary class="meta">{m.settings_exit_codes()}</summary>
       <ul class="meta legend-list">
-        <li><code>0</code> done — nothing needs you</li>
-        <li><code>2</code> finished, needs you</li>
-        <li><code>1</code> failure</li>
-        <li><code>3</code> busy — another run holds the lock</li>
+        <li><code>0</code> {m.exit_code_0()}</li>
+        <li><code>2</code> {m.exit_code_2()}</li>
+        <li><code>1</code> {m.exit_code_1()}</li>
+        <li><code>3</code> {m.exit_code_3()}</li>
       </ul>
     </details>
   </section>
 
   <!-- Extension pairing -->
   <section class="pane card" data-testid="settings-pairing">
-    <h2 class="card-title">Extension pairing</h2>
-    <p class="card-note">pair the browser extension with this server</p>
+    <h2 class="card-title">{m.settings_pairing()}</h2>
+    <p class="card-note">{m.settings_pairing_note()}</p>
     <div class="pair-row">
-      <span class="meta">server URL</span>
+      <span class="meta">{m.settings_server_url()}</span>
       <code class="mono pair-url">{serverUrl}</code>
-      <CopyButton text={serverUrl} label="copy" />
+      <CopyButton text={serverUrl} />
     </div>
     {#if pairCode}
       <div class="pair-code" role="status" data-testid="pair-code">
         <code class="mono pair-code-value">{pairCode}</code>
-        <p class="meta">one-time code{pairExpiry ? ` · expires ${timeAgo(pairExpiry)}` : ' · shown once'}</p>
-        <CopyButton text={pairCode} label="copy code" />
+        <p class="meta">{pairExpiry ? m.pair_expires({ time: timeAgo(pairExpiry) }) : m.pair_shown_once()}</p>
+        <CopyButton text={pairCode} label={m.copy_code()} />
       </div>
     {:else}
       <button
@@ -202,37 +203,35 @@
         onclick={() => void genPairCode()}
         data-testid="gen-pair-code"
       >
-        {pairBusy ? 'generating…' : 'generate one-time code'}
+        {pairBusy ? m.pair_generating() : m.pair_generate()}
       </button>
     {/if}
     {#if pairError}<p class="field-error">{pairError}</p>{/if}
-    <p class="meta">status: capture recency unavailable in this build — pair status reads are not exposed yet.</p>
+    <p class="meta">{m.settings_pair_status()}</p>
     <details class="legend">
-      <summary class="meta">how pairing works</summary>
+      <summary class="meta">{m.pair_how_title()}</summary>
       <p class="meta legend-list">
-        the code bootstraps a capture token → stored in chrome.storage.local →
-        sent as Bearer on /capture. Tokens are never logged; the extension origin
-        must be listed in <code>[capture] allowed_origins</code>.
+        {m.pair_how_body_pre()} <code>[capture] allowed_origins</code>{m.pair_how_body_post()}
       </p>
     </details>
   </section>
 
   <!-- Server -->
   <section class="pane card" data-testid="settings-server">
-    <h2 class="card-title">Server</h2>
+    <h2 class="card-title">{m.settings_server()}</h2>
     {#if config}
       <dl class="facts">
-        <div class="fact"><dt>bind</dt><dd class="mono">{config.bind.hostname}:{config.bind.port}</dd></div>
-        <div class="fact"><dt>api token</dt><dd>{config.bind.tokenRequired ? 'required (non-loopback)' : 'not required (loopback)'}</dd></div>
-        <div class="fact"><dt>capture</dt><dd>{config.capture.tokenConfigured ? 'enabled' : 'disabled (LINKINBOX_CAPTURE_TOKEN unset)'}</dd></div>
-        <div class="fact"><dt>data dir</dt><dd class="mono">{config.dir}</dd></div>
+        <div class="fact"><dt>{m.fact_bind()}</dt><dd class="mono">{config.bind.hostname}:{config.bind.port}</dd></div>
+        <div class="fact"><dt>{m.fact_api_token()}</dt><dd>{config.bind.tokenRequired ? m.token_required() : m.token_not_required()}</dd></div>
+        <div class="fact"><dt>{m.fact_capture()}</dt><dd>{config.capture.tokenConfigured ? m.capture_enabled() : m.capture_disabled()}</dd></div>
+        <div class="fact"><dt>{m.fact_data_dir()}</dt><dd class="mono">{config.dir}</dd></div>
       </dl>
       {#if config.capture.allowedOrigins.length > 0}
-        <p class="meta">capture origins: {config.capture.allowedOrigins.join(', ')}</p>
+        <p class="meta">{m.settings_capture_origins()} {config.capture.allowedOrigins.join(', ')}</p>
       {/if}
-      <CopyButton text={config.dir} label="copy data dir" />
+      <CopyButton text={config.dir} label={m.copy_data_dir()} />
     {:else}
-      <p class="meta">server info unavailable.</p>
+      <p class="meta">{m.settings_server_unavailable()}</p>
     {/if}
   </section>
 </div>

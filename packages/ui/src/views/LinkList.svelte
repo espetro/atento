@@ -25,6 +25,7 @@
   import IconTag from '~icons/lucide/tag'
   import IconFlame from '~icons/lucide/flame'
   import IconClock from '~icons/lucide/clock'
+  import { m } from '../paraglide/messages.js'
   import type { Component } from 'svelte'
 
   let {
@@ -296,7 +297,7 @@
   <header class="list-head">
     <div class="list-title-row">
       <h1 class="list-title">{meta.label}</h1>
-      <span class="meta" data-testid="total-count">{total} items</span>
+      <span class="meta" data-testid="total-count">{m.list_total_items({ count: total })}</span>
     </div>
     <div class="search-row">
       <div class="search-side">
@@ -309,7 +310,7 @@
           data-testid="filter-button"
         >
           <IconListFilter width={13} height={13} aria-hidden="true" />
-          filters
+          {m.filter_button()}
           {#if hasActiveFilters}<span class="filter-dot" aria-hidden="true"></span>{/if}
         </button>
         <div class="filter-anchor" bind:this={filterAnchor}>
@@ -323,8 +324,8 @@
           bind:this={searchEl}
           class="input search-input"
           type="search"
-          placeholder="/ search titles & urls"
-          aria-label="Search links"
+          placeholder={m.search_placeholder()}
+          aria-label={m.search_aria()}
           data-testid="search-input"
           bind:value={qInput}
           oninput={onSearchInput}
@@ -335,11 +336,11 @@
     {#if hasActiveFilters}
       <div class="filter-chips">
         {#if url.q}<button class="chip chip-button" onclick={() => { qInput = ''; setUrl({ q: '', selected: null }) }}>“{truncate(url.q, 30)}” ✕</button>{/if}
-        {#if url.state}<button class="chip chip-button" onclick={() => setUrl({ state: '', selected: null })}>state: {url.state.replace(/_/g, ' ')} ✕</button>{/if}
-        {#if url.category}<button class="chip chip-button" onclick={() => setUrl({ category: '', selected: null })}>cat: {url.category} ✕</button>{/if}
-        {#if url.host}<button class="chip chip-button" onclick={() => setUrl({ host: '', selected: null })}>host: {url.host} ✕</button>{/if}
-        {#if url.stale}<button class="chip chip-button" onclick={() => setUrl({ stale: false, selected: null })}>stale ✕</button>{/if}
-        <button class="chip chip-button" onclick={clearFilters}>clear all</button>
+        {#if url.state}<button class="chip chip-button" onclick={() => setUrl({ state: '', selected: null })}>{m.chip_state({ value: url.state.replace(/_/g, ' ') })} ✕</button>{/if}
+        {#if url.category}<button class="chip chip-button" onclick={() => setUrl({ category: '', selected: null })}>{m.chip_category({ value: url.category })} ✕</button>{/if}
+        {#if url.host}<button class="chip chip-button" onclick={() => setUrl({ host: '', selected: null })}>{m.chip_host({ value: url.host })} ✕</button>{/if}
+        {#if url.stale}<button class="chip chip-button" onclick={() => setUrl({ stale: false, selected: null })}>{m.chip_stale()} ✕</button>{/if}
+        <button class="chip chip-button" onclick={clearFilters}>{m.chips_clear_all()}</button>
       </div>
     {/if}
   </header>
@@ -353,21 +354,21 @@
   {:else if query.isError}
     <div class="list-body">
       <div class="notice notice-bad" role="alert">
-        Failed to load links.
-        <button class="btn btn-sm" onclick={() => void query.refetch()}>retry</button>
+        {m.list_load_error()}
+        <button class="btn btn-sm" onclick={() => void query.refetch()}>{m.action_retry()}</button>
       </div>
     </div>
   {:else if items.length === 0}
     <div class="list-body empty">
       <div class="empty-card pane">
-        <p class="empty-title">{meta.label} is empty</p>
+        <p class="empty-title">{m.list_empty_title({ collection: meta.label })}</p>
         <p class="meta">
           {#if collection === 'pending'}
-            Links appear here while the pipeline works on them — run a pass to move things along.
+            {m.list_empty_pending()}
           {:else if ATTENTION.has(collection)}
-            Nothing needs attention here right now.
+            {m.list_empty_attention()}
           {:else}
-            No links in this collection yet.
+            {m.list_empty_default()}
           {/if}
         </p>
       </div>
@@ -418,7 +419,7 @@
         <div class="sentinel" bind:this={sentinelEl} data-testid="list-sentinel" aria-hidden="true"></div>
       {/if}
       {#if query.isFetching && items.length > 0}
-        <div class="list-loading meta" data-testid="list-loading" role="status">loading…</div>
+        <div class="list-loading meta" data-testid="list-loading" role="status">{m.list_loading()}</div>
       {/if}
     </div>
   {/if}
@@ -429,8 +430,8 @@
     <button
       type="button"
       class="btn btn-ghost btn-icon help-btn"
-      aria-label="Keyboard shortcuts"
-      title="Keyboard shortcuts (?)"
+      aria-label={m.help_aria()}
+      title={m.help_title()}
       onclick={() => setUrl({ dialog: 'help' })}
       data-testid="help-button"
     >
@@ -465,9 +466,9 @@
         <StateChip collection={props.collection} state={link.state} label={undefined} />
         <span class="row-host meta">{link.host ?? hostOf(link.url)}</span>
         {#if link.category}<IconChip icon={categoryIcon(link.category)} label={link.category} />{/if}
-        {#if link.priority === 'high'}<IconChip icon={IconFlame} label="high priority" accent />{/if}
+        {#if link.priority === 'high'}<IconChip icon={IconFlame} label={m.priority_high()} accent />{/if}
         {#if link.read_minutes > 0}<span class="meta">{link.read_minutes}m</span>{/if}
-        {#if props.isStale(link)}<IconChip icon={IconClock} label="stale" tone="blocked" />{/if}
+        {#if props.isStale(link)}<IconChip icon={IconClock} label={m.chip_stale()} tone="blocked" />{/if}
       </span>
       <span class="row-title" title={props.rowTitle(link)} data-testid="row-title">{props.rowTitle(link)}</span>
       {#if link.why_it_matters}
@@ -476,7 +477,7 @@
       {#if link.reason || link.next_attempt_at}
         <span class="row-reason meta">
           {reasonLabel(link.reason)}
-          {#if link.next_attempt_at}· retry {timeAgo(link.next_attempt_at)}{/if}
+          {#if link.next_attempt_at}· {m.row_retry({ time: timeAgo(link.next_attempt_at) })}{/if}
         </span>
       {/if}
     </span>

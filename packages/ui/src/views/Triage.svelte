@@ -7,6 +7,7 @@
   import { reextractBus } from '../lib/events'
   import LinkList from './LinkList.svelte'
   import PreviewPane from './PreviewPane.svelte'
+  import { m } from '../paraglide/messages.js'
 
   let { url, setUrl }: { url: UrlState; setUrl: (next: Partial<UrlState>) => void } = $props()
 
@@ -59,7 +60,11 @@
       queryClient.invalidateQueries({ queryKey: ['pipeline'] }),
     ])
     if (UNDO_ACTIONS.includes(action)) {
-      undo = { ids, action, label: action === 'archive' ? 'archived' : 'discarded' }
+      undo = {
+        ids,
+        action,
+        label: action === 'archive' ? m.undo_archived() : m.undo_discarded(),
+      }
       clearTimeout(undoTimer)
       undoTimer = setTimeout(() => (undo = null), 6000)
     }
@@ -73,9 +78,12 @@
     try {
       const res = await api.restore(ids)
       if (res.updated === 0) {
-        triageError = `restore failed: ${res.blocked.length} link${res.blocked.length === 1 ? '' : 's'} not restorable`
+        triageError =
+          res.blocked.length === 1
+            ? m.restore_failed_one({ count: res.blocked.length })
+            : m.restore_failed_other({ count: res.blocked.length })
       } else if (res.updated < ids.length) {
-        triageError = `restored ${res.updated} of ${ids.length} links`
+        triageError = m.restore_partial({ updated: res.updated, total: ids.length })
       }
     } catch (err) {
       triageError = err instanceof ApiError ? err.message : String(err)
@@ -104,7 +112,7 @@
     {#if triageError}
       <div class="triage-error notice notice-bad" role="alert">
         {triageError}
-        <button type="button" class="btn btn-sm" onclick={() => (triageError = '')}>dismiss</button>
+        <button type="button" class="btn btn-sm" onclick={() => (triageError = '')}>{m.action_dismiss()}</button>
       </div>
     {/if}
     <LinkList
@@ -122,7 +130,7 @@
     <div class="preview-col" class:mobile-overlay={url.selected != null} data-testid="preview-col">
       {#if url.selected != null}
         <button type="button" class="preview-back" onclick={() => setUrl({ selected: null })}>
-          ‹ back
+          {m.preview_back()}
         </button>
       {/if}
       <PreviewPane id={url.selected} {onTriage} {collection} />
@@ -132,8 +140,8 @@
 
 {#if undo}
   <div class="undo-toast" role="status" data-testid="undo-toast">
-    <span>{undo.label} {undo.ids.length} link{undo.ids.length === 1 ? '' : 's'}</span>
-    <button type="button" class="btn btn-sm btn-ghost" onclick={undoTriage}>undo</button>
+    <span>{undo.ids.length === 1 ? m.undo_toast_one({ label: undo.label }) : m.undo_toast_other({ label: undo.label, count: undo.ids.length })}</span>
+    <button type="button" class="btn btn-sm btn-ghost" onclick={undoTriage}>{m.action_undo()}</button>
   </div>
 {/if}
 

@@ -5,15 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "paraglide-js compile --project ./project.inlang --strategy baseLocale && vite build",
     "preview": "vite preview",
-    "typecheck": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "vitest run",
+    "typecheck": "paraglide-js compile --project ./project.inlang --strategy baseLocale && svelte-check --tsconfig ./tsconfig.json",
+    "test": "paraglide-js compile --project ./project.inlang --strategy baseLocale && vitest run",
     "test:e2e": "pnpm build && node tests/e2e.mjs"
   },
   "devDependencies": {
     "@formisch/svelte": "1.1.0",
     "@iconify-json/lucide": "^1.2.151",
+    "@inlang/paraglide-js": "3.2.1",
     "@playwright/test": "^1.49.0",
     "@sveltejs/vite-plugin-svelte": "^6.0.0",
     "@tailwindcss/vite": "^4.0.0",
