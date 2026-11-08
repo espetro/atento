@@ -179,10 +179,69 @@ function runPartitionCheck() {
 	}, 10000);
 }
 
+// dom-probe: verifies the UI mounted <electrobun-webview> pool elements.
+// Page timers/rAF stall in occluded windows, so this injects once and
+// beacons immediately — element presence + attributes are the signal;
+// native init is covered by the partition selftest.
+function runDomProbe() {
+	startCollector();
+	const inject = () => {
+		const js = `(async () => {
+			const B = (l, r) => fetch("${BASE}/log?label=" + encodeURIComponent(l) + "&result=" + encodeURIComponent(String(r))).catch(() => {});
+			const els = [...document.querySelectorAll("electrobun-webview")];
+			B("dom-probe-count", els.length);
+			B("dom-probe-slot", !!document.querySelector('[data-testid="native-preview"]'));
+			B("dom-probe-reader", !!document.querySelector('[data-testid="reader-markdown"], [data-testid="snapshot-img"], [data-testid="preview-empty-state"]'));
+			for (const [i, el] of els.entries()) {
+				const r = el.getBoundingClientRect();
+				B("dom-probe-el-" + i, JSON.stringify({
+					partition: el.getAttribute("partition"),
+					sandbox: el.hasAttribute("sandbox"),
+					src: el.getAttribute("src"),
+					webviewId: el.webviewId,
+					rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
+				}));
+			}
+		})();`;
+		try {
+			mainWindow.webview.executeJavascript(js);
+			console.log("[selftest] dom-probe injected");
+		} catch (e) {
+			console.log("[selftest] dom-probe inject failed:", e);
+		}
+	};
+	mainWindow.webview.on("dom-ready", () => setTimeout(inject, 4000));
+	// Retry a few times: the Svelte app + link detail fetch need a moment,
+	// and occluded windows throttle timers anyway — later probes are freshest.
+	mainWindow.webview.on("did-navigate", () => {
+		for (const ms of [12000, 22000, 35000]) setTimeout(inject, ms);
+	});
+	// Optional pool check: switch the selection to a second link (different
+	// host) mid-run, then keep probing — expect 2 pooled webview elements.
+	const select2 = process.env.LINKINBOX_PROBE_SELECT2;
+	if (select2) {
+		mainWindow.webview.on("did-navigate", () => {
+			setTimeout(() => {
+				try {
+					mainWindow.webview.executeJavascript(
+						`history.pushState(null, "", "?selected=${select2}"); dispatchEvent(new PopStateEvent("popstate"));`,
+					);
+					console.log(`[selftest] dom-probe switched selection to ${select2}`);
+				} catch (e) {
+					console.log("[selftest] select2 failed:", e);
+				}
+			}, 15000);
+			for (const ms of [30000, 45000]) setTimeout(inject, ms);
+		});
+	}
+}
+
 if (SELFTEST === "partition-set") {
 	runPartitionSet();
 } else if (SELFTEST === "partition-check") {
 	runPartitionCheck();
+} else if (SELFTEST === "dom-probe") {
+	runDomProbe();
 } else if (SELFTEST !== "") {
 	console.warn(`[desktop] unknown LINKINBOX_SELFTEST value: ${SELFTEST}`);
 }
