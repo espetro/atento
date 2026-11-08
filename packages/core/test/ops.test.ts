@@ -104,6 +104,44 @@ describe('ops.listLinks', () => {
     expect(rows[0]!['id']).toBe(3)
   })
 
+  it('matches q over note, tags and the enrichment summary too', async () => {
+    const store = new FakeStore()
+    await seedLink(store, 'https://example.com/a', { title: 'A', note: 'uniquephrase' })
+    await seedLink(store, 'https://example.com/b', { title: 'B', tags: ['uniquetag'] })
+    await seedLink(store, 'https://example.com/c', { title: 'C' })
+    const rows = await listLinks(store, { now: NOW, q: 'unique' })
+    expect(rows.map((r) => r['id']).sort()).toEqual([1, 2])
+  })
+
+  it('composes q with host and paginates the filtered set', async () => {
+    const store = new FakeStore()
+    await seedLink(store, 'https://a.example.com/one', { title: 'needle one' })
+    await seedLink(store, 'https://b.example.com/two', { title: 'needle two' })
+    await seedLink(store, 'https://a.example.com/three', { title: 'needle three' })
+
+    const all = await listLinks(store, { now: NOW, q: 'needle' })
+    expect(all).toHaveLength(3)
+
+    const onA = await listLinks(store, { now: NOW, q: 'needle', host: 'a.example.com' })
+    expect(onA.map((r) => r['title'])).toEqual(['needle three', 'needle one'])
+
+    const page = await listLinks(store, {
+      now: NOW,
+      q: 'needle',
+      host: 'a.example.com',
+      limit: 1,
+      offset: 1,
+    })
+    expect(page.map((r) => r['title'])).toEqual(['needle one'])
+  })
+
+  it('accepts sort=relevance with q (rank ordering is store-side)', async () => {
+    const store = new FakeStore()
+    await seedLink(store, 'https://example.com/a', { title: 'alpha beta' })
+    const rows = await listLinks(store, { now: NOW, q: 'alpha', sort: 'relevance' })
+    expect(rows).toHaveLength(1)
+  })
+
   it('respects the limit', async () => {
     const store = await seeded()
     expect(await listLinks(store, { now: NOW, limit: 2 })).toHaveLength(2)

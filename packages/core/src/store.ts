@@ -293,6 +293,18 @@ export interface LinkFilter {
   byState?: boolean
   category?: string
   staleAsOf?: Date
+  /**
+   * Free-text search text. SqliteStore answers it with the links_fts FTS5
+   * index (title, url, note, tags, enrichment summary); other stores fall
+   * back to a substring match over the same fields. Raw user input — the
+   * store sanitizes it into a safe query.
+   */
+  match?: string
+  /**
+   * 'relevance' orders `match` hits by rank (bm25 on sqlite). Ignored
+   * without `match`; the default order stays created_at DESC, id DESC.
+   */
+  sort?: 'relevance'
   limit?: number
   offset?: number
 }
