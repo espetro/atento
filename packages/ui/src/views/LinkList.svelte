@@ -10,7 +10,20 @@
   import type { UrlState } from '../lib/urlState'
   import type { LinkAction, LinkSummary } from '../lib/types'
   import { PIPELINE_STATES } from '../lib/types'
+  import { density } from '../lib/prefs'
   import StateChip from '../components/StateChip.svelte'
+  import IconChip from '../components/IconChip.svelte'
+  import IconSparkles from '~icons/lucide/sparkles'
+  import IconCode from '~icons/lucide/code'
+  import IconPalette from '~icons/lucide/palette'
+  import IconPackage from '~icons/lucide/package'
+  import IconShield from '~icons/lucide/shield'
+  import IconWrench from '~icons/lucide/wrench'
+  import IconBookOpen from '~icons/lucide/book-open'
+  import IconTag from '~icons/lucide/tag'
+  import IconFlame from '~icons/lucide/flame'
+  import IconClock from '~icons/lucide/clock'
+  import type { Component } from 'svelte'
 
   let {
     url,
@@ -160,12 +173,17 @@
   const virtualizerStore = createVirtualizer({
     count: 0,
     getScrollElement: () => scrollEl,
-    estimateSize: () => 96,
+    estimateSize: () => ($density === 'compact' ? 72 : 96),
     overscan: 8,
   })
 
   $effect(() => {
-    get(virtualizerStore).setOptions({ count: items.length })
+    // Re-subscribe options when density flips so row-height estimates track.
+    const d = $density
+    get(virtualizerStore).setOptions({
+      count: items.length,
+      estimateSize: () => (d === 'compact' ? 72 : 96),
+    })
   })
 
   // Debounced search input -> ?q=
@@ -188,8 +206,49 @@
     return off
   })
 
+  // ---- infinite scroll sentinel (A3) ----------------------------------------
+  // Replaces the "load more" button: when the sentinel nears the viewport,
+  // grow `limit` by one page. The effect re-fires after each fetch settles,
+  // so pages chain automatically until the sentinel leaves view or the
+  // collection is exhausted.
+  let sentinelEl = $state<HTMLElement | null>(null)
+  let sentinelHit = $state(false)
+
+  $effect(() => {
+    const el = sentinelEl
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    const obs = new IntersectionObserver(
+      (entries) => {
+        sentinelHit = entries.some((e) => e.isIntersecting)
+      },
+      { root: scrollEl, rootMargin: '240px 0px' },
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
+  })
+
+  $effect(() => {
+    if (sentinelHit && items.length < total && !query.isFetching) {
+      limit += PAGE
+    }
+  })
+
   const ATTENTION = new Set(['needs_login', 'blocked', 'errored', 'review'])
   const categories = ['ai', 'engineering', 'design', 'product', 'security', 'ops', 'reading']
+
+  // Category → lucide icon (A3): type chips are icon-only with title/aria.
+  const CATEGORY_ICONS: Record<string, Component> = {
+    ai: IconSparkles,
+    engineering: IconCode,
+    design: IconPalette,
+    product: IconPackage,
+    security: IconShield,
+    ops: IconWrench,
+    reading: IconBookOpen,
+  }
+  function categoryIcon(cat: string): Component {
+    return CATEGORY_ICONS[cat] ?? IconTag
+  }
   const meta = $derived(collectionMeta(collection))
   const hasActiveFilters = $derived(
     url.q !== '' || url.state !== '' || url.category !== '' || url.host !== '' || url.stale,
@@ -209,7 +268,7 @@
   }
 </script>
 
-<div class="listpane" data-testid="link-list-pane">
+<div class="listpane" class:density-compact={$density === 'compact'} data-testid="link-list-pane">
   <header class="list-head">
     <div class="list-title-row">
       <h1 class="list-title">{meta.label}</h1>
@@ -337,15 +396,13 @@
           {/each}
         </div>
       {/if}
+      {#if total > items.length}
+        <div class="sentinel" bind:this={sentinelEl} data-testid="list-sentinel" aria-hidden="true"></div>
+      {/if}
+      {#if query.isFetching && items.length > 0}
+        <div class="list-loading meta" data-testid="list-loading" role="status">loading…</div>
+      {/if}
     </div>
-
-    {#if total > items.length}
-      <footer class="list-foot">
-        <button class="btn btn-sm" data-testid="load-more" onclick={() => (limit += PAGE)}>
-          load more · {total - items.length} remaining
-        </button>
-      </footer>
-    {/if}
   {/if}
 </div>
 
@@ -374,12 +431,12 @@
       <span class="row-line1">
         <StateChip collection={props.collection} state={link.state} label={undefined} />
         <span class="row-host meta">{link.host ?? hostOf(link.url)}</span>
-        {#if link.category}<span class="chip">{link.category}</span>{/if}
-        {#if link.priority === 'high'}<span class="chip chip-accent">high</span>{/if}
+        {#if link.category}<IconChip icon={categoryIcon(link.category)} label={link.category} />{/if}
+        {#if link.priority === 'high'}<IconChip icon={IconFlame} label="high priority" accent />{/if}
         {#if link.read_minutes > 0}<span class="meta">{link.read_minutes}m</span>{/if}
-        {#if props.isStale(link)}<span class="chip chip-state-blocked">stale</span>{/if}
+        {#if props.isStale(link)}<IconChip icon={IconClock} label="stale" tone="blocked" />{/if}
       </span>
-      <span class="row-title truncate-2" data-testid="row-title">{props.rowTitle(link)}</span>
+      <span class="row-title" title={props.rowTitle(link)} data-testid="row-title">{props.rowTitle(link)}</span>
       {#if link.why_it_matters}
         <span class="row-why meta truncate-2">{truncate(link.why_it_matters, 200)}</span>
       {/if}
@@ -456,12 +513,6 @@
     flex-direction: column;
     gap: 2px;
   }
-  .list-foot {
-    display: flex;
-    justify-content: center;
-    padding: 10px;
-    border-top: 1px solid var(--color-line);
-  }
   .empty {
     display: flex;
     align-items: center;
@@ -510,6 +561,39 @@
     font-weight: 600;
     line-height: 1.35;
     color: var(--color-ink);
+    /* A3: single-line ellipsis (~80 chars at the default column width). */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sentinel {
+    height: 1px;
+  }
+  .list-loading {
+    display: flex;
+    justify-content: center;
+    padding: 8px 0 4px;
+  }
+  /* Density=compact tightens rows, header and meta lines (A2). */
+  .listpane.density-compact .list-head {
+    padding: 10px 12px 8px;
+    gap: 6px;
+  }
+  .listpane.density-compact .list-title {
+    font-size: 17px;
+  }
+  .listpane.density-compact .list-row {
+    padding: 6px 10px;
+    gap: 8px;
+  }
+  .listpane.density-compact .row-title {
+    font-size: 13px;
+  }
+  .listpane.density-compact .row-why {
+    font-size: 12px;
+  }
+  .listpane.density-compact .row-reason {
+    font-size: 11px;
   }
   .row-why {
     font-size: 12.5px;
