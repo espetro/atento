@@ -161,7 +161,7 @@
   const virtualizerStore = createVirtualizer({
     count: 0,
     getScrollElement: () => scrollEl,
-    estimateSize: () => ($density === 'compact' ? 72 : 96),
+    estimateSize: () => ($density === 'compact' ? 58 : 76),
     overscan: 8,
   })
 
@@ -170,7 +170,7 @@
     const d = $density
     get(virtualizerStore).setOptions({
       count: items.length,
-      estimateSize: () => (d === 'compact' ? 72 : 96),
+      estimateSize: () => (d === 'compact' ? 58 : 76),
     })
   })
 
@@ -450,20 +450,22 @@
       <span class="row-line1">
         <StateChip collection={props.collection} state={link.state} label={undefined} />
         <span class="row-host meta">{link.host ?? hostOf(link.url)}</span>
-        {#if link.category}<IconChip icon={categoryIcon(link.category)} label={link.category} />{/if}
-        {#if link.priority === 'high'}<IconChip icon={IconFlame} label={m.priority_high()} accent />{/if}
+        <span class="meta row-time">{timeAgo(link.updatedAt)}</span>
         {#if link.read_minutes > 0}<span class="meta">{link.read_minutes}m</span>{/if}
-        {#if props.isStale(link)}<IconChip icon={IconClock} label={m.chip_stale()} tone="blocked" />{/if}
+        {#if link.reason}
+          <span class="row-reason meta">
+            {reasonLabel(link.reason)}{#if link.next_attempt_at} · {m.row_retry({ time: timeAgo(link.next_attempt_at) })}{/if}
+          </span>
+        {/if}
+        <span class="row-icons">
+          {#if link.category}<IconChip icon={categoryIcon(link.category)} label={link.category} />{/if}
+          {#if link.priority === 'high'}<IconChip icon={IconFlame} label={m.priority_high()} accent />{/if}
+          {#if props.isStale(link)}<IconChip icon={IconClock} label={m.chip_stale()} tone="blocked" />{/if}
+        </span>
       </span>
       <span class="row-title" title={props.rowTitle(link)} data-testid="row-title">{props.rowTitle(link)}</span>
       {#if link.why_it_matters}
-        <span class="row-why meta truncate-2">{truncate(link.why_it_matters, 200)}</span>
-      {/if}
-      {#if link.reason || link.next_attempt_at}
-        <span class="row-reason meta">
-          {reasonLabel(link.reason)}
-          {#if link.next_attempt_at}· {m.row_retry({ time: timeAgo(link.next_attempt_at) })}{/if}
-        </span>
+        <span class="row-why meta">{truncate(link.why_it_matters, 140)}</span>
       {/if}
     </span>
   </button>
@@ -601,13 +603,32 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    flex-wrap: wrap;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
   }
   .row-host {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 45%;
+    max-width: 30%;
+    flex: none;
+  }
+  .row-time {
+    flex: none;
+  }
+  .row-reason {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  .row-icons {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    flex: none;
   }
   .row-title {
     font-size: 14px;
@@ -618,6 +639,11 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .row-why {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .sentinel {
     height: 1px;
