@@ -377,7 +377,10 @@
       {#if items.length > 12}
         <div class="relative w-full" style={`height: ${$virtualizerStore.getTotalSize()}px;`}>
           {#each $virtualizerStore.getVirtualItems() as row (row.key)}
-            {@const link = items[row.index]!}
+            {@const link = items[row.index]}
+            <!-- The virtual count can lag a shrinking list by a frame; skip
+                 rows whose index fell off the end instead of crashing. -->
+            {#if link}
             <div
               class="absolute top-0 left-0 w-full"
               style={`transform: translateY(${row.start}px);`}
@@ -393,6 +396,7 @@
                 onClick: (e: MouseEvent) => onRowClick(link, e),
               })}
             </div>
+            {/if}
           {/each}
         </div>
       {:else}
@@ -501,11 +505,10 @@
   .list-title {
     font-size: 20px;
   }
-  /* A4: filter button on the left, search centered, spare column on the
-     right so the input sits in the middle of the header. */
+  /* A4: filter button on the left, search centered in the remaining space,
+     spare slot on the right keeps the input visually centered. */
   .search-row {
-    display: grid;
-    grid-template-columns: 1fr minmax(0, 440px) 1fr;
+    display: flex;
     gap: 8px;
     align-items: center;
   }
@@ -513,10 +516,11 @@
     position: relative;
     display: flex;
     align-items: center;
+    flex: none;
     min-width: 0;
   }
   .search-side-end {
-    justify-content: flex-end;
+    flex: none;
   }
   .filter-anchor {
     display: contents;
@@ -535,11 +539,14 @@
     flex: none;
   }
   .search-center {
+    flex: 1;
     display: flex;
+    justify-content: center;
     min-width: 0;
   }
   .search-input {
     width: 100%;
+    max-width: 400px;
     min-width: 0;
   }
   .chip-button {
