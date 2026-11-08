@@ -1,4 +1,4 @@
-// Playwright smoke tests for the M4b UI, run against a built dist/ served
+// Playwright smoke tests for the UI, run against a built dist/ served
 // with the mock API middleware via `vite preview` (VITE_MOCK=1).
 // Usage: pnpm build && node tests/e2e.mjs
 import { chromium } from '@playwright/test'
@@ -41,6 +41,10 @@ async function newPage(width, height) {
 // ---------- desktop triage ----------------------------------------------------
 {
   const { page, consoleErrors } = await newPage(1440, 900)
+  const linkRequests = []
+  page.on('request', (req) => {
+    if (req.url().includes('/api/links?')) linkRequests.push(req.url())
+  })
   await page.goto(BASE, { waitUntil: 'networkidle' })
   await page.waitForSelector('[data-testid=triage-shell]', { timeout: 15_000 })
   await page.waitForSelector('[data-testid=link-row]', { timeout: 15_000 })
@@ -56,6 +60,46 @@ async function newPage(width, height) {
   check('link rows render', rows > 0)
   check('total count shown', /\d+ items/.test((await page.textContent('[data-testid=total-count]')) ?? ''))
 
+  // A4: filter button + centered search; selects live in the dropdown.
+  check('filter button present', (await page.locator('[data-testid=filter-button]').count()) === 1)
+  check('no always-visible selects', (await page.locator('select.filter-select').count()) === 0)
+  await page.click('[data-testid=filter-button]')
+  await page.waitForSelector('[data-testid=filter-menu]', { timeout: 5_000 })
+  check('filter menu opens with controls', (await page.locator('[data-testid=state-filter]').count()) === 1)
+  check('host filter present', (await page.locator('[data-testid=host-filter] option').count()) > 1)
+  // Pick a state filter -> URL gains ?state=, chip appears.
+  await page.selectOption('[data-testid=state-filter]', 'inbox')
+  await page.waitForTimeout(400)
+  check('state filter writes URL param', page.url().includes('state=inbox'))
+  check('active filter chip renders', (await page.locator('.filter-chips .chip-button').count()) >= 1)
+  // Layout options live in the same dropdown.
+  await page.selectOption('[data-testid=layout-select]', 'bottom')
+  await page.waitForTimeout(300)
+  check('layout param writes URL', page.url().includes('layout=bottom'))
+  await page.selectOption('[data-testid=layout-select]', 'right')
+  await page.waitForTimeout(300)
+  // Reset clears filters (state chip gone, state param gone).
+  await page.click('[data-testid=filter-reset]')
+  await page.waitForTimeout(300)
+  check('reset clears state param', !page.url().includes('state='))
+  // Close the menu with Escape.
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(200)
+  check('escape closes filter menu', (await page.locator('[data-testid=filter-menu]').count()) === 0)
+
+  // A2: density toggle persists to localStorage.
+  await page.click('[data-testid=filter-button]')
+  await page.click('[data-testid=density-comfortable]')
+  await page.waitForTimeout(200)
+  const storedDensity = await page.evaluate(() => localStorage.getItem('linkinbox:density'))
+  check('density persists to localStorage', storedDensity === 'comfortable')
+  check('comfortable density removes compact class', (await page.locator('.listpane.density-compact').count()) === 0)
+  await page.click('[data-testid=density-compact]')
+  await page.waitForTimeout(200)
+  check('compact density restores class', (await page.locator('.listpane.density-compact').count()) === 1)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(200)
+
   // j/k moves selection (URL ?selected= changes).
   await page.keyboard.press('j')
   await page.waitForTimeout(300)
@@ -65,22 +109,28 @@ async function newPage(width, height) {
   await page.keyboard.press('j')
   await page.waitForTimeout(200)
 
-  // Preview pane shows the selected link's reader markdown.
+  // A2: one scrollable panel — preview, metadata and actions sections all
+  // render inside preview-body; there is no tab bar anymore.
   await page.waitForSelector('[data-testid=preview-body]', { timeout: 10_000 })
-  const md = await page.locator('[data-testid=reader-markdown]').count()
-  check('reader tab shows markdown', md === 1)
+  check('reader markdown renders', (await page.locator('[data-testid=reader-markdown]').count()) === 1)
+  check('metadata section renders', (await page.locator('[data-testid=metadata-pane]').count()) === 1)
+  check('actions section renders', (await page.locator('[data-testid=section-actions]').count()) === 1)
+  check('preview section renders', (await page.locator('[data-testid=section-preview]').count()) === 1)
+  check('tab bar is gone', (await page.locator('.tabbar').count()) === 0)
+  check('live iframe is gone', (await page.locator('[data-testid=live-frame]').count()) === 0)
+  // Metadata editing still works inside the panel.
+  check('metadata edit field present', (await page.locator('[data-testid=edit-title]').count()) === 1)
+  check('action buttons present', (await page.locator('[data-testid=action-archive]').count()) === 1)
 
-  // Tab switching via keys 1-4.
-  await page.keyboard.press('2')
-  await page.waitForSelector('[data-testid=metadata-pane]', { timeout: 5_000 })
-  check('metadata tab renders', (await page.locator('[data-testid=edit-title]').count()) === 1)
-  await page.keyboard.press('3')
-  await page.waitForTimeout(300)
-  check('snapshot tab renders (img or empty notice)', (await page.locator('[data-testid=snapshot-img],[data-testid=snapshot-empty]').count()) >= 1)
-  await page.keyboard.press('4')
-  await page.waitForTimeout(300)
-  check('live tab renders fallback', (await page.locator('[data-testid=live-fallback],[data-testid=live-frame]').count()) >= 1)
-  await page.keyboard.press('1')
+  // A3: infinite scroll — scroll the list to the bottom and the next page
+  // is fetched automatically (limit grows 50 -> 100).
+  const requestsBefore = linkRequests.length
+  await page.locator('[data-testid=link-list]').evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+  })
+  await page.waitForTimeout(1500)
+  const grew = linkRequests.slice(requestsBefore).some((u) => u.includes('limit=100'))
+  check('scrolling bottom auto-fetches next page', grew)
 
   // Search narrows the list.
   await page.click('[data-testid=search-input]')
@@ -109,6 +159,33 @@ async function newPage(width, height) {
   // read_now triage — no error banner may appear.
   check('undo surfaces no error', (await page.locator('.triage-error, [class*=error-banner]').count()) === 0)
 
+  // A2: layout=bottom docks the preview below the list.
+  await page.goto(`${BASE}/?layout=bottom&selected=1`, { waitUntil: 'networkidle' })
+  await page.waitForSelector('[data-testid=preview-col]', { timeout: 10_000 })
+  const listBox = await page.locator('.list-col').boundingBox()
+  const prevBox = await page.locator('[data-testid=preview-col]').boundingBox()
+  check('bottom layout docks preview below list', prevBox != null && listBox != null && prevBox.y >= listBox.y + listBox.height - 2)
+  // A2: layout=hidden removes the preview column.
+  await page.goto(`${BASE}/?layout=hidden&selected=1`, { waitUntil: 'networkidle' })
+  await page.waitForSelector('[data-testid=link-list-pane]', { timeout: 10_000 })
+  check('hidden layout drops preview column', (await page.locator('[data-testid=preview-col]').count()) === 0)
+  await page.goto(BASE, { waitUntil: 'networkidle' })
+  await page.waitForSelector('[data-testid=link-row]', { timeout: 15_000 })
+
+  // A5: ? button opens the help dialog; ? shortcut toggles it; state is in URL.
+  await page.click('[data-testid=help-button]')
+  await page.waitForSelector('.dialog-card', { timeout: 5_000 })
+  check('help dialog opens via button', page.url().includes('dialog=help'))
+  check('help dialog shows keymap', (await page.textContent('.dialog-card')).includes('Keyboard'))
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(300)
+  check('escape closes help and clears param', !page.url().includes('dialog='))
+  await page.keyboard.press('?')
+  await page.waitForTimeout(300)
+  check('? shortcut opens help', page.url().includes('dialog=help'))
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(300)
+
   // Ingest dialog via rail.
   await page.click('[data-testid=nav-ingest]')
   await page.waitForSelector('[data-testid=ingest-dialog]', { timeout: 5_000 })
@@ -127,6 +204,7 @@ async function newPage(width, height) {
   await page.click('[data-testid=collection-needs_login]')
   await page.waitForTimeout(800)
   check('attention switcher shows', (await page.locator('[data-testid=attention-needs_login]').count()) === 1)
+  check('rail still visible on attention view', (await page.locator('[data-testid=collections-rail]:visible').count()) === 1)
   await page.click('[data-testid=attention-blocked]')
   await page.waitForTimeout(500)
   check('attention collection switches', page.url().includes('collection=blocked'))
@@ -135,19 +213,21 @@ async function newPage(width, height) {
   await page.click('[data-testid=nav-run]')
   await page.waitForSelector('[data-testid=run-view]', { timeout: 8_000 })
   check('run view renders', true)
+  check('rail still visible on run view', (await page.locator('[data-testid=collections-rail]:visible').count()) === 1)
   await page.click('[data-testid=run-now]')
   await page.waitForSelector('[data-testid=run-verdict]', { timeout: 15_000 })
   check('run verdict banner shows exit code', /exit [0-3]/.test((await page.textContent('[data-testid=run-verdict]')) ?? ''))
 
-  // Settings view (secondary surfaces have no rail — navigate by URL).
+  // Settings + metrics now render next to the persistent rail (A1).
   await page.goto(`${BASE}/?view=settings`, { waitUntil: 'networkidle' })
   await page.waitForSelector('[data-testid=settings-view]', { timeout: 8_000 })
   check('settings renders', (await page.locator('[data-testid=settings-browsers]').count()) === 1)
+  check('rail visible on settings view', (await page.locator('[data-testid=collections-rail]:visible').count()) === 1)
 
-  // Metrics still reachable via footer link on run view? navigate directly.
   await page.goto(`${BASE}/?view=metrics`, { waitUntil: 'networkidle' })
   await page.waitForSelector('[data-testid=metrics-table]', { timeout: 8_000 })
   check('metrics view renders', true)
+  check('rail visible on metrics view', (await page.locator('[data-testid=collections-rail]:visible').count()) === 1)
 
   check('no console errors/warnings (desktop)', consoleErrors.length === 0)
   if (consoleErrors.length) console.log('console issues:', consoleErrors.slice(0, 10))
@@ -173,11 +253,13 @@ async function newPage(width, height) {
   await page.waitForSelector('[data-testid=link-row]', { timeout: 15_000 })
   check('mobile rail hidden', (await page.locator('[data-testid=collections-rail]:visible').count()) === 0)
   check('mobile top bar present', (await page.locator('[data-testid=rail-toggle]').count()) === 1)
+  check('help button present on mobile', (await page.locator('[data-testid=help-button]:visible').count()) === 1)
 
   // Tap a row -> preview overlay opens.
   await page.locator('[data-testid=link-row]').first().click()
   await page.waitForTimeout(600)
   check('mobile preview overlay opens', (await page.locator('[data-testid=preview-col].mobile-overlay').count()) === 1)
+  check('mobile preview shows panel sections', (await page.locator('[data-testid=section-actions]').count()) === 1)
   await page.click('.preview-back')
   await page.waitForTimeout(300)
   check('back returns to list', (await page.locator('[data-testid=preview-col].mobile-overlay').count()) === 0)
@@ -186,7 +268,10 @@ async function newPage(width, height) {
   await page.click('[data-testid=rail-toggle]')
   await page.waitForTimeout(300)
   check('mobile rail sheet opens', (await page.locator('[data-testid=collections-rail]:visible').count()) === 1)
-  await page.click('[data-testid=collection-pending]')
+  // Scope to the sheet overlay — the desktop rail also renders the same
+  // testid but is display:none below 760px, so an unscoped locator resolves
+  // to the hidden element first.
+  await page.locator('.sheet-overlay [data-testid=collection-pending]').click()
   await page.waitForTimeout(600)
   check('sheet navigates and closes', (await page.locator('[data-testid=collections-rail]:visible').count()) === 0)
 

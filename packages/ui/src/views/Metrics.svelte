@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query'
   import { api } from '../lib/api'
+  import { m } from '../paraglide/messages.js'
 
   const query = createQuery(() => ({
     queryKey: ['metrics'],
@@ -28,11 +29,11 @@
   const fmt = (n: number) => n.toLocaleString('en-US')
 </script>
 
-<div class="mx-auto w-full max-w-4xl p-3 md:p-6 space-y-4">
+<div class="metrics-view mx-auto w-full max-w-4xl p-3 md:p-6 space-y-4">
   <header class="flex items-center justify-between gap-2 flex-wrap">
-    <h1 class="text-xl font-semibold">Metrics</h1>
+    <h1 class="text-xl font-semibold">{m.metrics_title()}</h1>
     {#if sparkPoints}
-      <svg viewBox="0 0 120 32" class="w-32 h-8" data-testid="sparkline" aria-label="daily tokens sparkline">
+      <svg viewBox="0 0 120 32" class="w-32 h-8" data-testid="sparkline" aria-label={m.metrics_sparkline_aria()}>
         <polyline
           fill="none"
           stroke="currentColor"
@@ -47,21 +48,21 @@
   {#if query.isPending}
     <div class="skeleton h-48 w-full"></div>
   {:else if query.isError}
-    <div class="alert alert-error">Failed to load metrics.</div>
+    <div class="alert alert-error">{m.metrics_load_error()}</div>
   {:else}
     <div class="overflow-x-auto">
       <table class="table table-sm table-zebra" data-testid="metrics-table">
         <thead>
           <tr>
-            <th>Stage</th>
-            <th>Runs</th>
+            <th>{m.th_stage_cap()}</th>
+            <th>{m.th_runs()}</th>
             <th>OK</th>
-            <th>Errors</th>
+            <th>{m.th_errors_cap()}</th>
             <th>p50 ms</th>
             <th>p95 ms</th>
-            <th>Tokens in</th>
-            <th>Tokens out</th>
-            <th>Cost USD</th>
+            <th>{m.th_tokens_in()}</th>
+            <th>{m.th_tokens_out()}</th>
+            <th>{m.th_cost_usd()}</th>
           </tr>
         </thead>
         <tbody>
@@ -83,15 +84,22 @@
     </div>
 
     <section>
-      <h2 class="font-medium mb-2">Daily usage</h2>
+      <h2 class="font-medium mb-2">{m.metrics_daily()}</h2>
       <ul class="text-sm space-y-1" data-testid="daily-list">
         {#each daily as d (d.date)}
           <li class="flex justify-between gap-4">
             <span>{d.date}</span>
-            <span class="text-base-content/60">{fmt(d.tokens)} tokens · ${d.cost_usd.toFixed(2)}</span>
+            <span class="text-base-content/60">{m.metrics_daily_line({ tokens: fmt(d.tokens), cost: d.cost_usd.toFixed(2) })}</span>
           </li>
         {/each}
       </ul>
     </section>
   {/if}
 </div>
+
+<style>
+  .metrics-view {
+    height: 100%;
+    overflow-y: auto;
+  }
+</style>

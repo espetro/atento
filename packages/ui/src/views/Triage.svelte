@@ -5,16 +5,17 @@
   import type { LinkAction, LinkSummary } from '../lib/types'
   import { api, ApiError } from '../lib/api'
   import { reextractBus } from '../lib/events'
-  import CollectionsRail from './CollectionsRail.svelte'
   import LinkList from './LinkList.svelte'
   import PreviewPane from './PreviewPane.svelte'
+  import { m } from '../paraglide/messages.js'
 
   let { url, setUrl }: { url: UrlState; setUrl: (next: Partial<UrlState>) => void } = $props()
 
   const queryClient = useQueryClient()
   const collection = $derived(effectiveCollection(url))
+  // Preview placement (A2): right column | bottom dock | hidden.
+  const layout = $derived(url.layout)
 
-  let sheetOpen = $state(false)
   let listActions = $state<{
     selectedIds: () => number[]
     selectedLink: () => LinkSummary | null
@@ -59,7 +60,11 @@
       queryClient.invalidateQueries({ queryKey: ['pipeline'] }),
     ])
     if (UNDO_ACTIONS.includes(action)) {
-      undo = { ids, action, label: action === 'archive' ? 'archived' : 'discarded' }
+      undo = {
+        ids,
+        action,
+        label: action === 'archive' ? m.undo_archived() : m.undo_discarded(),
+      }
       clearTimeout(undoTimer)
       undoTimer = setTimeout(() => (undo = null), 6000)
     }
@@ -73,9 +78,12 @@
     try {
       const res = await api.restore(ids)
       if (res.updated === 0) {
-        triageError = `restore failed: ${res.blocked.length} link${res.blocked.length === 1 ? '' : 's'} not restorable`
+        triageError =
+          res.blocked.length === 1
+            ? m.restore_failed_one({ count: res.blocked.length })
+            : m.restore_failed_other({ count: res.blocked.length })
       } else if (res.updated < ids.length) {
-        triageError = `restored ${res.updated} of ${ids.length} links`
+        triageError = m.restore_partial({ updated: res.updated, total: ids.length })
       }
     } catch (err) {
       triageError = err instanceof ApiError ? err.message : String(err)
@@ -99,34 +107,12 @@
   }
 </script>
 
-<div class="triage-shell" data-testid="triage-shell">
-  <!-- mobile top bar (<760px): the rail lives behind the sheet toggle -->
-  <header class="mobile-bar">
-    <button
-      type="button"
-      class="btn btn-ghost btn-icon"
-      aria-label="Open collections"
-      onclick={() => (sheetOpen = true)}
-      data-testid="rail-toggle"
-    >
-      ☰
-    </button>
-    <button type="button" class="mobile-wordmark" onclick={() => setUrl({ view: 'triage', collection: 'enriched', selected: null })}>
-      linkinbox
-    </button>
-    <span class="spacer"></span>
-    <button type="button" class="btn btn-ghost btn-sm" onclick={() => setUrl({ view: 'run', selected: null })}>run</button>
-    <button type="button" class="btn btn-ghost btn-sm" onclick={() => setUrl({ view: 'settings', selected: null })}>⚙</button>
-    <button type="button" class="btn btn-sm btn-primary" onclick={() => setUrl({ dialog: 'ingest' })} data-testid="mobile-ingest">⊕</button>
-  </header>
-
-  <CollectionsRail {url} {setUrl} open={sheetOpen} onClose={() => (sheetOpen = false)} />
-
+<div class="triage-shell" class:layout-bottom={layout === 'bottom'} class:layout-hidden={layout === 'hidden'} data-testid="triage-shell">
   <div class="list-col" class:has-selection={url.selected != null}>
     {#if triageError}
       <div class="triage-error notice notice-bad" role="alert">
         {triageError}
-        <button type="button" class="btn btn-sm" onclick={() => (triageError = '')}>dismiss</button>
+        <button type="button" class="btn btn-sm" onclick={() => (triageError = '')}>{m.action_dismiss()}</button>
       </div>
     {/if}
     <LinkList
@@ -140,20 +126,22 @@
     />
   </div>
 
-  <div class="preview-col" class:mobile-overlay={url.selected != null} data-testid="preview-col">
-    {#if url.selected != null}
-      <button type="button" class="preview-back" onclick={() => setUrl({ selected: null })}>
-        ‹ back
-      </button>
-    {/if}
-    <PreviewPane id={url.selected} {url} {setUrl} {onTriage} {collection} />
-  </div>
+  {#if layout !== 'hidden' && (layout === 'right' || url.selected != null)}
+    <div class="preview-col" class:mobile-overlay={url.selected != null} data-testid="preview-col">
+      {#if url.selected != null}
+        <button type="button" class="preview-back" onclick={() => setUrl({ selected: null })}>
+          {m.preview_back()}
+        </button>
+      {/if}
+      <PreviewPane id={url.selected} {onTriage} {collection} />
+    </div>
+  {/if}
 </div>
 
 {#if undo}
   <div class="undo-toast" role="status" data-testid="undo-toast">
-    <span>{undo.label} {undo.ids.length} link{undo.ids.length === 1 ? '' : 's'}</span>
-    <button type="button" class="btn btn-sm btn-ghost" onclick={undoTriage}>undo</button>
+    <span>{undo.ids.length === 1 ? m.undo_toast_one({ label: undo.label }) : m.undo_toast_other({ label: undo.label, count: undo.ids.length })}</span>
+    <button type="button" class="btn btn-sm btn-ghost" onclick={undoTriage}>{m.action_undo()}</button>
   </div>
 {/if}
 
@@ -162,9 +150,7 @@
     display: flex;
     height: 100%;
     min-height: 0;
-  }
-  .mobile-bar {
-    display: none;
+    flex: 1;
   }
   .list-col {
     width: 400px;
@@ -174,6 +160,24 @@
     display: flex;
     flex-direction: column;
     position: relative;
+  }
+  /* ?layout=bottom: the list goes full-width on top, the preview docks
+     below it (Gmail-style). ?layout=hidden drops the preview entirely. */
+  .triage-shell.layout-bottom,
+  .triage-shell.layout-hidden {
+    flex-direction: column;
+  }
+  .layout-bottom .list-col,
+  .layout-hidden .list-col {
+    width: 100%;
+    flex: 1;
+    border-right: none;
+  }
+  .layout-bottom .preview-col {
+    flex: none;
+    height: 46%;
+    min-height: 220px;
+    border-top: 1px solid var(--color-line);
   }
   .preview-col {
     flex: 1;
@@ -210,28 +214,9 @@
     box-shadow: var(--shadow-pop);
     z-index: 60;
   }
-  .spacer {
-    flex: 1;
-  }
-  .mobile-wordmark {
-    font-weight: 700;
-    font-size: 15px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--color-ink);
-  }
   @media (max-width: 759px) {
     .triage-shell {
       flex-direction: column;
-    }
-    .mobile-bar {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 10px;
-      border-bottom: 1px solid var(--color-line);
-      background: var(--color-surface-raised);
     }
     .list-col {
       width: 100%;

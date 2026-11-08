@@ -9,6 +9,7 @@
   import StateChip from '../components/StateChip.svelte'
   import type { UrlState } from '../lib/urlState'
   import type { RunResult, RunJournalRow } from '../lib/types'
+  import { m } from '../paraglide/messages.js'
 
   let { url, setUrl }: { url: UrlState; setUrl: (next: Partial<UrlState>) => void } = $props()
 
@@ -119,8 +120,8 @@
       {
         name: 'ingest',
         status: 'done',
-        in_: `${ingestJobs.length} job${ingestJobs.length === 1 ? '' : 's'}`,
-        ok: `${totals.accepted} accepted · ${totals.duplicates} dup · ${totals.rejected} rej`,
+        in_: ingestJobs.length === 1 ? m.run_ingest_jobs_one({ count: ingestJobs.length }) : m.run_ingest_jobs_other({ count: ingestJobs.length }),
+        ok: m.run_ingest_counters({ accepted: totals.accepted, duplicates: totals.duplicates, rejected: totals.rejected }),
         err: '',
         defer: '',
         nb: '',
@@ -133,9 +134,9 @@
         status: s.extract?.busy ? 'busy' : 'done',
         in_: `${s.extract?.input ?? '—'} → ${s.extract?.ok ?? '—'}`,
         ok: '',
-        err: `${s.extract?.errors ?? 0} err`,
-        defer: `${s.extract?.deferred ?? 0} deferred`,
-        nb: `${s.extract?.needsBrowser ?? 0} need browser`,
+        err: m.run_err_count({ count: s.extract?.errors ?? 0 }),
+        defer: m.run_deferred_count({ count: s.extract?.deferred ?? 0 }),
+        nb: m.run_needs_browser({ count: s.extract?.needsBrowser ?? 0 }),
         dur: '—',
         tok: '—',
         cost: '—',
@@ -145,8 +146,8 @@
         status: s.enrich?.busy ? 'busy' : 'done',
         in_: `${s.enrich?.input ?? '—'} → ${s.enrich?.ok ?? '—'}`,
         ok: '',
-        err: `${s.enrich?.errors ?? 0} err`,
-        defer: `${s.enrich?.deferred ?? 0} deferred`,
+        err: m.run_err_count({ count: s.enrich?.errors ?? 0 }),
+        defer: m.run_deferred_count({ count: s.enrich?.deferred ?? 0 }),
         nb: '',
         dur: '—',
         tok: '—',
@@ -156,7 +157,7 @@
         name: 'sweep',
         status: 'done',
         in_: '—',
-        ok: `${s.swept ?? 0} swept`,
+        ok: m.run_swept({ count: s.swept ?? 0 }),
         err: '',
         defer: '',
         nb: '',
@@ -172,7 +173,7 @@
 
 <div class="run-view" data-testid="run-view">
   <header class="run-head">
-    <h1 class="run-title">Pipeline run</h1>
+    <h1 class="run-title">{m.run_title()}</h1>
     <button
       type="button"
       class="btn btn-primary"
@@ -180,17 +181,17 @@
       onclick={() => void runNow()}
       data-testid="run-now"
     >
-      {running ? 'Running…' : liveRunning ? `Running · ${sseRun?.stage ?? ''}` : 'Run now'}
+      {running ? m.run_running() : liveRunning ? m.run_running_stage({ stage: sseRun?.stage ?? '' }) : m.run_now()}
     </button>
   </header>
 
   {#if !$sseConnected}
-    <p class="notice notice-warn" role="status">reconnecting to live updates…</p>
+    <p class="notice notice-warn" role="status">{m.run_reconnecting()}</p>
   {/if}
 
   {#if verdict}
     <div class="verdict verdict-{verdict.tone}" role="status" data-testid="run-verdict">
-      <span class="verdict-text">{verdict.text} · <strong>exit {verdict.code}</strong></span>
+      <span class="verdict-text">{verdict.text} · <strong>{m.run_exit({ code: verdict.code })}</strong></span>
       {#if verdict.code === 2}
         <span class="verdict-counts meta">
           {#each ['needs_login', 'errored', 'blocked'] as c (c)}
@@ -200,7 +201,7 @@
           {/each}
         </span>
         <button type="button" class="btn btn-sm" onclick={() => attentionLink('needs_login')}>
-          review what needs you →
+          {m.run_review_needs()}
         </button>
       {/if}
     </div>
@@ -208,7 +209,7 @@
 
   {#if liveRunning && !runResult}
     <section class="pane live-panel" data-testid="live-run">
-      <p class="live-title">⟳ Run in progress{sseRun?.id ? ` — run #${sseRun.id}` : ''}</p>
+      <p class="live-title">⟳ {m.run_live_title()}{sseRun?.id ? ` — ${m.run_live_run({ id: sseRun.id })}` : ''}</p>
       <div class="stage-stepper">
         {#each STAGES as stage, i (stage)}
           {@const idx = STAGES.indexOf((sseRun?.stage ?? 'ingest') as (typeof STAGES)[number])}
@@ -217,18 +218,18 @@
         {/each}
       </div>
       {#if sseRun?.heartbeatAt}
-        <p class="meta">last heartbeat {timeAgo(sseRun.heartbeatAt)}</p>
+        <p class="meta">{m.run_last_heartbeat({ time: timeAgo(sseRun.heartbeatAt) })}</p>
       {/if}
     </section>
   {/if}
 
   {#if busyInfo}
     <section class="pane busy-panel" data-testid="busy-panel">
-      <p class="busy-title">⏸ Another run is in progress</p>
+      <p class="busy-title">⏸ {m.busy_title()}</p>
       <p class="meta">
-        {busyInfo.runId != null ? `run ${busyInfo.runId}` : 'a run'} holds the lock
-        {#if busyInfo.pid != null}· pid {busyInfo.pid}{/if}
-        — this view updates when it finishes.
+        {busyInfo.runId != null ? m.busy_subject_run({ id: busyInfo.runId }) : m.busy_subject_generic()} {m.busy_holds_lock()}
+        {#if busyInfo.pid != null}· {m.busy_pid({ pid: busyInfo.pid })}{/if}
+        {m.busy_note()}
       </p>
     </section>
   {/if}
@@ -236,12 +237,12 @@
   {#if runResult}
     <section class="pane">
       <p class="run-line meta" data-testid="run-line">
-        run {runResult.runId} · cursor {runResult.cursorBefore} → {runResult.cursorAfter}
+        {m.run_line({ id: runResult.runId, before: runResult.cursorBefore, after: runResult.cursorAfter })}
       </p>
       <table class="stage-table">
         <thead>
           <tr>
-            <th>stage</th><th>status</th><th>in → ok</th><th>errors</th><th>deferred</th><th>need browser</th><th>tokens</th><th>cost</th>
+            <th>{m.th_stage()}</th><th>{m.th_status()}</th><th>{m.th_in_out()}</th><th>{m.th_errors()}</th><th>{m.th_deferred()}</th><th>{m.th_need_browser()}</th><th>{m.th_tokens()}</th><th>{m.th_cost()}</th>
           </tr>
         </thead>
         <tbody>
@@ -263,21 +264,21 @@
 
     {#if runResult.summary.needsAction || attentionTotal > 0}
       <section class="pane needs-action" data-testid="needs-action">
-        <h2 class="section-title">Needs action</h2>
+        <h2 class="section-title">{m.needs_action()}</h2>
         {#each ['needs_login', 'blocked', 'errored', 'review'] as c (c)}
           {@const count = (attentionCounts as Record<string, number>)[c] ?? 0}
           {#if count > 0}
             <div class="na-row">
               <StateChip collection={c} />
-              <span class="meta">{count} link{count === 1 ? '' : 's'}</span>
+              <span class="meta">{count === 1 ? m.count_links_one({ count }) : m.count_links_other({ count })}</span>
               {#if c === 'needs_login'}
                 {#each loginHosts.slice(0, 3) as h (h.host)}
                   <code class="mono meta">linkinbox login {h.host}</code>
-                  <CopyButton text={`linkinbox login ${h.host}`} label="copy" />
+                  <CopyButton text={`linkinbox login ${h.host}`} label={m.action_copy()} />
                 {/each}
               {/if}
               <button type="button" class="btn btn-sm btn-ghost" onclick={() => attentionLink(c)}>
-                open {collectionMeta(c).label} →
+                {m.run_open_collection({ label: collectionMeta(c).label })}
               </button>
             </div>
           {/if}
@@ -287,13 +288,13 @@
   {/if}
 
   <section class="pane journal" data-testid="run-journal">
-    <h2 class="section-title">Journal</h2>
+    <h2 class="section-title">{m.journal_title()}</h2>
     {#if runs.length === 0}
-      <p class="meta">No runs yet — run one above or `linkinbox run` in a terminal.</p>
+      <p class="meta">{m.journal_empty()}</p>
     {:else}
       <table class="journal-table">
         <thead>
-          <tr><th>#</th><th>stage</th><th>status</th><th>started</th><th>in/ok/err</th><th>duration</th><th>tokens</th><th>cost</th></tr>
+          <tr><th>#</th><th>{m.th_stage()}</th><th>{m.th_status()}</th><th>{m.th_started()}</th><th>{m.th_in_out_err()}</th><th>{m.th_duration()}</th><th>{m.th_tokens()}</th><th>{m.th_cost()}</th></tr>
         </thead>
         <tbody>
           {#each runs as row (row.id)}
@@ -312,7 +313,7 @@
       </table>
     {/if}
     <footer class="journal-foot">
-      <a class="meta" href="?view=metrics">metrics →</a>
+      <a class="meta" href="?view=metrics">{m.metrics_link()}</a>
     </footer>
   </section>
 </div>

@@ -2,7 +2,9 @@
  * Per-collection display metadata + remediation copy. Shared by the
  * attention banner, the run view's needs-action panel and the rail so the
  * strings never diverge (spec: keep remediation copy in one place).
+ * All user-facing text lives in messages/en.json (Paraglide).
  */
+import { m } from '../paraglide/messages.js'
 import type { CollectionName } from './types'
 
 export interface CollectionMeta {
@@ -16,54 +18,70 @@ export interface CollectionMeta {
   remediation: string
 }
 
-export const COLLECTION_META: Record<string, CollectionMeta> = {
-  enriched: {
-    tone: 'enriched',
-    label: 'enriched',
-    meaning: 'Extracted and enriched — ready to read.',
-    remediation: '',
-  },
-  pending: {
-    tone: 'pending',
-    label: 'pending',
-    meaning: 'Waiting on extract or enrich — the pipeline will pick these up.',
-    remediation: '',
-  },
-  needs_login: {
-    tone: 'needs-login',
-    label: 'needs login',
-    meaning:
-      'These links need a logged-in browser session. The pipeline parks them instead of guessing.',
-    remediation:
-      'Run `linkinbox login <host>` in a terminal, then run the pipeline again — parked links resume automatically.',
-  },
-  blocked: {
-    tone: 'blocked',
-    label: 'blocked',
-    meaning:
-      'Parked by a bot block, JS shell, HTTP error or timeout — the extractor could not read the page.',
-    remediation:
-      'Retry later, re-extract with another adapter, or archive the links you do not need.',
-  },
-  errored: {
-    tone: 'errored',
-    label: 'errored',
-    meaning: 'The extract or enrich stage threw on these links.',
-    remediation: 'Inspect the error, re-extract (r) or discard (d).',
-  },
-  review: {
-    tone: 'review',
-    label: 'review',
-    meaning:
-      'Hosts on the review list are never fetched automatically — a human reviews them by design.',
-    remediation: 'Open and read each link, then archive or keep it.',
-  },
-  triaged: {
-    tone: 'triaged',
-    label: 'triaged',
-    meaning: 'Scheduled, archived or discarded — decisions already made.',
-    remediation: '',
-  },
+const TONES: Record<string, string> = {
+  enriched: 'enriched',
+  pending: 'pending',
+  needs_login: 'needs-login',
+  blocked: 'blocked',
+  errored: 'errored',
+  review: 'review',
+  triaged: 'triaged',
+}
+
+export function collectionMeta(name: string): CollectionMeta {
+  switch (name) {
+    case 'enriched':
+      return {
+        tone: TONES.enriched!,
+        label: m.col_enriched_label(),
+        meaning: m.col_enriched_meaning(),
+        remediation: '',
+      }
+    case 'pending':
+      return {
+        tone: TONES.pending!,
+        label: m.col_pending_label(),
+        meaning: m.col_pending_meaning(),
+        remediation: '',
+      }
+    case 'needs_login':
+      return {
+        tone: TONES.needs_login!,
+        label: m.col_needs_login_label(),
+        meaning: m.col_needs_login_meaning(),
+        remediation: m.col_needs_login_remediation(),
+      }
+    case 'blocked':
+      return {
+        tone: TONES.blocked!,
+        label: m.col_blocked_label(),
+        meaning: m.col_blocked_meaning(),
+        remediation: m.col_blocked_remediation(),
+      }
+    case 'errored':
+      return {
+        tone: TONES.errored!,
+        label: m.col_errored_label(),
+        meaning: m.col_errored_meaning(),
+        remediation: m.col_errored_remediation(),
+      }
+    case 'review':
+      return {
+        tone: TONES.review!,
+        label: m.col_review_label(),
+        meaning: m.col_review_meaning(),
+        remediation: m.col_review_remediation(),
+      }
+    case 'triaged':
+      return {
+        tone: TONES.triaged!,
+        label: m.col_triaged_label(),
+        meaning: m.col_triaged_meaning(),
+        remediation: '',
+      }
+    default:
+      return { tone: 'default', label: name, meaning: '', remediation: '' }
+  }
 }
 
 export const ATTENTION_COLLECTIONS: CollectionName[] = [
@@ -72,17 +90,6 @@ export const ATTENTION_COLLECTIONS: CollectionName[] = [
   'errored',
   'review',
 ]
-
-export function collectionMeta(name: string): CollectionMeta {
-  return (
-    COLLECTION_META[name] ?? {
-      tone: 'default',
-      label: name,
-      meaning: '',
-      remediation: '',
-    }
-  )
-}
 
 /** Human label for a raw park reason / FSM reason string. */
 export function reasonLabel(reason: string | null | undefined): string {

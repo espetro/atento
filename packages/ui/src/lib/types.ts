@@ -33,9 +33,21 @@ export const COLLECTION_NAMES = [
 
 export type CollectionName = (typeof COLLECTION_NAMES)[number]
 
-/** Preview pane tabs. */
-export const PREVIEW_TABS = ['reader', 'metadata', 'snapshot', 'live'] as const
-export type PreviewTab = (typeof PREVIEW_TABS)[number]
+/** Link category taxonomy used by the category filter (mock + API share it). */
+export const LINK_CATEGORIES = [
+  'ai',
+  'engineering',
+  'design',
+  'product',
+  'security',
+  'ops',
+  'reading',
+] as const
+export type LinkCategory = (typeof LINK_CATEGORIES)[number]
+
+/** Preview pane placement modes (serialized as ?layout=). */
+export const LAYOUT_MODES = ['right', 'bottom', 'hidden'] as const
+export type LayoutMode = (typeof LAYOUT_MODES)[number]
 
 /** Raw FSM state payload riding along on rows/details (camelCase wire). */
 export interface StateData {

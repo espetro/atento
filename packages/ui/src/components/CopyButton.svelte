@@ -1,8 +1,12 @@
 <script lang="ts">
   import { copyText } from '../lib/format'
+  import { m } from '../paraglide/messages.js'
 
-  let { text, label = 'copy', class: cls = '' }: { text: string; label?: string; class?: string } =
-    $props()
+  let {
+    text,
+    label = m.action_copy(),
+    class: cls = '',
+  }: { text: string; label?: string; class?: string } = $props()
 
   let copied = $state(false)
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -23,5 +27,5 @@
   aria-live="polite"
   data-testid="copy-button"
 >
-  {copied ? 'copied' : label}
+  {copied ? m.action_copied() : label}
 </button>

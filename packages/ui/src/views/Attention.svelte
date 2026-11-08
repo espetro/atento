@@ -8,12 +8,12 @@
   import { reextractBus } from '../lib/events'
   import { collectionMeta } from '../lib/copy'
   import { copyText } from '../lib/format'
-  import CollectionsRail from './CollectionsRail.svelte'
   import LinkList from './LinkList.svelte'
   import PreviewPane from './PreviewPane.svelte'
   import CopyButton from '../components/CopyButton.svelte'
   import Dialog from '../components/Dialog.svelte'
   import StateChip from '../components/StateChip.svelte'
+  import { m } from '../paraglide/messages.js'
 
   let { url, setUrl }: { url: UrlState; setUrl: (next: Partial<UrlState>) => void } = $props()
 
@@ -37,7 +37,6 @@
 
   const loginHosts = $derived(summary?.needsLoginHosts ?? [])
 
-  let sheetOpen = $state(false)
   let triageError = $state('')
   let undo = $state<{ ids: number[]; label: string } | null>(null)
   let undoTimer: ReturnType<typeof setTimeout> | undefined
@@ -52,7 +51,10 @@
       return
     }
     if (action === 'archive' || action === 'discard') {
-      undo = { ids, label: action === 'archive' ? 'archived' : 'discarded' }
+      undo = {
+        ids,
+        label: action === 'archive' ? m.undo_archived() : m.undo_discarded(),
+      }
       clearTimeout(undoTimer)
       undoTimer = setTimeout(() => (undo = null), 6000)
     }
@@ -71,9 +73,12 @@
     try {
       const res = await api.restore(ids)
       if (res.updated === 0) {
-        triageError = `restore failed: ${res.blocked.length} link${res.blocked.length === 1 ? '' : 's'} not restorable`
+        triageError =
+          res.blocked.length === 1
+            ? m.restore_failed_one({ count: res.blocked.length })
+            : m.restore_failed_other({ count: res.blocked.length })
       } else if (res.updated < ids.length) {
-        triageError = `restored ${res.updated} of ${ids.length} links`
+        triageError = m.restore_partial({ updated: res.updated, total: ids.length })
       }
     } catch (err) {
       triageError = err instanceof ApiError ? err.message : String(err)
@@ -117,7 +122,10 @@
     try {
       const res = await api.links({ collection, host, limit: 200 })
       if (res.items.length === 0) {
-        triageError = `no ${collectionMeta(collection).label.toLowerCase()} links found for ${host}`
+        triageError = m.bulk_none_found({
+          collection: collectionMeta(collection).label.toLowerCase(),
+          host,
+        })
         return
       }
       bulkTarget = { host, action, ids: res.items.map((l) => l.id) }
@@ -134,12 +142,18 @@
       const res = await api.triage(ids, action)
       bulkTarget = null
       if (action === 'archive' || action === 'discard') {
-        undo = { ids, label: `${action === 'archive' ? 'archived' : 'discarded'} (${host})` }
+        undo = {
+          ids,
+          label: m.undo_label_host({
+            label: action === 'archive' ? m.undo_archived() : m.undo_discarded(),
+            host,
+          }),
+        }
         clearTimeout(undoTimer)
         undoTimer = setTimeout(() => (undo = null), 6000)
       }
       if (res.updated < ids.length) {
-        triageError = `triaged ${res.updated} of ${ids.length} links for ${host}`
+        triageError = m.bulk_partial({ updated: res.updated, total: ids.length, host })
       }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['links'] }),
@@ -165,7 +179,7 @@
     sessionNote = ''
     try {
       await api.run()
-      sessionNote = 'run finished — verify saved sessions with `linkinbox login list`'
+      sessionNote = m.sessions_note()
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['links'] }),
         queryClient.invalidateQueries({ queryKey: ['collections-summary'] }),
@@ -185,26 +199,15 @@
 </script>
 
 <div class="att-shell">
-  <header class="mobile-bar">
-    <button type="button" class="btn btn-ghost btn-icon" aria-label="Open collections" onclick={() => (sheetOpen = true)}>☰</button>
-    <span class="mobile-wordmark">attention</span>
-    <span class="spacer"></span>
-    <button type="button" class="btn btn-ghost btn-sm" onclick={() => setUrl({ view: 'triage', collection: 'enriched', selected: null })}>triage</button>
-    <button type="button" class="btn btn-ghost btn-sm" onclick={() => setUrl({ view: 'settings', selected: null })}>⚙</button>
-  </header>
-
-  <CollectionsRail {url} {setUrl} open={sheetOpen} onClose={() => (sheetOpen = false)} />
-
   <div class="att-main">
     {#if bridgeBanner}
       <div class="bridge-banner notice notice-warn" role="status" data-testid="attention-bridge">
-        last run finished — {attentionTotal ?? ''} links need you
-        <button type="button" class="btn btn-sm btn-ghost" onclick={() => (bridgeBanner = false)}>dismiss</button>
+        {m.bridge_banner({ count: attentionTotal ?? 0 })}
+        <button type="button" class="btn btn-sm btn-ghost" onclick={() => (bridgeBanner = false)}>{m.action_dismiss()}</button>
       </div>
     {/if}
-    <div class="att-switch" role="tablist" aria-label="Attention collections">
+    <div class="att-switch" role="tablist" aria-label={m.attention_aria()}>
       {#each ['needs_login', 'blocked', 'errored', 'review'] as name (name)}
-        {@const m = collectionMeta(name)}
         {@const count = summary?.collections?.[name as CollectionName] ?? 0}
         <button
           type="button"
@@ -222,14 +225,14 @@
     </div>
 
     <section class="explainer pane">
-      <h2 class="explainer-title">{meta.label} <span class="meta">{collectionCount} links</span></h2>
+      <h2 class="explainer-title">{m.attention_title({ collection: meta.label, count: collectionCount })}</h2>
       <p class="explainer-text">{meta.meaning}</p>
-      {#if meta.remediation}<p class="explainer-text"><strong>Next step:</strong> {meta.remediation}</p>{/if}
+      {#if meta.remediation}<p class="explainer-text"><strong>{m.next_step()}</strong> {meta.remediation}</p>{/if}
 
       {#if collection === 'needs_login' && loginHosts.length > 0}
         <table class="host-table">
           <thead>
-            <tr><th>host</th><th>links</th><th>next step</th><th></th></tr>
+            <tr><th>{m.col_host()}</th><th>{m.col_links()}</th><th>{m.col_next_step()}</th><th></th></tr>
           </thead>
           <tbody>
             {#each loginHosts as h (h.host)}
@@ -238,19 +241,19 @@
                 <td>{h.count}</td>
                 <td class="mono meta">linkinbox login {h.host}</td>
                 <td class="host-actions">
-                  <CopyButton text={`linkinbox login ${h.host}`} label="copy" />
+                  <CopyButton text={`linkinbox login ${h.host}`} />
                   <button
                     type="button"
                     class="btn btn-sm btn-ghost"
                     onclick={() => void askBulk(h.host, 'archive')}
                     data-testid="bulk-archive-{h.host}"
-                  >archive all</button>
+                  >{m.bulk_archive_all()}</button>
                   <button
                     type="button"
                     class="btn btn-sm btn-ghost"
                     onclick={() => void askBulk(h.host, 'discard')}
                     data-testid="bulk-discard-{h.host}"
-                  >discard all</button>
+                  >{m.bulk_discard_all()}</button>
                 </td>
                 </tr>
               {/each}
@@ -263,22 +266,21 @@
               disabled={checking}
               onclick={() => void checkSessions()}
               data-testid="check-sessions"
-            >{checking ? 'checking…' : 'Check sessions'}</button>
-            <span class="meta">re-runs the pipeline so saved logins are picked up; there is no standalone session-verify endpoint yet</span>
+            >{checking ? m.checking() : m.check_sessions()}</button>
+            <span class="meta">{m.check_sessions_note()}</span>
           </div>
           {#if sessionNote}<p class="meta" data-testid="session-note">{sessionNote}</p>{/if}
         <details class="login-help">
-          <summary class="meta">how login works</summary>
+          <summary class="meta">{m.login_help_title()}</summary>
           <p class="meta">
-            A headed browser opens for the host; you log in once and the profile is saved under
-            <span class="mono">~/.linkinbox/profiles/&lt;host&gt;</span>. The next pipeline run picks
-            it up headlessly and parked links resume automatically.
+            {m.login_help_p1()}
+            <span class="mono">~/.linkinbox/profiles/&lt;host&gt;</span>{m.login_help_p2()}
           </p>
         </details>
       {/if}
 
       {#if collection === 'review'}
-        <p class="meta">Hosts on the review list are never fetched automatically — review is manual by design.</p>
+        <p class="meta">{m.review_note()}</p>
       {/if}
     </section>
 
@@ -286,7 +288,7 @@
       {#if triageError}
         <div class="notice notice-bad" role="alert">
           {triageError}
-          <button type="button" class="btn btn-sm" onclick={() => (triageError = '')}>dismiss</button>
+          <button type="button" class="btn btn-sm" onclick={() => (triageError = '')}>{m.action_dismiss()}</button>
         </div>
       {/if}
       <div class="att-cols">
@@ -302,7 +304,7 @@
           />
         </div>
         <div class="att-preview">
-          <PreviewPane id={url.selected} {url} {setUrl} {onTriage} {collection} />
+          <PreviewPane id={url.selected} {onTriage} {collection} />
         </div>
       </div>
     </div>
@@ -311,23 +313,29 @@
 
 {#if undo}
   <div class="undo-toast" role="status">
-    <span>{undo.label} {undo.ids.length} link{undo.ids.length === 1 ? '' : 's'}</span>
-    <button type="button" class="btn btn-sm btn-ghost" onclick={undoTriage}>undo</button>
+    <span>{undo.ids.length === 1 ? m.undo_toast_one({ label: undo.label }) : m.undo_toast_other({ label: undo.label, count: undo.ids.length })}</span>
+    <button type="button" class="btn btn-sm btn-ghost" onclick={undoTriage}>{m.action_undo()}</button>
   </div>
 {/if}
 
 <Dialog open={bulkTarget != null} labelledBy="bulk-title" onClose={() => (bulkTarget = null)}>
   {#if bulkTarget}
     <h2 id="bulk-title" class="picker-title">
-      {bulkTarget.action === 'archive' ? 'Archive' : 'Discard'} {bulkTarget.ids.length} link{bulkTarget.ids.length === 1 ? '' : 's'} from {bulkTarget.host}?
+      {#if bulkTarget.action === 'archive'}
+        {bulkTarget.ids.length === 1 ? m.bulk_title_archive_one({ count: bulkTarget.ids.length, host: bulkTarget.host }) : m.bulk_title_archive_other({ count: bulkTarget.ids.length, host: bulkTarget.host })}
+      {:else}
+        {bulkTarget.ids.length === 1 ? m.bulk_title_discard_one({ count: bulkTarget.ids.length, host: bulkTarget.host }) : m.bulk_title_discard_other({ count: bulkTarget.ids.length, host: bulkTarget.host })}
+      {/if}
     </h2>
     <p class="meta">
-      Every {collectionMeta(collection).label.toLowerCase()} link from <span class="mono">{bulkTarget.host}</span> will be {bulkTarget.action === 'archive' ? 'archived' : 'discarded'}. You can undo from the toast.
+      {bulkTarget.action === 'archive' ? m.bulk_body_pre_archive({ collection: collectionMeta(collection).label.toLowerCase() }) : m.bulk_body_pre_discard({ collection: collectionMeta(collection).label.toLowerCase() })}
+      <span class="mono">{bulkTarget.host}</span>
+      {bulkTarget.action === 'archive' ? m.bulk_body_post_archive() : m.bulk_body_post_discard()}
     </p>
     <div class="picker-foot">
-      <button type="button" class="btn btn-sm" onclick={() => (bulkTarget = null)} disabled={bulkBusy}>cancel</button>
+      <button type="button" class="btn btn-sm" onclick={() => (bulkTarget = null)} disabled={bulkBusy}>{m.action_cancel()}</button>
       <button type="button" class="btn btn-sm btn-primary" onclick={() => void confirmBulk()} disabled={bulkBusy} data-testid="bulk-confirm">
-        {bulkBusy ? 'working…' : 'confirm'}
+        {bulkBusy ? m.action_working() : m.action_confirm()}
       </button>
     </div>
   {/if}
@@ -338,9 +346,7 @@
     display: flex;
     height: 100%;
     min-height: 0;
-  }
-  .mobile-bar {
-    display: none;
+    flex: 1;
   }
   .att-main {
     flex: 1;
@@ -481,12 +487,6 @@
     box-shadow: var(--shadow-pop);
     z-index: 60;
   }
-  .mobile-wordmark {
-    font-weight: 700;
-  }
-  .spacer {
-    flex: 1;
-  }
   @media (max-width: 900px) {
     .att-cols {
       flex-direction: column;
@@ -494,19 +494,6 @@
     .att-list {
       width: 100%;
       max-height: 40%;
-    }
-  }
-  @media (max-width: 759px) {
-    .att-shell {
-      flex-direction: column;
-    }
-    .mobile-bar {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 10px;
-      border-bottom: 1px solid var(--color-line);
-      background: var(--color-surface-raised);
     }
   }
 </style>

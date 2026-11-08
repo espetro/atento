@@ -1,4 +1,5 @@
 /** Small display helpers shared by the views. */
+import { m } from '../paraglide/messages.js'
 
 export function hostOf(url: string): string {
   try {
@@ -21,11 +22,11 @@ export function timeAgo(iso: string | null | undefined): string {
   const future = diff < 0
   const abs = Math.abs(diff)
   let text: string
-  if (abs < 45_000) return 'just now'
-  const m = Math.floor(abs / 60_000)
-  if (m < 60) text = `${m}m`
+  if (abs < 45_000) return m.time_just_now()
+  const mins = Math.floor(abs / 60_000)
+  if (mins < 60) text = `${mins}m`
   else {
-    const h = Math.floor(m / 60)
+    const h = Math.floor(mins / 60)
     if (h < 48) text = `${h}h`
     else {
       const d = Math.floor(h / 24)
@@ -33,7 +34,7 @@ export function timeAgo(iso: string | null | undefined): string {
     }
   }
   if (text.includes('/') || text.includes('.')) return text
-  return future ? `in ${text}` : `${text} ago`
+  return future ? m.time_in_future({ text }) : m.time_ago({ text })
 }
 
 export function fmtDuration(ms: number | null | undefined): string {
