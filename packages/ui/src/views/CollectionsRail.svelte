@@ -461,7 +461,26 @@
     border-right: 1px solid var(--color-line);
   }
   .rail-collapsed {
-    width: 52px;
+    width: 56px;
+  }
+  /* Icon-only rows center their glyph (Linear/Raycast-style collapsed rail). */
+  .rail-collapsed .rail-row {
+    justify-content: center;
+    padding-inline: 0;
+  }
+  /* Group headers ("collections", "hosts") don't fit a 56px rail. */
+  .rail-collapsed .rail-group {
+    display: none;
+  }
+  .rail-icon,
+  .rail-glyph {
+    font-size: 15px;
+    line-height: 1;
+  }
+  .rail-icon :global(svg),
+  .rail-glyph :global(svg) {
+    display: block;
+    margin: 0 auto;
   }
   .rail-head {
     display: flex;
@@ -518,9 +537,6 @@
     width: 20px;
     text-align: center;
     flex: none;
-  }
-  .rail-glyph {
-    display: none;
   }
   .count-mini {
     margin-left: auto;
@@ -651,7 +667,21 @@
   }
   @media (min-width: 760px) and (max-width: 1099px) {
     .rail {
-      width: 52px;
+      width: 56px;
+    }
+    .rail .rail-row {
+      justify-content: center;
+      padding-inline: 0;
+    }
+    .rail .rail-glyph,
+    .rail .rail-icon {
+      font-size: 15px;
+      line-height: 1;
+    }
+    .rail .rail-glyph :global(svg),
+    .rail .rail-icon :global(svg) {
+      display: block;
+      margin: 0 auto;
     }
     .rail .rail-label,
     .rail .count,

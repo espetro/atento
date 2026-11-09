@@ -28,6 +28,14 @@ echo "==> deploying server bundle"
 rm -rf "$RUNTIME/server"
 mkdir -p "$RUNTIME/server"
 pnpm --dir "$REPO" --filter @linkinbox/cli deploy --prod "$RUNTIME/server"
+
+# better-sqlite3's native module must match the bundled node's ABI — the
+# deploy above runs under the system node, so rebuild against $NODE_BIN.
+BSQ_DIR=$(find "$RUNTIME/server/node_modules/.pnpm" -maxdepth 3 -type d -name better-sqlite3 | head -1)
+if [ -n "$BSQ_DIR" ]; then
+	PATH="$(dirname "$NODE_BIN"):$PATH" "$NODE_BIN" "$(dirname "$NODE_BIN")/npm" --prefix "$BSQ_DIR" rebuild 2>&1 | tail -2
+fi
+
 cp "$APP_DIR/server-entry.mjs" "$RUNTIME/server/"
 cp "$APP_DIR/mcp-ui-layout.mjs" "$RUNTIME/server/"
 cp -R "$REPO/packages/ui/dist" "$RUNTIME/server/ui-dist"
