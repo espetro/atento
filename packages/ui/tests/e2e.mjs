@@ -114,13 +114,17 @@ async function newPage(width, height) {
   await page.waitForSelector('[data-testid=preview-body]', { timeout: 10_000 })
   check('reader markdown renders', (await page.locator('[data-testid=reader-markdown]').count()) === 1)
   check('metadata section renders', (await page.locator('[data-testid=metadata-pane]').count()) === 1)
-  check('actions section renders', (await page.locator('[data-testid=section-actions]').count()) === 1)
+  check('actions overflow renders', (await page.locator('[data-testid=overflow-actions]').count()) === 1)
   check('preview section renders', (await page.locator('[data-testid=section-preview]').count()) === 1)
   check('tab bar is gone', (await page.locator('.tabbar').count()) === 0)
   check('live iframe is gone', (await page.locator('[data-testid=live-frame]').count()) === 0)
   // Metadata editing still works inside the panel.
   check('metadata edit field present', (await page.locator('[data-testid=edit-title]').count()) === 1)
-  check('action buttons present', (await page.locator('[data-testid=action-archive]').count()) === 1)
+  await page.click('[data-testid=overflow-actions]')
+  check('action menu opens', (await page.locator('[data-testid=overflow-menu]').count()) === 1)
+  check('action archive item present', (await page.locator('[data-testid=action-archive]').count()) === 1)
+  await page.keyboard.press('Escape')
+  check('action menu closes', (await page.locator('[data-testid=overflow-menu]').count()) === 0)
 
   // A3: infinite scroll — scroll the list to the bottom and the next page
   // is fetched automatically (limit grows 50 -> 100).
@@ -259,7 +263,7 @@ async function newPage(width, height) {
   await page.locator('[data-testid=link-row]').first().click()
   await page.waitForTimeout(600)
   check('mobile preview overlay opens', (await page.locator('[data-testid=preview-col].mobile-overlay').count()) === 1)
-  check('mobile preview shows panel sections', (await page.locator('[data-testid=section-actions]').count()) === 1)
+  check('mobile preview shows actions overflow', (await page.locator('[data-testid=overflow-actions]').count()) === 1)
   await page.click('.preview-back')
   await page.waitForTimeout(300)
   check('back returns to list', (await page.locator('[data-testid=preview-col].mobile-overlay').count()) === 0)

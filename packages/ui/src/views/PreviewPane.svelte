@@ -14,7 +14,9 @@
   import CopyButton from '../components/CopyButton.svelte'
   import Dialog from '../components/Dialog.svelte'
   import NativePreview from '../components/NativePreview.svelte'
-  import { hasShellBridge, isDesktopShell, linkMenuItems, showShellContextMenu, watchShellBridge } from '../lib/desktop'
+  import { hasShellBridge, isDesktopShell, linkMenuItems, showShellContextMenu } from '../lib/desktop'
+  import { copyText } from '../lib/format'
+  import IconEllipsis from '~icons/lucide/ellipsis'
   import { m } from '../paraglide/messages.js'
 
   let {
@@ -33,17 +35,6 @@
   // native webview; on plain web this stays false and the reader/snapshot
   // fallback below renders exactly as before.
   const nativePreview = isDesktopShell()
-
-  // The footer Actions section is replaced by the shell's native context
-  // menu — but only once the bridge is confirmed, so an older shell binary
-  // keeps the buttons rather than stranding the actions entirely.
-  let shellMenus = $state(false)
-  $effect(() => {
-    if (!nativePreview) return
-    return watchShellBridge(() => {
-      shellMenus = true
-    })
-  })
 
   const detailQuery = createQuery(() => ({
     queryKey: ['link', id],
@@ -216,6 +207,39 @@
     void showShellContextMenu(linkMenuItems(detail))
   }
 
+  // ---- actions overflow (⋯) -------------------------------------------------
+  // Progressive disclosure (P1.2): actions moved from an always-visible
+  // footer into a menu. Desktop gets the native context menu; web gets a
+  // dropdown. Both surfaces now expose menus, not buttons.
+  let overflowOpen = $state(false)
+
+  function onOverflowClick(e: MouseEvent) {
+    e.stopPropagation()
+    if (detail == null) return
+    if (hasShellBridge()) {
+      void showShellContextMenu(linkMenuItems(detail))
+      return
+    }
+    overflowOpen = !overflowOpen
+  }
+
+  $effect(() => {
+    if (!overflowOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        overflowOpen = false
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  function overflowRun(fn: () => void) {
+    overflowOpen = false
+    fn()
+  }
+
   const stateLine = $derived.by(() => {
     if (!detail) return ''
     const parts: string[] = []
@@ -256,7 +280,48 @@
       <div class="preview-url-row">
         <span class="preview-url mono" title={detail.url}>{truncate(detail.url, 90)}</span>
         <CopyButton text={detail.url} label={m.action_copy_url()} />
+        <div class="overflow-wrap">
+          <button
+            type="button"
+            class="btn btn-ghost btn-icon overflow-btn"
+            aria-label={m.section_actions()}
+            aria-haspopup="menu"
+            aria-expanded={overflowOpen}
+            onclick={onOverflowClick}
+            data-testid="overflow-actions"
+          >
+            <IconEllipsis />
+          </button>
+          {#if overflowOpen}
+            <div class="overflow-menu" role="menu" data-testid="overflow-menu">
+              <button type="button" role="menuitem" class="overflow-item" onclick={() => overflowRun(() => detail.url && window.open(detail.url, '_blank', 'noopener'))}>
+                {m.action_open()}
+              </button>
+              <hr class="overflow-sep" />
+              <button type="button" role="menuitem" class="overflow-item" onclick={() => overflowRun(() => void act('archive'))} data-testid="action-archive">
+                {m.action_archive()}
+              </button>
+              <button type="button" role="menuitem" class="overflow-item" onclick={() => overflowRun(() => void act('schedule'))}>
+                {m.action_schedule()}
+              </button>
+              <button type="button" role="menuitem" class="overflow-item overflow-danger" onclick={() => overflowRun(() => void act('discard'))}>
+                {m.action_discard()}
+              </button>
+              <hr class="overflow-sep" />
+              <button type="button" role="menuitem" class="overflow-item" onclick={() => overflowRun(onReextractClick)}>
+                {m.action_reextract()}
+              </button>
+              <button type="button" role="menuitem" class="overflow-item" onclick={() => overflowRun(() => void copyText(detail.url))}>
+                {m.action_copy_url()}
+              </button>
+            </div>
+          {/if}
+        </div>
       </div>
+      {#if overflowOpen}
+        <!-- Click-outside dismissal: a transparent layer under the menu. -->
+        <button type="button" class="overflow-backdrop" aria-label={m.aria_close()} onclick={() => (overflowOpen = false)} tabindex="-1"></button>
+      {/if}
       <h2 class="preview-title">{detail.title !== '' ? detail.title : detail.url}</h2>
       <div class="preview-state">
         <StateChip collection={collection} state={detail.state} />
@@ -376,33 +441,6 @@
         </div>
       </section>
 
-      {#if !shellMenus}
-      <section class="panel-section" data-testid="section-actions">
-        <h3 class="section-title">{m.section_actions()}</h3>
-        <div class="action-buttons">
-          <button type="button" class="btn btn-sm" onclick={() => void act('archive')} data-testid="action-archive">
-            <span class="kbd">a</span> {m.action_archive()}
-          </button>
-          <button type="button" class="btn btn-sm" onclick={() => void act('schedule')} data-testid="action-schedule">
-            <span class="kbd">s</span> {m.action_schedule()}
-          </button>
-          <button type="button" class="btn btn-sm btn-danger" onclick={() => void act('discard')} data-testid="action-discard">
-            <span class="kbd">d</span> {m.action_discard()}
-          </button>
-          <button type="button" class="btn btn-sm" onclick={onReextractClick} data-testid="action-reextract">
-            <span class="kbd">r</span> {m.action_reextract()}
-          </button>
-          <button
-            type="button"
-            class="btn btn-sm"
-            onclick={() => detail?.url && window.open(detail.url, '_blank', 'noopener')}
-            data-testid="action-open"
-          >
-            <span class="kbd">o</span> {m.action_open()}
-          </button>
-        </div>
-      </section>
-      {/if}
     </div>
   </div>
 {/if}
@@ -577,14 +615,58 @@
     border: 1px solid var(--color-line);
     display: block;
   }
-  .action-buttons {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
+  .overflow-wrap {
+    position: relative;
+    flex: none;
   }
-  .density-compact .action-buttons .btn {
-    padding: 3px 10px;
-    font-size: 12px;
+  .overflow-btn {
+    color: var(--color-ink-soft);
+  }
+  .overflow-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 54;
+    background: transparent;
+    border: none;
+    cursor: default;
+  }
+  .overflow-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 55;
+    min-width: 160px;
+    padding: 5px;
+    border-radius: 10px;
+    border: 1px solid var(--color-line);
+    background: var(--color-surface-raised);
+    box-shadow: var(--shadow-pop, 0 8px 24px rgb(0 0 0 / 0.12));
+    display: flex;
+    flex-direction: column;
+  }
+  .overflow-item {
+    border: none;
+    background: transparent;
+    text-align: left;
+    padding: 7px 10px;
+    border-radius: 7px;
+    font-size: 13px;
+    color: var(--color-ink);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .overflow-item:hover,
+  .overflow-item:focus-visible {
+    background: var(--color-surface-sunken, rgb(0 0 0 / 0.05));
+    outline: none;
+  }
+  .overflow-danger {
+    color: var(--color-danger, #c0392b);
+  }
+  .overflow-sep {
+    border: none;
+    border-top: 1px solid var(--color-line);
+    margin: 4px 6px;
   }
   .picker {
     padding: 18px 20px;
