@@ -24,6 +24,7 @@
   import IconTag from '~icons/lucide/tag'
   import IconFlame from '~icons/lucide/flame'
   import IconClock from '~icons/lucide/clock'
+  import IconX from '~icons/lucide/x'
   import { m } from '../paraglide/messages.js'
   import type { Component } from 'svelte'
 
@@ -349,11 +350,11 @@
     </div>
     {#if hasActiveFilters}
       <div class="filter-chips">
-        {#if url.q}<button class="chip chip-button" onclick={() => { qInput = ''; setUrl({ q: '', selected: null }) }}>“{truncate(url.q, 30)}” ✕</button>{/if}
-        {#if url.state}<button class="chip chip-button" onclick={() => setUrl({ state: '', selected: null })}>{m.chip_state({ value: url.state.replace(/_/g, ' ') })} ✕</button>{/if}
-        {#if url.category}<button class="chip chip-button" onclick={() => setUrl({ category: '', selected: null })}>{m.chip_category({ value: url.category })} ✕</button>{/if}
-        {#if url.host}<button class="chip chip-button" onclick={() => setUrl({ host: '', selected: null })}>{m.chip_host({ value: url.host })} ✕</button>{/if}
-        {#if url.stale}<button class="chip chip-button" onclick={() => setUrl({ stale: false, selected: null })}>{m.chip_stale()} ✕</button>{/if}
+        {#if url.q}<button class="chip chip-button" onclick={() => { qInput = ''; setUrl({ q: '', selected: null }) }}>“{truncate(url.q, 30)}” <IconX class="chip-x" /></button>{/if}
+        {#if url.state}<button class="chip chip-button" onclick={() => setUrl({ state: '', selected: null })}>{m.chip_state({ value: url.state.replace(/_/g, ' ') })} <IconX class="chip-x" /></button>{/if}
+        {#if url.category}<button class="chip chip-button" onclick={() => setUrl({ category: '', selected: null })}>{m.chip_category({ value: url.category })} <IconX class="chip-x" /></button>{/if}
+        {#if url.host}<button class="chip chip-button" onclick={() => setUrl({ host: '', selected: null })}>{m.chip_host({ value: url.host })} <IconX class="chip-x" /></button>{/if}
+        {#if url.stale}<button class="chip chip-button" onclick={() => setUrl({ stale: false, selected: null })}>{m.chip_stale()} <IconX class="chip-x" /></button>{/if}
         <button class="chip chip-button" onclick={clearFilters}>{m.chips_clear_all()}</button>
       </div>
     {/if}
@@ -581,6 +582,13 @@
   }
   .chip-button {
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .chip-button :global(.chip-x) {
+    font-size: 11px;
+    opacity: 0.7;
   }
   .filter-chips {
     display: flex;

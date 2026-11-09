@@ -7,6 +7,7 @@
   import type { IngestJob, IngestJobSummary } from '../lib/types'
   import Dialog from '../components/Dialog.svelte'
   import CopyButton from '../components/CopyButton.svelte'
+  import IconX from '~icons/lucide/x'
   import { m } from '../paraglide/messages.js'
   import type { UrlState } from '../lib/urlState'
 
@@ -272,7 +273,7 @@
   <div class="ingest-dialog" role="group" aria-label={m.ingest_title()} onkeydown={onKeydown} data-testid="ingest-dialog">
     <header class="ingest-head">
       <h2 id="ingest-title" class="ingest-title">{m.ingest_title()}</h2>
-      <button type="button" class="btn btn-ghost btn-icon" aria-label={m.aria_close()} onclick={close}>✕</button>
+      <button type="button" class="btn btn-ghost btn-icon" aria-label={m.aria_close()} onclick={close}><IconX /></button>
     </header>
 
     {#if job == null}

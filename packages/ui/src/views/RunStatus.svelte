@@ -7,6 +7,9 @@
   import { runVerdict } from '../lib/runVerdict'
   import CopyButton from '../components/CopyButton.svelte'
   import StateChip from '../components/StateChip.svelte'
+  import IconRefreshCw from '~icons/lucide/refresh-cw'
+  import IconPause from '~icons/lucide/pause'
+  import IconArrowRight from '~icons/lucide/arrow-right'
   import type { UrlState } from '../lib/urlState'
   import type { RunResult, RunJournalRow } from '../lib/types'
   import { m } from '../paraglide/messages.js'
@@ -209,12 +212,12 @@
 
   {#if liveRunning && !runResult}
     <section class="pane live-panel" data-testid="live-run">
-      <p class="live-title">⟳ {m.run_live_title()}{sseRun?.id ? ` — ${m.run_live_run({ id: sseRun.id })}` : ''}</p>
+      <p class="live-title"><IconRefreshCw /> {m.run_live_title()}{sseRun?.id ? ` — ${m.run_live_run({ id: sseRun.id })}` : ''}</p>
       <div class="stage-stepper">
         {#each STAGES as stage, i (stage)}
           {@const idx = STAGES.indexOf((sseRun?.stage ?? 'ingest') as (typeof STAGES)[number])}
           <span class="step" class:is-now={i === idx} class:is-done={i < idx}>{stage}</span>
-          {#if i < STAGES.length - 1}<span class="step-arrow">→</span>{/if}
+          {#if i < STAGES.length - 1}<span class="step-arrow"><IconArrowRight /></span>{/if}
         {/each}
       </div>
       {#if sseRun?.heartbeatAt}
@@ -225,7 +228,7 @@
 
   {#if busyInfo}
     <section class="pane busy-panel" data-testid="busy-panel">
-      <p class="busy-title">⏸ {m.busy_title()}</p>
+      <p class="busy-title"><IconPause /> {m.busy_title()}</p>
       <p class="meta">
         {busyInfo.runId != null ? m.busy_subject_run({ id: busyInfo.runId }) : m.busy_subject_generic()} {m.busy_holds_lock()}
         {#if busyInfo.pid != null}· {m.busy_pid({ pid: busyInfo.pid })}{/if}

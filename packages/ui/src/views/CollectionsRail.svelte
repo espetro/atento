@@ -4,6 +4,21 @@
   import { collectionMeta } from '../lib/copy'
   import type { UrlState } from '../lib/urlState'
   import { COLLECTION_NAMES, type CollectionName } from '../lib/types'
+  import type { Component } from 'svelte'
+  import IconInbox from '~icons/lucide/inbox'
+  import IconCircleDashed from '~icons/lucide/circle-dashed'
+  import IconLock from '~icons/lucide/lock'
+  import IconBan from '~icons/lucide/ban'
+  import IconCircleX from '~icons/lucide/circle-x'
+  import IconEye from '~icons/lucide/eye'
+  import IconCheck from '~icons/lucide/check'
+  import IconCircle from '~icons/lucide/circle'
+  import IconChevronDown from '~icons/lucide/chevron-down'
+  import IconChevronRight from '~icons/lucide/chevron-right'
+  import IconEllipsis from '~icons/lucide/ellipsis'
+  import IconSettings from '~icons/lucide/settings'
+  import IconPlay from '~icons/lucide/play'
+  import IconPlus from '~icons/lucide/plus'
   import { m } from '../paraglide/messages.js'
 
   let {
@@ -44,14 +59,14 @@
 
   const loginHosts = $derived(new Map((summary?.needsLoginHosts ?? []).map((h) => [h.host, h.count])))
 
-  const COLLECTION_ICONS: Record<string, string> = {
-    enriched: '●',
-    pending: '◌',
-    needs_login: '⚠',
-    blocked: '⛔',
-    errored: '✕',
-    review: '?',
-    triaged: '✓',
+  const COLLECTION_ICONS: Record<string, Component> = {
+    enriched: IconInbox,
+    pending: IconCircleDashed,
+    needs_login: IconLock,
+    blocked: IconBan,
+    errored: IconCircleX,
+    review: IconEye,
+    triaged: IconCheck,
   }
 
   let collapsed = $state(
@@ -292,6 +307,7 @@
     {#each COLLECTION_NAMES as name (name)}
       {@const count = summary?.collections?.[name] ?? 0}
       {@const meta = collectionMeta(name)}
+      {@const ColIcon = COLLECTION_ICONS[name] ?? IconCircle}
       <button
         type="button"
         class="rail-row"
@@ -302,12 +318,12 @@
         data-testid="collection-{name}"
       >
         {#if !collapsed}
-          <span class="rail-glyph" aria-hidden="true">{COLLECTION_ICONS[name] ?? '·'}</span>
+          <span class="rail-glyph" aria-hidden="true"><ColIcon /></span>
           <span class="rail-label">{meta.label}</span>
           <span class="chip chip-state-{meta.tone} rail-chip"><span class="dot"></span></span>
           <span class="count">{count}</span>
         {:else}
-          <span class="rail-icon" aria-hidden="true">{COLLECTION_ICONS[name] ?? '·'}</span>
+          <span class="rail-icon" aria-hidden="true"><ColIcon /></span>
           {#if count > 0 && name !== 'enriched'}<span class="count-mini">{count}</span>{/if}
         {/if}
       </button>
@@ -316,7 +332,7 @@
     {#if !collapsed}
       <div class="rail-group">
         <button type="button" class="group-toggle" onclick={() => (hostsExpanded = !hostsExpanded)}>
-          {m.rail_group_hosts()} {hostsExpanded ? '▾' : '▸'}
+          {m.rail_group_hosts()} {#if hostsExpanded}<IconChevronDown />{:else}<IconChevronRight />{/if}
         </button>
       </div>
       {#each shownHosts as h (h.host)}
@@ -375,7 +391,7 @@
                 menuPos = { x: e.clientX, y: e.clientY }
                 menuFor = menuFor === f.name ? null : f.name
               }}
-            >⋯</button>
+            ><IconEllipsis /></button>
           </div>
         {/each}
         {#if menuFor}
@@ -414,21 +430,21 @@
   <footer class="rail-foot">
     {#if !collapsed}
       <button type="button" class="rail-row" onclick={() => go({ view: 'settings', selected: null })} data-testid="nav-settings">
-        <span class="rail-glyph" aria-hidden="true">⚙</span>
+        <span class="rail-glyph" aria-hidden="true"><IconSettings /></span>
         <span class="rail-label">{m.nav_settings()}</span>
       </button>
       <button type="button" class="rail-row" onclick={() => go({ view: 'run', selected: null })} data-testid="nav-run">
-        <span class="rail-glyph" aria-hidden="true">▶</span>
+        <span class="rail-glyph" aria-hidden="true"><IconPlay /></span>
         <span class="rail-label">{m.nav_run()}</span>
       </button>
       <button type="button" class="rail-row" onclick={() => go({ dialog: 'ingest' })} data-testid="nav-ingest">
-        <span class="rail-glyph" aria-hidden="true">⊕</span>
+        <span class="rail-glyph" aria-hidden="true"><IconPlus /></span>
         <span class="rail-label">{m.nav_ingest()}</span>
       </button>
     {:else}
-      <button type="button" class="rail-row" title={m.nav_settings()} aria-label={m.nav_settings()} onclick={() => go({ view: 'settings', selected: null })}>⚙</button>
-      <button type="button" class="rail-row" title={m.nav_run()} aria-label={m.nav_run()} onclick={() => go({ view: 'run', selected: null })}>▶</button>
-      <button type="button" class="rail-row" title={m.nav_ingest()} aria-label={m.nav_ingest()} onclick={() => go({ dialog: 'ingest' })}>⊕</button>
+      <button type="button" class="rail-row" title={m.nav_settings()} aria-label={m.nav_settings()} onclick={() => go({ view: 'settings', selected: null })}><IconSettings /></button>
+      <button type="button" class="rail-row" title={m.nav_run()} aria-label={m.nav_run()} onclick={() => go({ view: 'run', selected: null })}><IconPlay /></button>
+      <button type="button" class="rail-row" title={m.nav_ingest()} aria-label={m.nav_ingest()} onclick={() => go({ dialog: 'ingest' })}><IconPlus /></button>
     {/if}
   </footer>
 {/snippet}

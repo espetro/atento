@@ -13,6 +13,9 @@
   import IngestDialog from './views/IngestDialog.svelte'
   import Dialog from './components/Dialog.svelte'
   import CommandPalette from './components/CommandPalette.svelte'
+  import IconMenu from '~icons/lucide/menu'
+  import IconSettings from '~icons/lucide/settings'
+  import IconPlus from '~icons/lucide/plus'
   import LiveSync from './components/LiveSync.svelte'
   import { sseConnected } from './lib/events'
   import { m } from './paraglide/messages.js'
@@ -72,7 +75,7 @@
           onclick={() => (sheetOpen = true)}
           data-testid="rail-toggle"
         >
-          ☰
+          <IconMenu />
         </button>
         <button
           type="button"
@@ -83,8 +86,8 @@
         </button>
         <span class="spacer"></span>
         <button type="button" class="btn btn-ghost btn-sm" onclick={() => setUrl({ view: 'run', selected: null })}>{m.nav_run()}</button>
-        <button type="button" class="btn btn-ghost btn-sm" aria-label={m.nav_settings()} onclick={() => setUrl({ view: 'settings', selected: null })}>⚙</button>
-        <button type="button" class="btn btn-sm btn-primary" aria-label={m.nav_ingest()} onclick={() => setUrl({ dialog: 'ingest' })} data-testid="mobile-ingest">⊕</button>
+        <button type="button" class="btn btn-ghost btn-sm" aria-label={m.nav_settings()} onclick={() => setUrl({ view: 'settings', selected: null })}><IconSettings /></button>
+        <button type="button" class="btn btn-sm btn-primary" aria-label={m.nav_ingest()} onclick={() => setUrl({ dialog: 'ingest' })} data-testid="mobile-ingest"><IconPlus /></button>
       </header>
       <main class="app-main">
         {#if url.view === 'attention'}
