@@ -5,6 +5,7 @@
   import type { LinkAction, LinkSummary } from '../lib/types'
   import { api, ApiError } from '../lib/api'
   import { reextractBus } from '../lib/events'
+  import { handleShellMenuAction, isDesktopShell, onShellMenuAction } from '../lib/desktop'
   import LinkList from './LinkList.svelte'
   import PreviewPane from './PreviewPane.svelte'
   import { m } from '../paraglide/messages.js'
@@ -94,12 +95,26 @@
     window.open(linkUrl, '_blank', 'noopener')
   }
 
-  function onReextract(link: LinkSummary) {
+  function onReextract(linkId: number) {
     // Preview the link, then ask the preview pane to run its re-extract
     // path (adapter picker when >1 adapter is configured).
-    setUrl({ selected: link.id })
-    reextractBus.set(link.id)
+    setUrl({ selected: linkId })
+    reextractBus.set(linkId)
   }
+
+  // ---- shell-native context menus (desktop only) ------------------------------
+  // The shell echoes the picked action back as a `linkinbox:menu-action`
+  // CustomEvent; data carries { id, url } from the right-clicked row/pane.
+  $effect(() => {
+    if (!isDesktopShell()) return
+    return onShellMenuAction((a) =>
+      handleShellMenuAction(a, {
+        triage: (id, action) => void onTriage([id], action),
+        open: onOpenUrl,
+        reextract: onReextract,
+      }),
+    )
+  })
 </script>
 
 <div class="triage-shell" class:layout-bottom={layout === 'bottom'} class:layout-hidden={layout === 'hidden'} data-testid="triage-shell">

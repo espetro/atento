@@ -14,7 +14,7 @@
   import CopyButton from '../components/CopyButton.svelte'
   import Dialog from '../components/Dialog.svelte'
   import NativePreview from '../components/NativePreview.svelte'
-  import { isDesktopShell } from '../lib/desktop'
+  import { hasShellBridge, isDesktopShell, linkMenuItems, showShellContextMenu, watchShellBridge } from '../lib/desktop'
   import { m } from '../paraglide/messages.js'
 
   let {
@@ -33,6 +33,17 @@
   // native webview; on plain web this stays false and the reader/snapshot
   // fallback below renders exactly as before.
   const nativePreview = isDesktopShell()
+
+  // The footer Actions section is replaced by the shell's native context
+  // menu — but only once the bridge is confirmed, so an older shell binary
+  // keeps the buttons rather than stranding the actions entirely.
+  let shellMenus = $state(false)
+  $effect(() => {
+    if (!nativePreview) return
+    return watchShellBridge(() => {
+      shellMenus = true
+    })
+  })
 
   const detailQuery = createQuery(() => ({
     queryKey: ['link', id],
@@ -197,6 +208,14 @@
     })
   })
 
+  // Desktop shell: right-click shows the native context menu with the same
+  // actions the footer section used to carry (the section is hidden there).
+  function onPaneContextMenu(e: MouseEvent) {
+    if (!hasShellBridge() || detail == null) return
+    e.preventDefault()
+    void showShellContextMenu(linkMenuItems(detail))
+  }
+
   const stateLine = $derived.by(() => {
     if (!detail) return ''
     const parts: string[] = []
@@ -231,7 +250,8 @@
   <!-- One scrollable panel: preview → metadata → actions (A2). The old
        reader/metadata/snapshot/live tab bar is gone; the live iframe was
        dropped (X-Frame-Options makes it useless). -->
-  <div class="preview" class:density-compact={$density === 'compact'} data-testid="preview-pane">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="preview" class:density-compact={$density === 'compact'} data-testid="preview-pane" oncontextmenu={onPaneContextMenu}>
     <header class="preview-head">
       <div class="preview-url-row">
         <span class="preview-url mono" title={detail.url}>{truncate(detail.url, 90)}</span>
@@ -356,6 +376,7 @@
         </div>
       </section>
 
+      {#if !shellMenus}
       <section class="panel-section" data-testid="section-actions">
         <h3 class="section-title">{m.section_actions()}</h3>
         <div class="action-buttons">
@@ -381,6 +402,7 @@
           </button>
         </div>
       </section>
+      {/if}
     </div>
   </div>
 {/if}

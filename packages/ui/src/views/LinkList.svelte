@@ -8,6 +8,7 @@
   import { collectionMeta, reasonLabel } from '../lib/copy'
   import type { UrlState } from '../lib/urlState'
   import type { LinkAction, LinkSummary } from '../lib/types'
+  import { hasShellBridge, linkMenuItems, showShellContextMenu } from '../lib/desktop'
   import { density } from '../lib/prefs'
   import IconChip from '../components/IconChip.svelte'
   import FilterMenu from '../components/FilterMenu.svelte'
@@ -39,7 +40,7 @@
     /** Effective collection name (already resolved). */
     collection: string
     onTriage: (ids: number[], action: LinkAction) => Promise<void>
-    onReextract: (link: LinkSummary) => void
+    onReextract: (id: number) => void
     onOpenUrl: (url: string) => void
   } = $props()
 
@@ -138,8 +139,7 @@
       onShortcut('s', () => void act('schedule')),
       onShortcut('d', () => void act('discard')),
       onShortcut('r', () => {
-        const link = items.find((l) => l.id === cursorId)
-        if (link) onReextract(link)
+        if (cursorId != null) onReextract(cursorId)
       }),
       onShortcut('o', () => {
         const link = items.find((l) => l.id === cursorId)
@@ -286,6 +286,13 @@
 
   function isStale(link: LinkSummary): boolean {
     return link.expires_at != null && new Date(link.expires_at).getTime() < Date.now()
+  }
+
+  function onRowContextMenu(link: LinkSummary, e: MouseEvent) {
+    if (!hasShellBridge()) return
+    e.preventDefault()
+    setUrl({ selected: link.id })
+    void showShellContextMenu(linkMenuItems(link))
   }
 
   // Headline priority: the enrichment summary reads best, then a real
@@ -472,6 +479,7 @@
     data-testid="link-row"
     data-link-id={link.id}
     onclick={props.onClick}
+    oncontextmenu={(e) => onRowContextMenu(link, e)}
   >
     <span class="row-check" aria-hidden="true">{props.checked ? '☑' : ''}</span>
     <span class="row-main">

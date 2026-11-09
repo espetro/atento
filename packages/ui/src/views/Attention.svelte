@@ -6,6 +6,7 @@
   import type { CollectionName, LinkAction, LinkSummary } from '../lib/types'
   import { api, ApiError } from '../lib/api'
   import { reextractBus } from '../lib/events'
+  import { handleShellMenuAction, isDesktopShell, onShellMenuAction } from '../lib/desktop'
   import { collectionMeta } from '../lib/copy'
   import { copyText } from '../lib/format'
   import LinkList from './LinkList.svelte'
@@ -93,10 +94,22 @@
   function onOpenUrl(linkUrl: string) {
     window.open(linkUrl, '_blank', 'noopener')
   }
-  function onReextract(link: LinkSummary) {
-    setUrl({ selected: link.id })
-    reextractBus.set(link.id)
+  function onReextract(linkId: number) {
+    setUrl({ selected: linkId })
+    reextractBus.set(linkId)
   }
+
+  // Shell-native context menus (desktop only) — same dispatch as Triage.
+  $effect(() => {
+    if (!isDesktopShell()) return
+    return onShellMenuAction((a) =>
+      handleShellMenuAction(a, {
+        triage: (id, action) => void onTriage([id], action),
+        open: onOpenUrl,
+        reextract: onReextract,
+      }),
+    )
+  })
 
   async function copyLoginCommand(host: string) {
     await copyText(`linkinbox login ${host}`)
