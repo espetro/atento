@@ -11,10 +11,10 @@
   import { copyText } from '../lib/format'
   import LinkList from './LinkList.svelte'
   import PreviewPane from './PreviewPane.svelte'
-  import { PaneGroup, Pane, PaneResizer } from 'paneforge'
-  import CopyButton from '../components/CopyButton.svelte'
-  import Dialog from '../components/Dialog.svelte'
-  import StateChip from '../components/StateChip.svelte'
+  import * as Resizable from '$lib/components/ui/resizable/index.js'
+  import CopyButton from '../lib/components/CopyButton.svelte'
+  import Dialog from '../lib/components/Dialog.svelte'
+  import StateChip from '../lib/components/StateChip.svelte'
   import { m } from '../paraglide/messages.js'
 
   let { url, setUrl }: { url: UrlState; setUrl: (next: Partial<UrlState>) => void } = $props()
@@ -304,8 +304,8 @@
           <button type="button" class="btn btn-sm" onclick={() => (triageError = '')}>{m.action_dismiss()}</button>
         </div>
       {/if}
-      <PaneGroup direction="horizontal" autoSaveId="linkinbox:att-split" class="att-cols">
-        <Pane defaultSize={30} minSize={15} maxSize={60} class="att-list">
+      <Resizable.PaneGroup direction="horizontal" autoSaveId="linkinbox:att-split" class="att-cols">
+        <Resizable.Pane defaultSize={30} minSize={15} maxSize={60} class="att-list">
           <LinkList
             {url}
             {setUrl}
@@ -314,12 +314,12 @@
             {onReextract}
             {onOpenUrl}
           />
-        </Pane>
-        <PaneResizer class="pane-resizer" />
-        <Pane minSize={25} class="att-preview">
+        </Resizable.Pane>
+        <Resizable.Handle withHandle />
+        <Resizable.Pane minSize={25} class="att-preview">
           <PreviewPane id={url.selected} {onTriage} {collection} />
-        </Pane>
-      </PaneGroup>
+        </Resizable.Pane>
+      </Resizable.PaneGroup>
     </div>
   </div>
 </div>

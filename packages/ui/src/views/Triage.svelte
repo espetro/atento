@@ -8,7 +8,7 @@
   import { handleShellMenuAction, onShellMenuAction } from '../lib/desktop'
   import LinkList from './LinkList.svelte'
   import PreviewPane from './PreviewPane.svelte'
-  import { PaneGroup, Pane, PaneResizer } from 'paneforge'
+  import * as Resizable from '$lib/components/ui/resizable/index.js'
   import { m } from '../paraglide/messages.js'
 
   let { url, setUrl }: { url: UrlState; setUrl: (next: Partial<UrlState>) => void } = $props()
@@ -120,8 +120,8 @@
 </script>
 
 <div class="triage-shell" class:layout-hidden={layout === 'hidden'} data-testid="triage-shell">
-  <PaneGroup direction={layout === 'bottom' ? 'vertical' : 'horizontal'} autoSaveId="linkinbox:triage-split">
-    <Pane defaultSize={30} minSize={15} maxSize={60} class="list-col" data-testid="list-col">
+  <Resizable.PaneGroup direction={layout === 'bottom' ? 'vertical' : 'horizontal'} autoSaveId="linkinbox:triage-split">
+    <Resizable.Pane defaultSize={30} minSize={15} maxSize={60} class="list-col" data-testid="list-col">
       {#if triageError}
         <div class="triage-error notice notice-bad" role="alert">
           {triageError}
@@ -136,11 +136,11 @@
         onReextract={onReextract}
         {onOpenUrl}
       />
-    </Pane>
+    </Resizable.Pane>
 
     {#if layout !== 'hidden' && (layout === 'right' || url.selected != null)}
-      <PaneResizer class="pane-resizer" data-testid="list-resizer" />
-      <Pane minSize={25} class={`preview-col${url.selected != null ? ' mobile-overlay' : ''}`} data-testid="preview-col">
+      <Resizable.Handle withHandle data-testid="list-resizer" />
+      <Resizable.Pane minSize={25} class={`preview-col${url.selected != null ? ' mobile-overlay' : ''}`} data-testid="preview-col">
         <div class="preview-col-inner">
           {#if url.selected != null}
             <button type="button" class="preview-back" onclick={() => setUrl({ selected: null })}>
@@ -149,9 +149,9 @@
           {/if}
           <PreviewPane id={url.selected} {onTriage} {collection} />
         </div>
-      </Pane>
+      </Resizable.Pane>
     {/if}
-  </PaneGroup>
+  </Resizable.PaneGroup>
 </div>
 
 {#if undo}

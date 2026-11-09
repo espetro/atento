@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import Icons from 'unplugin-icons/vite'
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
 import { mockApiPlugin } from './src/mock/plugin.js'
+import path from 'node:path'
 
 const mock = process.env.VITE_MOCK === '1'
 
@@ -15,6 +16,9 @@ export default defineConfig({
     paraglideVitePlugin({ project: './project.inlang' }),
     mockApiPlugin(mock),
   ],
+  resolve: {
+    alias: { $lib: path.resolve('./src/lib') },
+  },
   server: {
     port: 5173,
     proxy: mock

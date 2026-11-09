@@ -2,7 +2,7 @@
   import { createQuery, useQueryClient } from '@tanstack/svelte-query'
   import { api } from '../lib/api'
   import { timeAgo } from '../lib/format'
-  import CopyButton from '../components/CopyButton.svelte'
+  import CopyButton from '../lib/components/CopyButton.svelte'
   import { m } from '../paraglide/messages.js'
   import type { UrlState } from '../lib/urlState'
 

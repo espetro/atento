@@ -9,24 +9,23 @@
   import RunStatus from './views/RunStatus.svelte'
   import Settings from './views/Settings.svelte'
   import Metrics from './views/Metrics.svelte'
-  import CollectionsRail from './views/CollectionsRail.svelte'
   import IngestDialog from './views/IngestDialog.svelte'
-  import Dialog from './components/Dialog.svelte'
-  import CommandPalette from './components/CommandPalette.svelte'
-  import AssistantDrawer from './components/AssistantDrawer.svelte'
+  import Dialog from './lib/components/Dialog.svelte'
+  import CommandPalette from './lib/components/CommandPalette.svelte'
+  import AssistantDrawer from './lib/components/AssistantDrawer.svelte'
+  import AppSidebar from './lib/components/AppSidebar.svelte'
   import { acpAvailable, startLayoutToolServer } from './lib/acp'
-  import { PaneGroup, Pane, PaneResizer } from 'paneforge'
-  import IconMenu from '~icons/lucide/menu'
-  import IconSettings from '~icons/lucide/settings'
+  import * as Sidebar from '$lib/components/ui/sidebar/index.js'
+  import * as Resizable from '$lib/components/ui/resizable/index.js'
   import IconPlus from '~icons/lucide/plus'
-  import LiveSync from './components/LiveSync.svelte'
+  import IconSearch from '~icons/lucide/search'
+  import LiveSync from './lib/components/LiveSync.svelte'
   import { sseConnected } from './lib/events'
   import { m } from './paraglide/messages.js'
 
   const queryClient = createQueryClient()
 
   let url = $state<UrlState>(parseUrlState(new URLSearchParams(window.location.search)))
-  let sheetOpen = $state(false)
   let paletteOpen = $state(false)
   let assistantOpen = $state(false)
   // ACP assistant: only when the shell bridge exposes /acp (never on web).
@@ -58,7 +57,9 @@
       }
     }
     window.addEventListener('keydown', onPaletteKey)
-    // ⌘J toggles the assistant drawer (desktop shell only).
+    const onPaletteEvt = () => (paletteOpen = true)
+    window.addEventListener('linkinbox:palette', onPaletteEvt)
+    // ⌘J toggles the assistant pane (desktop shell only).
     const onAssistantKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
         e.preventDefault()
@@ -72,6 +73,7 @@
     void acpAvailable().then((ok) => (assistantAvailable = ok))
     return () => {
       window.removeEventListener('keydown', onAssistantKey)
+      window.removeEventListener('linkinbox:palette', onPaletteEvt)
       offLayoutServer()
       window.removeEventListener('popstate', onPop)
       window.removeEventListener('keydown', onPaletteKey)
@@ -82,72 +84,72 @@
 
 <QueryClientProvider client={queryClient}>
   <LiveSync />
-  <div class="app-shell" data-testid="app-shell">
-    <!-- Persistent rail: every view renders rail + content (A1). -->
-    <CollectionsRail {url} {setUrl} />
-    <PaneGroup direction="horizontal" autoSaveId="linkinbox:shell" class="shell-panes">
-    <Pane class="app-col">
-      <header class="mobile-bar">
-        <button
-          type="button"
-          class="btn btn-ghost btn-icon"
-          aria-label={m.aria_open_collections()}
-          onclick={() => (sheetOpen = true)}
-          data-testid="rail-toggle"
-        >
-          <IconMenu />
-        </button>
-        <button
-          type="button"
-          class="mobile-wordmark"
-          onclick={() => setUrl({ view: 'triage', collection: 'enriched', selected: null })}
-        >
-          {m.app_name()}
-        </button>
+  <Sidebar.Provider class="app-shell" data-testid="app-shell">
+    <AppSidebar {url} {setUrl} onIngest={() => setUrl({ dialog: 'ingest' })} />
+    <Sidebar.Inset>
+      <header class="topbar" data-testid="topbar">
+        <Sidebar.Trigger data-testid="rail-toggle" />
+        <span class="topbar-title">{collectionTitle(url)}</span>
         <span class="spacer"></span>
-        <button type="button" class="btn btn-ghost btn-sm" onclick={() => setUrl({ view: 'run', selected: null })}>{m.nav_run()}</button>
-        <button type="button" class="btn btn-ghost btn-sm" aria-label={m.nav_settings()} onclick={() => setUrl({ view: 'settings', selected: null })}><IconSettings /></button>
-        <button type="button" class="btn btn-sm btn-primary" aria-label={m.nav_ingest()} onclick={() => setUrl({ dialog: 'ingest' })} data-testid="mobile-ingest"><IconPlus /></button>
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm topbar-search"
+          onclick={() => (paletteOpen = true)}
+          data-testid="topbar-palette"
+        >
+          <IconSearch />
+          <span class="topbar-search-hint">⌘K</span>
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm btn-primary btn-icon"
+          aria-label={m.nav_ingest()}
+          onclick={() => setUrl({ dialog: 'ingest' })}
+          data-testid="mobile-ingest"
+        >
+          <IconPlus />
+        </button>
       </header>
-      <main class="app-main">
-        {#if url.view === 'attention'}
-          <Attention {url} {setUrl} />
-        {:else if url.view === 'run'}
-          <RunStatus {url} {setUrl} />
-        {:else if url.view === 'settings'}
-          <Settings {url} {setUrl} />
-        {:else if url.view === 'metrics'}
-          <Metrics />
-        {:else}
-          <Triage {url} {setUrl} />
+      <Resizable.PaneGroup direction="horizontal" autoSaveId="linkinbox:shell" class="shell-panes">
+        <Resizable.Pane class="app-col">
+          <main class="app-main">
+            {#if url.view === 'attention'}
+              <Attention {url} {setUrl} />
+            {:else if url.view === 'run'}
+              <RunStatus {url} {setUrl} />
+            {:else if url.view === 'settings'}
+              <Settings {url} {setUrl} />
+            {:else if url.view === 'metrics'}
+              <Metrics />
+            {:else}
+              <Triage {url} {setUrl} />
+            {/if}
+          </main>
+        </Resizable.Pane>
+        {#if assistantOpen && assistantAvailable}
+          <Resizable.Handle withHandle />
+          <Resizable.Pane defaultSize={26} minSize={16} maxSize={45} class="assistant-pane" data-testid="assistant-pane">
+            <AssistantDrawer onClose={() => (assistantOpen = false)} />
+          </Resizable.Pane>
         {/if}
-      </main>
-    </Pane>
-    {#if assistantOpen && assistantAvailable}
-      <PaneResizer class="pane-resizer" />
-      <Pane defaultSize={26} minSize={16} maxSize={45} class="assistant-pane" data-testid="assistant-pane">
-        <AssistantDrawer onClose={() => (assistantOpen = false)} />
-      </Pane>
-    {/if}
-    </PaneGroup>
-    {#if sheetOpen}
-      <CollectionsRail {url} {setUrl} open={true} onClose={() => (sheetOpen = false)} />
-    {/if}
-    {#if url.dialog === 'ingest'}
-      <IngestDialog open={true} {setUrl} />
-    {/if}
-    <CommandPalette
-      open={paletteOpen}
-      {url}
-      {setUrl}
-      invalidate={() => queryClient.invalidateQueries()}
-      openAssistant={assistantAvailable ? () => (assistantOpen = true) : undefined}
-      onClose={() => (paletteOpen = false)}
-    />
-    {#if !$sseConnected}
-      <div class="sse-chip" role="status" data-testid="sse-reconnecting">{m.sse_reconnecting()}</div>
-    {/if}
-  </div>
+      </Resizable.PaneGroup>
+    </Sidebar.Inset>
+  </Sidebar.Provider>
+
+  {#if url.dialog === 'ingest'}
+    <IngestDialog open={true} {setUrl} />
+  {/if}
+  <CommandPalette
+    open={paletteOpen}
+    {url}
+    {setUrl}
+    invalidate={() => queryClient.invalidateQueries()}
+    openAssistant={assistantAvailable ? () => (assistantOpen = true) : undefined}
+    onClose={() => (paletteOpen = false)}
+  />
+  {#if !$sseConnected}
+    <div class="sse-chip" role="status" data-testid="sse-reconnecting">{m.sse_reconnecting()}</div>
+  {/if}
 </QueryClientProvider>
 
 {#if url.dialog === 'help'}
@@ -168,18 +170,50 @@
   </Dialog>
 {/if}
 
+<script lang="ts" module>
+  function collectionTitle(url: UrlState): string {
+    if (url.view !== 'triage') return ''
+    return url.collection.replace(/_/g, ' ')
+  }
+</script>
+
 <style>
-  .app-shell {
+  :global(.app-shell) {
     height: 100vh;
     height: 100dvh;
-    display: flex;
     overflow: hidden;
   }
-  .app-shell :global(.shell-panes) {
-    flex: 1;
-    min-width: 0;
-    height: 100%;
+  .topbar {
     display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--color-line);
+    flex: none;
+  }
+  .topbar-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-ink-soft);
+    text-transform: capitalize;
+    padding-inline: 6px;
+  }
+  .topbar-search {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-ink-faint);
+  }
+  .topbar-search-hint {
+    font-size: 11px;
+    border: 1px solid var(--color-line-strong);
+    border-radius: 4px;
+    padding: 0 4px;
+  }
+  :global(.shell-panes) {
+    flex: 1;
+    min-height: 0;
+    height: 100%;
   }
   :global(.app-col) {
     flex: 1;
@@ -189,7 +223,7 @@
     display: flex;
     flex-direction: column;
   }
-  .app-shell :global(.assistant-pane) {
+  :global(.assistant-pane) {
     height: 100%;
     min-height: 0;
     min-width: 0;
@@ -204,8 +238,8 @@
     display: flex;
     flex-direction: column;
   }
-  .mobile-bar {
-    display: none;
+  .spacer {
+    flex: 1;
   }
   .keymap {
     min-width: 320px;
@@ -237,26 +271,5 @@
     background: var(--color-surface-raised);
     border: 1px solid var(--color-line);
     box-shadow: var(--shadow-pop, 0 4px 14px rgba(0, 0, 0, 0.1));
-  }
-  .spacer {
-    flex: 1;
-  }
-  .mobile-wordmark {
-    font-weight: 700;
-    font-size: 15px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--color-ink);
-  }
-  @media (max-width: 759px) {
-    .mobile-bar {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 10px;
-      border-bottom: 1px solid var(--color-line);
-      background: var(--color-surface-raised);
-    }
   }
 </style>
