@@ -5,7 +5,6 @@
   import type { UrlState } from '../lib/urlState'
   import { COLLECTION_NAMES, type CollectionName } from '../lib/types'
   import type { Component } from 'svelte'
-  import IconInbox from '~icons/lucide/inbox'
   import IconCircleDashed from '~icons/lucide/circle-dashed'
   import IconLock from '~icons/lucide/lock'
   import IconBan from '~icons/lucide/ban'
@@ -13,6 +12,9 @@
   import IconEye from '~icons/lucide/eye'
   import IconCheck from '~icons/lucide/check'
   import IconCircle from '~icons/lucide/circle'
+  import IconInbox from '~icons/lucide/inbox'
+  import IconChevronsRight from '~icons/lucide/chevrons-right'
+  import IconChevronsLeft from '~icons/lucide/chevrons-left'
   import IconChevronDown from '~icons/lucide/chevron-down'
   import IconChevronRight from '~icons/lucide/chevron-right'
   import IconEllipsis from '~icons/lucide/ellipsis'
@@ -288,7 +290,7 @@
         aria-label={m.wordmark_aria()}
         onclick={() => selectCollection('enriched')}
       >
-        l
+        <IconInbox />
       </button>
     {/if}
     <button
@@ -298,7 +300,7 @@
       aria-label={collapsed ? m.aria_expand_collections() : m.aria_collapse_collections()}
       title={collapsed ? m.collapsed_expand() : m.collapsed_collapse()}
     >
-      {collapsed ? '»' : '«'}
+      {#if collapsed}<IconChevronsRight />{:else}<IconChevronsLeft />{/if}
     </button>
   </header>
 
@@ -461,12 +463,23 @@
     border-right: 1px solid var(--color-line);
   }
   .rail-collapsed {
-    width: 56px;
+    width: 60px;
   }
-  /* Icon-only rows center their glyph (Linear/Raycast-style collapsed rail). */
+  /* Icon-only rows center a 36px glyph hit-area (Linear/Raycast-style rail). */
   .rail-collapsed .rail-row {
     justify-content: center;
     padding-inline: 0;
+    min-height: 36px;
+    border-radius: 10px;
+    margin-inline: 8px;
+  }
+  .rail-collapsed .rail-head {
+    padding: 10px 4px 6px;
+  }
+  .rail-collapsed .rail-head .rail-collapse {
+    position: absolute;
+    right: 4px;
+    top: 10px;
   }
   /* Group headers ("collections", "hosts") don't fit a 56px rail. */
   .rail-collapsed .rail-group {
