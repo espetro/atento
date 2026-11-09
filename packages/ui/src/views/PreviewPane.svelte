@@ -17,6 +17,7 @@
   import { hasShellBridge, isDesktopShell, linkMenuItems, showShellContextMenu } from '../lib/desktop'
   import { copyText } from '../lib/format'
   import IconEllipsis from '~icons/lucide/ellipsis'
+  import IconGlobe from '~icons/lucide/globe'
   import Renderer from '../gen/Renderer.svelte'
   import { viewLayout, resetLayout } from '../gen/layout'
   import { registerLayoutView } from '../lib/acp'
@@ -278,7 +279,8 @@
 
 {#if id == null}
   <div class="preview-empty">
-    <p class="meta">{m.preview_select_hint()}</p>
+    <div class="empty-glyph" aria-hidden="true"><IconGlobe /></div>
+    <p class="empty-title display">{m.preview_select_hint()}</p>
     <p class="meta-faint">{m.preview_shortcuts_hint()}</p>
   </div>
 {:else if detailQuery.isPending}
@@ -349,7 +351,7 @@
         <!-- Click-outside dismissal: a transparent layer under the menu. -->
         <button type="button" class="overflow-backdrop" aria-label={m.aria_close()} onclick={() => (overflowOpen = false)} tabindex="-1"></button>
       {/if}
-      <h2 class="preview-title">{detail.title !== '' ? detail.title : detail.url}</h2>
+      <h2 class="preview-title display">{detail.title !== '' ? detail.title : detail.url}</h2>
       <div class="preview-state">
         <StateChip collection={collection} state={detail.state} />
         {#if stateLine}<span class="meta">{stateLine}</span>{/if}
@@ -399,7 +401,7 @@
 {#snippet metadataSection(_node: UIElement)}
   {#if detail}
       <section class="panel-section" data-testid="metadata-pane">
-        <h3 class="section-title">{m.section_enrichment()}</h3>
+        <h3 class="section-title eyebrow">{m.section_enrichment()}</h3>
         <p class="meta-faint section-note">{m.enrichment_note()}</p>
         <dl class="facts">
           <div class="fact"><dt>{m.fact_category()}</dt><dd>{detail.category || '—'}</dd></div>
@@ -413,7 +415,7 @@
           {/each}
         </dl>
 
-        <h3 class="section-title">{m.section_your_fields()}</h3>
+        <h3 class="section-title eyebrow">{m.section_your_fields()}</h3>
         <p class="meta-faint section-note">{m.your_fields_note()}</p>
         {#if metaForm}
           <div class="meta-form">
@@ -524,6 +526,9 @@
     padding: 24px;
     text-align: center;
   }
+  .empty-title {
+    font-size: 18px;
+  }
   .preview {
     display: flex;
     flex-direction: column;
@@ -549,9 +554,9 @@
     min-width: 0;
   }
   .preview-title {
-    font-size: 17px;
+    font-size: 20px;
     margin-top: 6px;
-    line-height: 1.3;
+    line-height: 1.25;
   }
   .preview-state {
     display: flex;
@@ -587,10 +592,9 @@
     padding: 10px 14px 8px;
   }
   .density-compact .preview-title {
-    font-size: 15.5px;
+    font-size: 17px;
   }
   .section-title {
-    font-size: 14px;
     margin-top: 14px;
   }
   .panel-section > .section-title:first-child {

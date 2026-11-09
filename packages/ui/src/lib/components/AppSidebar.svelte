@@ -6,12 +6,6 @@
   import type { UrlState } from '../urlState'
   import * as Sidebar from '$lib/components/ui/sidebar/index.js'
   import IconInbox from '~icons/lucide/inbox'
-  import IconLoaderCircle from '~icons/lucide/loader-circle'
-  import IconLock from '~icons/lucide/lock'
-  import IconBan from '~icons/lucide/ban'
-  import IconCircleX from '~icons/lucide/circle-x'
-  import IconEye from '~icons/lucide/eye'
-  import IconCheck from '~icons/lucide/check'
   import IconPlay from '~icons/lucide/play'
   import IconChartBar from '~icons/lucide/chart-bar'
   import IconSettings from '~icons/lucide/settings'
@@ -20,9 +14,9 @@
   import { m } from '../../paraglide/messages.js'
 
   /**
-   * Primary navigation sidebar (2026 shell): shadcn Sidebar with icon
-   * collapse + Sheet drawer on mobile. Collections live as menu items with
-   * count badges; footer carries app-level actions.
+   * Primary navigation sidebar (Distill library reference): collections as
+   * colored dots + labels + trailing counts; icons only for app-level
+   * actions. shadcn Sidebar (icon collapse) + Sheet drawer on mobile.
    */
   let { url, setUrl, onIngest }: {
     url: UrlState
@@ -36,14 +30,14 @@
   }))
   const summary = $derived(summaryQuery.data)
 
-  const COLLECTION_ICONS: Record<string, typeof IconInbox> = {
-    enriched: IconInbox,
-    pending: IconLoaderCircle,
-    needs_login: IconLock,
-    blocked: IconBan,
-    errored: IconCircleX,
-    review: IconEye,
-    triaged: IconCheck,
+  const COLLECTION_COLORS: Record<string, string> = {
+    enriched: 'var(--color-state-enriched)',
+    pending: 'var(--color-state-pending)',
+    needs_login: 'var(--color-state-needs-login)',
+    blocked: 'var(--color-state-blocked)',
+    errored: 'var(--color-state-errored)',
+    review: 'var(--color-state-review)',
+    triaged: 'var(--color-state-triaged)',
   }
 
   function openCollection(name: string) {
@@ -61,7 +55,7 @@
           onclick={() => openCollection('enriched')}
         >
           <IconInbox />
-          <span class="font-semibold tracking-tight">{m.app_name()}</span>
+          <span class="display" style="font-size: 16px;">{m.app_name()}</span>
         </Sidebar.MenuButton>
       </Sidebar.MenuItem>
     </Sidebar.Menu>
@@ -75,7 +69,6 @@
           {#each COLLECTION_NAMES as name (name)}
             {@const meta = collectionMeta(name)}
             {@const count = summary?.collections?.[name] ?? 0}
-            {@const ColIcon = COLLECTION_ICONS[name] ?? IconInbox}
             <Sidebar.MenuItem>
               <Sidebar.MenuButton
                 isActive={url.view === 'triage' && url.collection === name}
@@ -83,7 +76,7 @@
                 onclick={() => openCollection(name)}
                 data-testid={`collection-${name}`}
               >
-                <ColIcon />
+                <span class="dot" style={`background: ${COLLECTION_COLORS[name] ?? 'var(--color-ink-faint)'};`}></span>
                 <span>{meta.label}</span>
               </Sidebar.MenuButton>
               {#if count > 0}

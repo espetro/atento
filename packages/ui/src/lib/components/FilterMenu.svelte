@@ -196,7 +196,7 @@
     padding: 2px 0;
   }
   .field-inline input {
-    accent-color: var(--color-accent);
+    accent-color: var(--color-accent-blue);
     margin: 0;
   }
   .field-label {

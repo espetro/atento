@@ -10,46 +10,51 @@
  * markup uses the semantic classes below — never raw palette utilities.
  */
 @theme {
-  --color-surface: #fafaf8;
-  --color-surface-raised: #fdfdfb;
-  --color-surface-sunken: #f1f0ec;
-  --color-ink: #1a1a1a;
-  --color-ink-soft: #6f6a62;
-  --color-ink-faint: #9a948a;
-  --color-line: rgb(26 26 26 / 0.07);
-  --color-line-strong: rgb(26 26 26 / 0.15);
+  /* Editorial-paper ground (Distill/Quiet.md references): warm cream,
+     near-black warm ink, ONE blue accent, hairline rules only. */
+  --color-surface: #f5f3ec;
+  --color-surface-raised: #fcfaf4;
+  --color-surface-sunken: #ebe8dd;
+  --color-ink: #1e1c17;
+  --color-ink-soft: #6f6a5c;
+  --color-ink-faint: #a29c8c;
+  --color-line: rgb(30 28 23 / 0.08);
+  --color-line-strong: rgb(30 28 23 / 0.15);
   --color-accent-blue: #2c4bd0;
   --color-accent-ink: #ffffff;
+
+  --font-display: ui-serif, 'New York', 'Source Serif 4', Georgia, serif;
+  --ease-out-expo: cubic-bezier(0.32, 0.72, 0, 1);
 
   /* shadcn-svelte semantic tokens, bridged to the app palette. `accent`
      is the hover-wash (shadcn semantics); the brand blue is accent-blue /
      primary. */
-  --color-background: #fafaf8;
-  --color-foreground: #1a1a1a;
-  --color-card: #fdfdfb;
-  --color-card-foreground: #1a1a1a;
-  --color-popover: #fdfdfb;
-  --color-popover-foreground: #1a1a1a;
+  --color-background: #f5f3ec;
+  --color-foreground: #1e1c17;
+  --color-card: #fcfaf4;
+  --color-card-foreground: #1e1c17;
+  --color-popover: #fcfaf4;
+  --color-popover-foreground: #1e1c17;
   --color-primary: #2c4bd0;
   --color-primary-foreground: #ffffff;
-  --color-secondary: #f1f0ec;
-  --color-secondary-foreground: #1a1a1a;
-  --color-muted: #f1f0ec;
-  --color-muted-foreground: #6f6a62;
-  --color-accent: rgb(26 26 26 / 0.06);
-  --color-accent-foreground: #1a1a1a;
+  --color-secondary: #ebe8dd;
+  --color-secondary-foreground: #1e1c17;
+  --color-muted: #ebe8dd;
+  --color-muted-foreground: #6f6a5c;
+  --color-accent: rgb(30 28 23 / 0.06);
+  --color-accent-foreground: #1e1c17;
   --color-destructive: #b91c1c;
   --color-destructive-foreground: #ffffff;
-  --color-border: rgb(26 26 26 / 0.09);
-  --color-input: rgb(26 26 26 / 0.12);
+  --color-border: rgb(30 28 23 / 0.09);
+  --color-input: rgb(30 28 23 / 0.12);
   --color-ring: #2c4bd0;
-  --color-sidebar: #f2f1ee;
-  --color-sidebar-foreground: #1a1a1a;
+  --color-sidebar: #edebe2;
+  --color-sidebar-foreground: #1e1c17;
   --color-sidebar-primary: #2c4bd0;
   --color-sidebar-primary-foreground: #ffffff;
-  --color-sidebar-accent: rgb(26 26 26 / 0.05);
-  --color-sidebar-accent-foreground: #1a1a1a;
-  --color-sidebar-border: rgb(26 26 26 / 0.07);
+  --color-sidebar-accent: rgb(30 28 23 / 0.05);
+  --color-sidebar-accent-foreground: #1e1c17;
+  --color-sidebar-border: rgb(30 28 23 / 0.07);
   --color-sidebar-ring: #2c4bd0;
   --color-accent-wash: rgb(44 75 208 / 0.09);
   --color-state-enriched: #15803d;
@@ -93,6 +98,14 @@ h3,
   letter-spacing: -0.01em;
 }
 
+/* Editorial display face (Distill reference): serif for view titles and
+   empty states — New York on macOS, ui-serif elsewhere. */
+.display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
 .mono,
 code,
 kbd {
@@ -115,31 +128,80 @@ kbd {
     padding: 16px 20px;
   }
 
-  /* Dense list rows: square, selection is a background wash. */
+  /* Mail-style list rows: avatar tile + two content lines; selection is a
+     wash, no border. Hover uses the expo curve for a machined feel. */
   .list-row {
     display: flex;
     align-items: flex-start;
     gap: 10px;
     width: 100%;
     padding: 10px 12px;
-    border-radius: 8px;
+    border-radius: 10px;
     text-align: left;
     color: var(--color-ink);
     cursor: pointer;
-    border: 1px solid transparent;
-    transition:
-      background-color 130ms ease,
-      border-color 130ms ease;
+    transition: background-color 150ms var(--ease-out-expo);
   }
   .list-row:hover {
     background: color-mix(in oklab, var(--color-ink) 4%, transparent);
   }
   .list-row.is-selected {
     background: var(--color-accent-wash);
-    border-color: color-mix(in oklab, var(--color-accent-blue) 30%, transparent);
   }
   .list-row.is-dim {
     opacity: 0.55;
+  }
+
+  /* Host monogram tile (Mail reference): pastel field + saturated letter,
+     hue hashed off the hostname. */
+  .row-avatar {
+    width: 30px;
+    height: 30px;
+    flex: none;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 650;
+    margin-top: 1px;
+  }
+  .av-0 { background: #dfeaf6; color: #31597e; }
+  .av-1 { background: #f3e4c6; color: #8a5f1d; }
+  .av-2 { background: #e2efd8; color: #4d7534; }
+  .av-3 { background: #f0dfec; color: #8a4a79; }
+  .av-4 { background: #dde9f3; color: #3a5f86; }
+  .av-5 { background: #ece3d3; color: #75603c; }
+  .av-6 { background: #e0eee9; color: #3d7060; }
+  .av-7 { background: #e9e1f0; color: #6b5487; }
+
+  /* Collection dot (Distill library sidebar). */
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    flex: none;
+  }
+
+  /* Centered pill search in the top bar (Quiet.md reference). */
+  .search-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: var(--color-surface-sunken);
+    color: var(--color-ink-soft);
+    font-size: 12.5px;
+    cursor: pointer;
+    border: none;
+    transition:
+      background-color 150ms var(--ease-out-expo),
+      color 150ms var(--ease-out-expo);
+  }
+  .search-pill:hover {
+    background: color-mix(in oklab, var(--color-ink) 8%, var(--color-surface-sunken));
+    color: var(--color-ink);
   }
 
   /* Chips: pill, hairline, text label always present (never color-only). */
@@ -179,14 +241,15 @@ kbd {
   .chip-state-triaged { color: var(--color-state-triaged); border-color: color-mix(in oklab, var(--color-state-triaged) 35%, transparent); background: color-mix(in oklab, var(--color-state-triaged) 8%, transparent); }
   .chip-state-default { color: var(--color-ink-soft); }
 
-  /* Buttons: one shape (pill-ish 8px), variants by suffix. */
+  /* Buttons: hairline outline on paper, variants by suffix. .btn-pill is
+     the fully-rounded "Add item" style from the references. */
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
     padding: 6px 14px;
-    border-radius: 8px;
+    border-radius: 9px;
     border: 1px solid var(--color-line-strong);
     background: var(--color-surface-raised);
     color: var(--color-ink);
@@ -195,16 +258,24 @@ kbd {
     cursor: pointer;
     white-space: nowrap;
     transition:
-      background-color 130ms ease,
-      border-color 130ms ease,
-      opacity 130ms ease;
+      background-color 150ms var(--ease-out-expo),
+      border-color 150ms var(--ease-out-expo),
+      opacity 150ms var(--ease-out-expo),
+      transform 100ms var(--ease-out-expo);
   }
   .btn:hover:not(:disabled) {
     background: color-mix(in oklab, var(--color-ink) 4%, var(--color-surface-raised));
   }
+  .btn:active:not(:disabled) {
+    transform: scale(0.97);
+  }
   .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+  .btn-pill {
+    border-radius: 999px;
+    padding: 5px 14px;
   }
   .btn-primary {
     background: var(--color-accent-blue);
@@ -363,6 +434,33 @@ kbd {
   .scroll-thin::-webkit-scrollbar-thumb {
     background: var(--color-line-strong);
     border-radius: 8px;
+  }
+
+  /* Centered empty state (Apple Notes reference): muted glyph disc +
+     serif title + one meta line. Views pair it with `.display`. */
+  .empty-glyph {
+    width: 52px;
+    height: 52px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-surface-sunken);
+    color: var(--color-ink-soft);
+    margin-bottom: 10px;
+  }
+  .empty-glyph svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* Eyebrow section label (Distill reference): tiny caps above content. */
+  .eyebrow {
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
   }
 
   /* Meta text helpers (still semantic-layer, not palette utilities). */

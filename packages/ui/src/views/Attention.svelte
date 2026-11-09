@@ -387,7 +387,7 @@
     color: var(--color-ink-soft);
   }
   .att-tab.is-active {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-blue);
     color: var(--color-ink);
     font-weight: 600;
   }

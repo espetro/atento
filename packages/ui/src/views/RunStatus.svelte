@@ -390,7 +390,7 @@
     color: var(--color-ink-faint);
   }
   .step.is-now {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-blue);
     color: var(--color-ink);
     font-weight: 700;
   }

@@ -552,7 +552,7 @@
   }
   .mode-tab.is-active {
     color: var(--color-ink);
-    border-bottom-color: var(--color-accent);
+    border-bottom-color: var(--color-accent-blue);
     font-weight: 600;
   }
   .ingest-text {
@@ -589,7 +589,7 @@
     cursor: pointer;
   }
   .dropzone.drag-over {
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-blue);
     background: var(--color-accent-soft, rgba(0, 0, 0, 0.03));
   }
   .drop-file {
@@ -625,7 +625,7 @@
   }
   .progress-fill {
     height: 100%;
-    background: var(--color-accent);
+    background: var(--color-accent-blue);
     transition: width 0.3s ease;
   }
   .job-summary {

@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import { QueryClientProvider } from '@tanstack/svelte-query'
   import { createQueryClient } from './lib/api'
-  import { parseUrlState, toUrlState, type UrlState } from './lib/urlState'
+  import { parseUrlState, toUrlState, effectiveCollection, type UrlState } from './lib/urlState'
   import { startKeyboard, onShortcut } from './lib/keyboard'
   import Triage from './views/Triage.svelte'
   import Attention from './views/Attention.svelte'
@@ -89,25 +89,29 @@
     <Sidebar.Inset>
       <header class="topbar" data-testid="topbar">
         <Sidebar.Trigger data-testid="rail-toggle" />
-        <span class="topbar-title">{collectionTitle(url)}</span>
-        <span class="spacer"></span>
+        <span class="topbar-crumb">
+          {#if url.view === 'triage'}
+            <span class="dot" style={`background: ${collectionDot(effectiveCollection(url))};`}></span>
+            <span class="topbar-title display">{collectionMeta(effectiveCollection(url)).label}</span>
+          {/if}
+        </span>
         <button
           type="button"
-          class="btn btn-ghost btn-sm topbar-search"
+          class="search-pill"
           onclick={() => (paletteOpen = true)}
           data-testid="topbar-palette"
         >
           <IconSearch />
-          <span class="topbar-search-hint">⌘K</span>
+          <span class="search-pill-label">{m.search_placeholder()}</span>
+          <kbd class="kbd">⌘K</kbd>
         </button>
         <button
           type="button"
-          class="btn btn-sm btn-primary btn-icon"
-          aria-label={m.nav_ingest()}
+          class="btn btn-sm btn-primary btn-pill"
           onclick={() => setUrl({ dialog: 'ingest' })}
           data-testid="mobile-ingest"
         >
-          <IconPlus />
+          <IconPlus /> {m.nav_ingest()}
         </button>
       </header>
       <Resizable.PaneGroup direction="horizontal" autoSaveId="linkinbox:shell" class="shell-panes">
@@ -171,9 +175,18 @@
 {/if}
 
 <script lang="ts" module>
-  function collectionTitle(url: UrlState): string {
-    if (url.view !== 'triage') return ''
-    return url.collection.replace(/_/g, ' ')
+  import { collectionMeta } from './lib/copy'
+  const COLLECTION_DOTS: Record<string, string> = {
+    enriched: 'var(--color-state-enriched)',
+    pending: 'var(--color-state-pending)',
+    needs_login: 'var(--color-state-needs-login)',
+    blocked: 'var(--color-state-blocked)',
+    errored: 'var(--color-state-errored)',
+    review: 'var(--color-state-review)',
+    triaged: 'var(--color-state-triaged)',
+  }
+  function collectionDot(name: string): string {
+    return COLLECTION_DOTS[name] ?? 'var(--color-ink-faint)'
   }
 </script>
 
@@ -183,32 +196,37 @@
     height: 100dvh;
     overflow: hidden;
   }
+  /* Quiet.md-style chrome: trigger left, breadcrumb left-of-center,
+     pill search centered, pill action right. Hairline divider only. */
   .topbar {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 8px 10px;
+    gap: 10px;
+    padding: 10px 14px;
     border-bottom: 1px solid var(--color-line);
     flex: none;
   }
-  .topbar-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--color-ink-soft);
-    text-transform: capitalize;
-    padding-inline: 6px;
-  }
-  .topbar-search {
+  .topbar-crumb {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    color: var(--color-ink-faint);
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
   }
-  .topbar-search-hint {
-    font-size: 11px;
-    border: 1px solid var(--color-line-strong);
-    border-radius: 4px;
-    padding: 0 4px;
+  .topbar-title {
+    font-size: 15px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .search-pill {
+    flex: 1;
+    max-width: 340px;
+    margin-inline: auto;
+  }
+  .search-pill-label {
+    flex: 1;
+    text-align: left;
   }
   :global(.shell-panes) {
     flex: 1;
@@ -237,9 +255,6 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
-  }
-  .spacer {
-    flex: 1;
   }
   .keymap {
     min-width: 320px;

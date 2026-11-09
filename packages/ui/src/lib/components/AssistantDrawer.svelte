@@ -173,17 +173,21 @@
         <div class="turn turn-{turn.role}">
           {#if turn.role === 'agent'}
             <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized -->
-            <div class="markdown-body">{@html md(turn.text)}</div>
+            <div class="agent-bubble"><div class="markdown-body">{@html md(turn.text)}</div></div>
             {#if turn.thought}<details class="thought"><summary>{m.assistant_thought()}</summary><p>{turn.thought}</p></details>{/if}
           {:else}
             <div class="user-bubble">{turn.text}</div>
           {/if}
         </div>
       {:else}
-        <p class="meta-faint assistant-empty">{m.assistant_empty()}</p>
+        <div class="assistant-empty">
+          <div class="empty-glyph" aria-hidden="true"><IconSparkles /></div>
+          <p class="display empty-title">{m.assistant_title()}</p>
+          <p class="meta-faint">{m.assistant_empty()}</p>
+        </div>
       {/each}
       {#if busy}
-        <p class="meta-faint">{m.assistant_thinking()}</p>
+        <p class="meta-faint thinking">{m.assistant_thinking()}</p>
       {/if}
     </div>
 
@@ -252,7 +256,7 @@
     font-size: 13.5px;
   }
   .assistant-title :global(svg) {
-    color: var(--color-accent);
+    color: var(--color-accent-blue);
   }
   .assistant-setup {
     padding: 12px;
@@ -265,26 +269,42 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 12px;
+    padding: 14px 12px;
     display: flex;
     flex-direction: column;
     gap: 10px;
   }
   .assistant-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     text-align: center;
-    margin-top: 24px;
+    gap: 6px;
+    margin-top: 32px;
+  }
+  .empty-title {
+    font-size: 17px;
   }
   .turn-agent .markdown-body {
     font-size: 13px;
   }
   .user-bubble {
     background: var(--color-accent-wash);
-    border-radius: 10px;
+    border-radius: 14px 14px 4px 14px;
     padding: 8px 12px;
     font-size: 13px;
     max-width: 85%;
     margin-left: auto;
     white-space: pre-wrap;
+  }
+  .agent-bubble {
+    background: var(--color-surface-sunken);
+    border-radius: 14px 14px 14px 4px;
+    padding: 8px 12px;
+    max-width: 92%;
+  }
+  .thinking {
+    padding-inline: 4px;
   }
   .thought {
     margin-top: 4px;
@@ -321,6 +341,7 @@
   .composer {
     font-size: 13px;
     resize: none;
+    border-radius: 12px;
   }
   .composer-row {
     display: flex;

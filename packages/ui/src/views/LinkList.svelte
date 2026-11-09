@@ -14,6 +14,7 @@
   import FilterMenu from '../lib/components/FilterMenu.svelte'
   import IconListFilter from '~icons/lucide/list-filter'
   import IconCircleQuestionMark from '~icons/lucide/circle-question-mark'
+  import IconInbox from '~icons/lucide/inbox'
   import IconSparkles from '~icons/lucide/sparkles'
   import IconCode from '~icons/lucide/code'
   import IconPalette from '~icons/lucide/palette'
@@ -306,12 +307,23 @@
     if (t !== '') return t
     return renderTitle(link.url)
   }
+
+  // Host monogram tile (Mail reference): first letter, pastel hue hashed
+  // off the hostname so each site gets a stable color.
+  function hostInitial(host: string): string {
+    return (host.replace(/^www\./, '')[0] ?? '·').toUpperCase()
+  }
+  function hostHue(host: string): number {
+    let h = 0
+    for (const c of host) h = (h * 31 + c.charCodeAt(0)) >>> 0
+    return h % 8
+  }
 </script>
 
 <div class="listpane" class:density-compact={$density === 'compact'} data-testid="link-list-pane">
   <header class="list-head">
     <div class="list-title-row">
-      <h1 class="list-title">{meta.label}</h1>
+      <h1 class="list-title display">{meta.label}</h1>
       <span class="meta" data-testid="total-count">{m.list_total_items({ count: total })}</span>
     </div>
     <div class="search-row">
@@ -337,7 +349,7 @@
       <div class="search-center">
         <input
           bind:this={searchEl}
-          class="input search-input"
+          class="input search-input search-input-pill"
           type="search"
           placeholder={m.search_placeholder()}
           aria-label={m.search_aria()}
@@ -375,18 +387,17 @@
     </div>
   {:else if items.length === 0}
     <div class="list-body empty">
-      <div class="empty-card pane">
-        <p class="empty-title">{m.list_empty_title({ collection: meta.label })}</p>
-        <p class="meta">
-          {#if collection === 'pending'}
-            {m.list_empty_pending()}
-          {:else if ATTENTION.has(collection)}
-            {m.list_empty_attention()}
-          {:else}
-            {m.list_empty_default()}
-          {/if}
-        </p>
-      </div>
+      <div class="empty-glyph" aria-hidden="true"><IconInbox /></div>
+      <p class="empty-title display">{m.list_empty_title({ collection: meta.label })}</p>
+      <p class="meta">
+        {#if collection === 'pending'}
+          {m.list_empty_pending()}
+        {:else if ATTENTION.has(collection)}
+          {m.list_empty_attention()}
+        {:else}
+          {m.list_empty_default()}
+        {/if}
+      </p>
     </div>
   {:else}
     <div class="list-body scroll-thin" bind:this={scrollEl} data-testid="link-list">
@@ -472,6 +483,7 @@
   {@const link = props.link}
   {@const meta = collectionMeta(props.collection)}
   {@const headline = props.displayTitle(link)}
+  {@const host = link.host ?? hostOf(link.url)}
   <button
     type="button"
     class="list-row"
@@ -482,7 +494,8 @@
     onclick={props.onClick}
     oncontextmenu={(e) => onRowContextMenu(link, e)}
   >
-    <span class="row-check" aria-hidden="true">{props.checked ? '☑' : ''}</span>
+    <span class="row-check" aria-hidden="true">{props.checked ? '✓' : ''}</span>
+    <span class="row-avatar av-{hostHue(host)}" aria-hidden="true">{hostInitial(host)}</span>
     <span class="row-main">
       <span class="row-line1">
         <span
@@ -490,26 +503,26 @@
           title={meta.label}
           data-testid="state-dot"
         ></span>
-        {#if props.showHost}
-          <span class="row-host meta">{link.host ?? hostOf(link.url)}</span>
-        {/if}
-        <span class="meta row-time">{timeAgo(link.updated_at)}</span>
-        {#if link.read_minutes > 0}<span class="meta">{link.read_minutes}m</span>{/if}
-        {#if link.reason}
-          <span class="row-reason meta">
-            {reasonLabel(link.reason)}{#if link.next_attempt_at} · {m.row_retry({ time: timeAgo(link.next_attempt_at) })}{/if}
-          </span>
-        {/if}
+        <span class="row-title" title={headline} data-testid="row-title">{headline}</span>
         <span class="row-icons">
           {#if link.category}<IconChip icon={categoryIcon(link.category)} label={link.category} />{/if}
           {#if link.priority === 'high'}<IconChip icon={IconFlame} label={m.priority_high()} accent />{/if}
           {#if props.isStale(link)}<IconChip icon={IconClock} label={m.chip_stale()} tone="blocked" />{/if}
         </span>
+        <span class="meta row-time">{timeAgo(link.updated_at)}</span>
       </span>
-      <span class="row-title" title={headline} data-testid="row-title">{headline}</span>
-      {#if headline !== link.url}
-        <span class="row-url meta" title={link.url} data-testid="row-url">{link.url}</span>
-      {/if}
+      <span class="row-line2">
+        <span class="row-host meta">{host}</span>
+        {#if link.read_minutes > 0}<span class="meta">· {link.read_minutes}m</span>{/if}
+        {#if link.reason}
+          <span class="row-reason meta">
+            · {reasonLabel(link.reason)}{#if link.next_attempt_at} · {m.row_retry({ time: timeAgo(link.next_attempt_at) })}{/if}
+          </span>
+        {/if}
+        {#if headline !== link.url}
+          <span class="row-url meta" title={link.url} data-testid="row-url">· {link.url}</span>
+        {/if}
+      </span>
     </span>
   </button>
 {/snippet}
@@ -534,7 +547,18 @@
     gap: 10px;
   }
   .list-title {
-    font-size: 20px;
+    font-size: 22px;
+  }
+  /* Pill search matches the topbar (Quiet.md reference). */
+  .search-input-pill {
+    border-radius: 999px;
+    background: var(--color-surface-sunken);
+    border-color: transparent;
+    padding-inline: 14px;
+  }
+  .search-input-pill:focus {
+    background: var(--color-surface-raised);
+    border-color: var(--color-accent-blue);
   }
   /* A4: filter button on the left, search centered in the remaining space,
      spare slot on the right keeps the input visually centered. */
@@ -566,7 +590,7 @@
     width: 6px;
     height: 6px;
     border-radius: 999px;
-    background: var(--color-accent);
+    background: var(--color-accent-blue);
     flex: none;
   }
   .search-center {
@@ -620,36 +644,40 @@
   }
   .empty {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 6px;
     padding: 32px;
-  }
-  .empty-card {
-    padding: 28px 32px;
     text-align: center;
-    max-width: 340px;
   }
   .empty-title {
-    font-size: 16px;
-    font-weight: 700;
-    margin-bottom: 6px;
+    font-size: 18px;
   }
   .row-check {
     width: 16px;
     flex: none;
     text-align: center;
-    color: var(--color-accent);
+    color: var(--color-accent-blue);
     font-size: 13px;
     padding-top: 2px;
   }
   .row-main {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 2px;
     min-width: 0;
     flex: 1;
   }
   .row-line1 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .row-line2 {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -665,14 +693,11 @@
     flex: none;
   }
   .row-host {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 30%;
     flex: none;
   }
   .row-time {
     flex: none;
+    margin-left: auto;
   }
   .row-reason {
     overflow: hidden;
@@ -687,20 +712,24 @@
     margin-left: auto;
     flex: none;
   }
+  .row-icons + .row-time {
+    margin-left: 4px;
+  }
   .row-title {
     font-size: 14px;
     font-weight: 600;
     line-height: 1.35;
     color: var(--color-ink);
-    /* A3: single-line ellipsis (~80 chars at the default column width). */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    min-width: 0;
   }
   .row-url {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
   }
   .sentinel {
     height: 1px;

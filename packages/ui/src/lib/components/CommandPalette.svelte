@@ -176,7 +176,7 @@
     background: var(--color-accent-wash);
   }
   .palette-item.active :global(svg) {
-    color: var(--color-accent);
+    color: var(--color-accent-blue);
   }
   .palette-label {
     flex: 1;
