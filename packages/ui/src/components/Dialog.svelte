@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { dialogClosed, dialogOpened } from '../lib/keyboard'
+  import { suppressNativePreviews } from '../lib/desktop'
 
   /**
    * Modal dialog: overlay click + Esc close, focus moves into the card on
@@ -29,6 +30,9 @@
 
   $effect(() => {
     if (!open) return
+    // Native preview webviews composite above the DOM — hide them while the
+    // modal is up or it renders underneath the preview. No-op on plain web.
+    const releasePreviews = suppressNativePreviews()
     dialogOpened()
     previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     // Move focus into the dialog on the next tick (children must be mounted).
@@ -49,6 +53,7 @@
     return () => {
       cancelAnimationFrame(id)
       window.removeEventListener('keydown', onWinKey, true)
+      releasePreviews()
       dialogClosed()
       previousFocus?.focus?.()
     }

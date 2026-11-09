@@ -210,6 +210,12 @@ interface PoolEntry {
 
 const pool = new Map<string, PoolEntry>()
 
+// The host whose webview should be visible; null until first show.
+let activeHostKey: string | null = null
+// >0 while a modal dialog is open: native webviews composite above the DOM,
+// so pooled previews must be hidden or dialogs render underneath them.
+let suppressCount = 0
+
 function evictLru() {
 	let oldestKey: string | null = null
 	let oldest = Infinity
@@ -227,16 +233,30 @@ function evictLru() {
 }
 
 /**
- * Apply hidden state to every pooled webview: only `activeHost` is visible.
- * `toggleHidden` is a no-op until the native view assigns a webviewId
- * (async), so we retry a few times for freshly created entries.
+ * Apply hidden state to every pooled webview: only `activeHostKey` is visible
+ * and nothing is visible while a modal suppresses the pool. `toggleHidden` is
+ * a no-op until the native view assigns a webviewId (async), so callers retry.
  */
-function applyVisibility(activeHost: string) {
+function applyVisibility() {
 	for (const [host, entry] of pool) {
-		const wantHidden = host !== activeHost
+		const wantHidden = suppressCount > 0 || host !== activeHostKey
 		if (entry.el.webviewId !== null) {
 			entry.el.toggleHidden(wantHidden)
 		}
+	}
+}
+
+/**
+ * Hide every pooled native preview while a modal is open — native webviews
+ * composite above the DOM, so an open dialog would render underneath them.
+ * Nest-safe via a counter; returns the release function.
+ */
+export function suppressNativePreviews(): () => void {
+	suppressCount++
+	applyVisibility()
+	return () => {
+		suppressCount = Math.max(0, suppressCount - 1)
+		applyVisibility()
 	}
 }
 
@@ -245,10 +265,10 @@ function applyVisibility(activeHost: string) {
 // active webview during rapid selection changes.
 let visibilityGen = 0
 
-function scheduleVisibilityRetries(activeHost: string, gen: number) {
+function scheduleVisibilityRetries(gen: number) {
 	for (const delay of [100, 400, 1200]) {
 		setTimeout(() => {
-			if (gen === visibilityGen) applyVisibility(activeHost)
+			if (gen === visibilityGen) applyVisibility()
 		}, delay)
 	}
 }
@@ -290,8 +310,9 @@ export function showNativePreview(container: HTMLElement, url: string) {
 	}
 
 	const gen = ++visibilityGen
-	applyVisibility(host)
-	scheduleVisibilityRetries(host, gen)
+	activeHostKey = host
+	applyVisibility()
+	scheduleVisibilityRetries(gen)
 
 	if (entry.url !== url) {
 		entry.url = url
