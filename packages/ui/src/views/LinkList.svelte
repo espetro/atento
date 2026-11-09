@@ -149,7 +149,7 @@
   const virtualizerStore = createVirtualizer({
     count: 0,
     getScrollElement: () => scrollEl,
-    estimateSize: () => ($density === 'compact' ? 58 : 76),
+    estimateSize: () => ($density === 'compact' ? 62 : 80),
     overscan: 8,
   })
 
@@ -174,7 +174,7 @@
     const d = $density
     get(virtualizerStore).setOptions({
       count: items.length,
-      estimateSize: () => (d === 'compact' ? 58 : 76),
+      estimateSize: () => (d === 'compact' ? 62 : 80),
     })
   })
 
@@ -457,6 +457,7 @@
     data-link-id={link.id}
     onclick={props.onClick}
     oncontextmenu={(e) => onRowContextMenu(link, e)}
+    class:row-enter={props.index < 24}
     style="--i:{Math.min(props.index, 20)}"
   >
     <span class="row-check" aria-hidden="true">{props.checked ? '✓' : ''}</span>

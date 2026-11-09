@@ -131,7 +131,7 @@
 </script>
 
 <Sidebar.Root collapsible="icon" data-testid="app-sidebar">
-  <Sidebar.Header class="border-b border-sidebar-border">
+  <Sidebar.Header>
     <Sidebar.Menu>
       <Sidebar.MenuItem>
         <Sidebar.MenuButton
@@ -321,8 +321,17 @@
     display: flex;
     gap: 2px;
     padding: 8px 8px 6px;
-    border-bottom: 1px solid var(--color-sidebar-border);
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-right: 28px;
+  }
+  .sidebar-chips::-webkit-scrollbar {
+    display: none;
+  }
+  .sidebar-chips {
+    mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
   }
   .sidebar-chip {
     display: inline-flex;

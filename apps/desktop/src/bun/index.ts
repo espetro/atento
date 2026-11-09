@@ -478,6 +478,8 @@ ApplicationMenu.setApplicationMenu([
 			{ role: "minimize" },
 			{ role: "zoom" },
 			{ type: "separator" },
+			{ label: "Close Window", role: "close", accelerator: "CommandOrControl+W" },
+			{ type: "separator" },
 			{ role: "bringAllToFront" },
 		],
 	},

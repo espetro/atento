@@ -181,14 +181,29 @@
     height: 100dvh;
     overflow: hidden;
   }
+  :global([data-slot='sidebar-inset']) {
+    background: var(--color-surface);
+  }
   .app-main {
     flex: 1;
     min-height: 0;
     min-width: 0;
-    height: 100%;
+    height: auto;
+    margin: 4px 8px 8px 0;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-line);
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgb(22 24 29 / 0.04);
+  }
+  @media (max-width: 767px) {
+    .app-main {
+      margin: 0;
+      border: none;
+      border-radius: 0;
+    }
   }
   /* Icon-only sticky topbar (Notion/ElevenLabs): transparent, chrome is
      glyphs only — logotype + sidebar toggle left, search + settings right. */
@@ -201,7 +216,6 @@
     gap: 2px;
     padding: 8px 12px;
     flex: none;
-    background: transparent;
   }
   .topbar-logo,
   .topbar-btn {
@@ -246,7 +260,7 @@
     justify-content: center;
     background: var(--color-surface-raised);
     border: 1px solid var(--color-line-strong);
-    color: var(--color-accent-blue);
+    color: var(--color-ink);
     box-shadow: var(--shadow-pop);
     cursor: pointer;
     transition:
@@ -260,9 +274,9 @@
     transform: scale(0.95);
   }
   .agent-fab[aria-expanded='true'] {
-    background: var(--color-accent-blue);
-    border-color: var(--color-accent-blue);
-    color: var(--color-accent-ink);
+    background: var(--color-ink);
+    border-color: var(--color-ink);
+    color: var(--color-surface);
   }
   .assistant-pop {
     position: fixed;

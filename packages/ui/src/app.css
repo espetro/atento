@@ -21,7 +21,7 @@
   --color-ink-faint: #9aa1ab;
   --color-line: rgb(22 24 29 / 0.08);
   --color-line-strong: rgb(22 24 29 / 0.15);
-  --color-accent-blue: #2c4bd0;
+  --color-accent-blue: #5e6ad2;
   --color-accent-ink: #ffffff;
 
   --font-display: ui-serif, 'New York', 'Source Serif 4', Georgia, serif;
@@ -36,7 +36,7 @@
   --color-card-foreground: #16181d;
   --color-popover: #ffffff;
   --color-popover-foreground: #16181d;
-  --color-primary: #2c4bd0;
+  --color-primary: #5e6ad2;
   --color-primary-foreground: #ffffff;
   --color-secondary: #eef0f3;
   --color-secondary-foreground: #16181d;
@@ -48,16 +48,16 @@
   --color-destructive-foreground: #ffffff;
   --color-border: rgb(22 24 29 / 0.09);
   --color-input: rgb(22 24 29 / 0.12);
-  --color-ring: #2c4bd0;
+  --color-ring: #5e6ad2;
   --color-sidebar: #f0f1f4;
   --color-sidebar-foreground: #16181d;
-  --color-sidebar-primary: #2c4bd0;
+  --color-sidebar-primary: #5e6ad2;
   --color-sidebar-primary-foreground: #ffffff;
   --color-sidebar-accent: rgb(22 24 29 / 0.05);
   --color-sidebar-accent-foreground: #16181d;
   --color-sidebar-border: rgb(22 24 29 / 0.07);
-  --color-sidebar-ring: #2c4bd0;
-  --color-accent-wash: #e6eaf9;
+  --color-sidebar-ring: #5e6ad2;
+  --color-accent-wash: rgb(22 24 29 / 0.05);
   --color-state-enriched: #15803d;
   --color-state-pending: #475569;
   --color-state-needs-login: #b45309;
@@ -81,9 +81,9 @@
   --color-ink-faint: #626a75;
   --color-line: rgb(255 255 255 / 0.08);
   --color-line-strong: rgb(255 255 255 / 0.16);
-  --color-accent-blue: #5b7cfa;
+  --color-accent-blue: #7b89e8;
   --color-accent-ink: #0f1114;
-  --color-accent-wash: rgb(91 124 250 / 0.18);
+  --color-accent-wash: rgb(255 255 255 / 0.07);
 
   --color-background: #0f1114;
   --color-foreground: #e8eaed;
@@ -91,7 +91,7 @@
   --color-card-foreground: #e8eaed;
   --color-popover: #15181c;
   --color-popover-foreground: #e8eaed;
-  --color-primary: #5b7cfa;
+  --color-primary: #7b89e8;
   --color-primary-foreground: #0f1114;
   --color-secondary: #1c2026;
   --color-secondary-foreground: #e8eaed;
@@ -101,15 +101,15 @@
   --color-accent-foreground: #e8eaed;
   --color-border: rgb(255 255 255 / 0.1);
   --color-input: rgb(255 255 255 / 0.14);
-  --color-ring: #5b7cfa;
+  --color-ring: #7b89e8;
   --color-sidebar: #0c0e11;
   --color-sidebar-foreground: #e8eaed;
-  --color-sidebar-primary: #5b7cfa;
+  --color-sidebar-primary: #7b89e8;
   --color-sidebar-primary-foreground: #0f1114;
   --color-sidebar-accent: rgb(255 255 255 / 0.06);
   --color-sidebar-accent-foreground: #e8eaed;
   --color-sidebar-border: rgb(255 255 255 / 0.08);
-  --color-sidebar-ring: #5b7cfa;
+  --color-sidebar-ring: #7b89e8;
   --shadow-pop: 0 8px 30px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
 
   /* Avatar tiles: muted dark fields, lighter letters. */
@@ -210,7 +210,7 @@ kbd {
 
   /* Staggered row entrance (Notion reference): rows rise 6px + fade,
      18ms apart, capped at 20 via --i. Transform+opacity only. */
-  .list-row {
+  .list-row.row-enter {
     animation: row-in 220ms var(--ease-out-expo) both;
     animation-delay: calc(var(--i, 0) * 18ms);
   }
