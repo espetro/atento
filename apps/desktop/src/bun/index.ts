@@ -1,5 +1,7 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { homedir } from "node:os";
+import { AcpClient, type AcpMcpServer } from "./acp";
 import {
 	ApplicationMenu,
 	BrowserWindow,
@@ -118,6 +120,134 @@ process.on("exit", () => {
 });
 
 // ---------------------------------------------------------------------------
+// ACP assistant (P3). The shell is the ACP client: it spawns the
+// user-configured agent binary over stdio JSON-RPC, injects MCP tool
+// servers into the session (the sidecar's streamable-HTTP /mcp plus a
+// stdio ui-layout shim), and relays session traffic between the agent and
+// the page over the localhost bridge — no new IPC mechanism.
+//
+// Agent selection is user config, never hardcoded: ~/.linkinbox/acp-agent.json
+// ({ "command": ["claude-code-acp", ...] }) or LINKINBOX_ACP_COMMAND.
+// ---------------------------------------------------------------------------
+
+const ACP_CONFIG_PATH = join(homedir(), ".linkinbox", "acp-agent.json");
+
+function acpCommand(): string[] | null {
+	try {
+		const raw = readFileSync(ACP_CONFIG_PATH, "utf8");
+		const cfg = JSON.parse(raw) as { command?: unknown };
+		if (Array.isArray(cfg.command) && cfg.command.length > 0) {
+			return cfg.command.map(String);
+		}
+	} catch {
+		// no config file
+	}
+	const env = process.env["LINKINBOX_ACP_COMMAND"];
+	if (env !== undefined && env.trim() !== "") {
+		return env.trim().split(/\s+/);
+	}
+	return null;
+}
+
+function saveAcpCommand(command: string[]) {
+	mkdirSync(dirname(ACP_CONFIG_PATH), { recursive: true });
+	writeFileSync(ACP_CONFIG_PATH, JSON.stringify({ command }, null, 2));
+}
+
+interface AcpSession {
+	client: AcpClient;
+	sessionId: string;
+}
+let acpSession: AcpSession | null = null;
+let acpError = "";
+const permissionWaiters = new Map<string, (outcome: unknown) => void>();
+let permissionSeq = 0;
+
+function forwardAcpEvent(payload: unknown) {
+	evalInPage(
+		`window.dispatchEvent(new CustomEvent("linkinbox:acp-event",{detail:${JSON.stringify(payload)}}))`,
+	);
+}
+
+function acpMcpServers(): AcpMcpServer[] {
+	const servers: AcpMcpServer[] = [
+		// The app's own link tools — streamable HTTP on the sidecar.
+		{ name: "linkinbox", url: `${UI_URL}/mcp` },
+	];
+	// ui-layout: stdio shim that relays GenUI tools to the page via /layout/tool.
+	const dir = resourcesDir();
+	const shim =
+		dir !== null
+			? join(dir, "mcp-ui-layout.mjs")
+			: join(import.meta.dir, "..", "..", "mcp-ui-layout.mjs");
+	const nodeBin = dir !== null ? join(dir, "node") : "node";
+	servers.push({
+		name: "ui-layout",
+		command: nodeBin,
+		args: [shim],
+		env: { LINKINBOX_BRIDGE: SHELL_BRIDGE_URL },
+	});
+	return servers;
+}
+
+async function ensureAcp(): Promise<AcpSession> {
+	if (acpSession !== null) return acpSession;
+	const cmd = acpCommand();
+	if (cmd === null) throw new Error("no agent configured");
+	acpError = "";
+	const { client, sessionId } = await AcpClient.spawn(cmd, {
+		cwd: homedir(),
+		mcpServers: acpMcpServers(),
+	});
+	client.onNotification = (method, params) => {
+		if (method === "session/update") forwardAcpEvent(params);
+	};
+	client.onRequest = (method, params, respond) => {
+		if (method === "session/request_permission") {
+			const reqId = `perm-${++permissionSeq}`;
+			permissionWaiters.set(reqId, respond);
+			evalInPage(
+				`window.dispatchEvent(new CustomEvent("linkinbox:acp-permission",{detail:${JSON.stringify({ requestId: reqId, params })}}))`,
+			);
+			return;
+		}
+		// Other agent→client requests (fs, terminal) — politely decline.
+		respond({});
+	};
+	acpSession = { client, sessionId };
+	return acpSession;
+}
+
+function dropAcp(err: string) {
+	acpSession?.client.kill();
+	acpSession = null;
+	acpError = err;
+}
+
+// Pending layout tool calls: the shim POSTs here, the request round-trips
+// through the page (gen/catalog lives in the UI), and /layout/result resolves.
+const layoutWaiters = new Map<
+	string,
+	{ resolve: (v: unknown) => void; timer: ReturnType<typeof setTimeout> }
+>();
+let layoutSeq = 0;
+
+async function layoutTool(tool: string, args: unknown): Promise<unknown> {
+	const requestId = `layout-${++layoutSeq}`;
+	const promise = new Promise((resolve, reject) => {
+		const timer = setTimeout(() => {
+			layoutWaiters.delete(requestId);
+			reject(new Error("layout tool timed out — is the page loaded?"));
+		}, 8000);
+		layoutWaiters.set(requestId, { resolve, timer });
+	});
+	evalInPage(
+		`window.dispatchEvent(new CustomEvent("linkinbox:layout-request",{detail:${JSON.stringify({ requestId, tool, args })}}))`,
+	);
+	return promise;
+}
+
+// ---------------------------------------------------------------------------
 // App menubar + context menus.
 //
 // The menubar gives the shell the standard macOS menus (app/edit/view/window/
@@ -141,7 +271,8 @@ const shellBridge = Bun.serve({
 			"access-control-allow-headers": "content-type",
 		};
 		if (req.method === "OPTIONS") return new Response(null, { headers: cors });
-		if (req.method === "POST" && new URL(req.url).pathname === "/context-menu") {
+		const path = new URL(req.url).pathname;
+		if (req.method === "POST" && path === "/context-menu") {
 			try {
 				const body = (await req.json()) as { items?: unknown };
 				if (Array.isArray(body.items)) {
@@ -151,6 +282,101 @@ const shellBridge = Bun.serve({
 				// malformed payload — ignore
 			}
 			return new Response("ok", { headers: cors });
+		}
+		// ---- ACP ---------------------------------------------------------------
+		if (path === "/acp/status" && req.method === "GET") {
+			return Response.json(
+				{
+					configured: acpCommand() !== null,
+					connected: acpSession !== null,
+					sessionId: acpSession?.sessionId ?? null,
+					error: acpError,
+				},
+				{ headers: cors },
+			);
+		}
+		if (path === "/acp/config" && req.method === "POST") {
+			try {
+				const body = (await req.json()) as { command?: unknown };
+				if (!Array.isArray(body.command) || body.command.length === 0) {
+					return new Response("bad command", { status: 400, headers: cors });
+				}
+				saveAcpCommand(body.command.map(String));
+				dropAcp("");
+				return Response.json({ ok: true }, { headers: cors });
+			} catch (e) {
+				return new Response(String(e), { status: 400, headers: cors });
+			}
+		}
+		if (path === "/acp/prompt" && req.method === "POST") {
+			try {
+				const body = (await req.json()) as { text?: unknown };
+				const text = typeof body.text === "string" ? body.text : "";
+				if (text.trim() === "") {
+					return new Response("empty prompt", { status: 400, headers: cors });
+				}
+				const session = await ensureAcp();
+				// Prompt is async: updates stream back via linkinbox:acp-event.
+				void session.client
+					.request("session/prompt", {
+						sessionId: session.sessionId,
+						prompt: [{ type: "text", text }],
+					})
+					.then((result) => forwardAcpEvent({ sessionUpdate: "end_turn", result }))
+					.catch((e) => {
+						forwardAcpEvent({ sessionUpdate: "error", error: String(e) });
+						dropAcp(String(e));
+					});
+				return Response.json({ ok: true }, { headers: cors });
+			} catch (e) {
+				return Response.json({ ok: false, error: String(e) }, { status: 502, headers: cors });
+			}
+		}
+		if (path === "/acp/cancel" && req.method === "POST") {
+			acpSession?.client.notify("session/cancel", { sessionId: acpSession.sessionId });
+			return Response.json({ ok: true }, { headers: cors });
+		}
+		if (path === "/acp/permission" && req.method === "POST") {
+			try {
+				const body = (await req.json()) as { requestId?: unknown; optionId?: unknown };
+				const respond = permissionWaiters.get(String(body.requestId));
+				if (respond === undefined) {
+					return new Response("no such request", { status: 404, headers: cors });
+				}
+				permissionWaiters.delete(String(body.requestId));
+				respond({ outcome: { outcome: "selected", optionId: String(body.optionId ?? "") } });
+				return Response.json({ ok: true }, { headers: cors });
+			} catch (e) {
+				return new Response(String(e), { status: 400, headers: cors });
+			}
+		}
+		// ---- GenUI layout tools (MCP ui-layout shim) ----------------------------
+		if (path === "/layout/tool" && req.method === "POST") {
+			try {
+				const body = (await req.json()) as { tool?: unknown; args?: unknown };
+				if (typeof body.tool !== "string") {
+					return new Response("bad tool", { status: 400, headers: cors });
+				}
+				const result = await layoutTool(body.tool, body.args ?? {});
+				return Response.json(result ?? {}, { headers: cors });
+			} catch (e) {
+				return Response.json({ error: String(e) }, { status: 504, headers: cors });
+			}
+		}
+		if (path === "/layout/result" && req.method === "POST") {
+			try {
+				const body = (await req.json()) as { requestId?: unknown; result?: unknown };
+				const waiter = layoutWaiters.get(String(body.requestId));
+				if (waiter === undefined) {
+					return new Response("no such request", { status: 404, headers: cors });
+				}
+				layoutWaiters.delete(String(body.requestId));
+				clearTimeout(waiter.timer);
+				waiter.resolve(body.result ?? null);
+				return Response.json({ ok: true }, { headers: cors });
+			} catch (e) {
+				return new Response(String(e), { status: 400, headers: cors });
+			}
 		}
 		return new Response("not found", { status: 404, headers: cors });
 	},

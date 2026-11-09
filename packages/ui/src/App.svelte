@@ -13,6 +13,8 @@
   import IngestDialog from './views/IngestDialog.svelte'
   import Dialog from './components/Dialog.svelte'
   import CommandPalette from './components/CommandPalette.svelte'
+  import AssistantDrawer from './components/AssistantDrawer.svelte'
+  import { acpAvailable, startLayoutToolServer } from './lib/acp'
   import IconMenu from '~icons/lucide/menu'
   import IconSettings from '~icons/lucide/settings'
   import IconPlus from '~icons/lucide/plus'
@@ -25,6 +27,9 @@
   let url = $state<UrlState>(parseUrlState(new URLSearchParams(window.location.search)))
   let sheetOpen = $state(false)
   let paletteOpen = $state(false)
+  let assistantOpen = $state(false)
+  // ACP assistant: only when the shell bridge exposes /acp (never on web).
+  let assistantAvailable = $state(false)
 
   function setUrl(next: Partial<UrlState>) {
     url = { ...url, ...next }
@@ -52,7 +57,21 @@
       }
     }
     window.addEventListener('keydown', onPaletteKey)
+    // ⌘J toggles the assistant drawer (desktop shell only).
+    const onAssistantKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
+        e.preventDefault()
+        if (assistantAvailable) assistantOpen = !assistantOpen
+      }
+    }
+    window.addEventListener('keydown', onAssistantKey)
+    // ui-layout MCP tool calls round-trip through here (gen/catalog is the
+    // source of truth and lives in the page).
+    const offLayoutServer = startLayoutToolServer()
+    void acpAvailable().then((ok) => (assistantAvailable = ok))
     return () => {
+      window.removeEventListener('keydown', onAssistantKey)
+      offLayoutServer()
       window.removeEventListener('popstate', onPop)
       window.removeEventListener('keydown', onPaletteKey)
       offKeymap()
@@ -114,8 +133,10 @@
       {url}
       {setUrl}
       invalidate={() => queryClient.invalidateQueries()}
+      openAssistant={assistantAvailable ? () => (assistantOpen = true) : undefined}
       onClose={() => (paletteOpen = false)}
     />
+    <AssistantDrawer open={assistantOpen} onClose={() => (assistantOpen = false)} />
     {#if !$sseConnected}
       <div class="sse-chip" role="status" data-testid="sse-reconnecting">{m.sse_reconnecting()}</div>
     {/if}

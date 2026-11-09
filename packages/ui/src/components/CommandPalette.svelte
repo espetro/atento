@@ -15,12 +15,14 @@
     url,
     setUrl,
     invalidate,
+    openAssistant,
     onClose,
   }: {
     open: boolean
     url: UrlState
     setUrl: (next: Partial<UrlState>) => void
     invalidate: () => void
+    openAssistant?: () => void
     onClose: () => void
   } = $props()
 
@@ -28,7 +30,11 @@
   let active = $state(0)
   let listEl = $state<HTMLElement | null>(null)
 
-  const deps: PaletteDeps = { setUrl: (next) => setUrl(next), invalidate: () => invalidate() }
+  const deps: PaletteDeps = $derived.by(() => ({
+    setUrl: (next: Parameters<typeof setUrl>[0]) => setUrl(next),
+    invalidate: () => invalidate(),
+    openAssistant: openAssistant ? () => openAssistant() : undefined,
+  }))
   const items = $derived(paletteCommands(url, query, deps))
 
   // Fresh state every open.

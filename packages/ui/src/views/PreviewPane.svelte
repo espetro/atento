@@ -19,6 +19,7 @@
   import IconEllipsis from '~icons/lucide/ellipsis'
   import Renderer from '../gen/Renderer.svelte'
   import { viewLayout, resetLayout } from '../gen/layout'
+  import { registerLayoutView } from '../lib/acp'
   import type { UIElement } from '../gen/catalog'
   import { m } from '../paraglide/messages.js'
 
@@ -251,6 +252,8 @@
     { id: 'metadata', type: 'metadataPanel' },
   ]
   const layout = viewLayout('preview', DEFAULT_LAYOUT_NODES)
+  // ui-layout MCP tools read defaults through here (see lib/acp.ts).
+  registerLayoutView('preview', DEFAULT_LAYOUT_NODES)
 
   /** Generic `button` node actions resolve here by opaque id. */
   function onLayoutAction(actionId: string) {

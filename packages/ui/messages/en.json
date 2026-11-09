@@ -355,5 +355,17 @@
   "palette_run_pipeline": "run pipeline",
   "palette_density_toggle": "density: {density}",
   "palette_layout_set": "layout: {layout}",
-  "layout_reset": "reset layout"
+  "layout_reset": "reset layout",
+  "palette_assistant": "open assistant",
+  "assistant_title": "assistant",
+  "assistant_placeholder": "ask the agent…  (Enter to send)",
+  "assistant_send": "send",
+  "assistant_thinking": "thinking…",
+  "assistant_thought": "thought",
+  "assistant_permission": "the agent asks permission to continue:",
+  "assistant_not_configured": "no agent configured — set the ACP agent command:",
+  "assistant_empty": "ask the agent to triage, search, or rearrange this view",
+  "assistant_agent_placeholder": "claude-code-acp",
+  "assistant_save_agent": "save agent command",
+  "assistant_error": "agent request failed"
 }

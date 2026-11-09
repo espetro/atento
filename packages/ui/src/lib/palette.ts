@@ -27,6 +27,7 @@ import IconRows3 from '~icons/lucide/rows-3'
 import IconPlus from '~icons/lucide/plus'
 import IconPlay from '~icons/lucide/play'
 import IconKeyboard from '~icons/lucide/keyboard'
+import IconSparkles from '~icons/lucide/sparkles'
 
 /**
  * Command palette model (P1.1). `paletteCommands` is pure-ish (reads the
@@ -49,6 +50,8 @@ export interface PaletteDeps {
 	setUrl: (next: Partial<UrlState>) => void
 	/** Invalidate TanStack queries (refresh data). */
 	invalidate: () => void
+	/** Present when the ACP assistant drawer is available (desktop shell). */
+	openAssistant?: () => void
 }
 
 /**
@@ -206,6 +209,17 @@ export function paletteCommands(
 		keywords: 'rows spacing',
 		run: () => setDensity(next),
 	})
+
+	if (deps.openAssistant) {
+		cmds.push({
+			id: 'app.assistant',
+			label: m.palette_assistant(),
+			icon: IconSparkles,
+			keywords: 'ai chat agent acp',
+			hint: '⌘J',
+			run: () => deps.openAssistant!(),
+		})
+	}
 
 	cmds.push(
 		{
