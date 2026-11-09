@@ -12,6 +12,7 @@
   import CollectionsRail from './views/CollectionsRail.svelte'
   import IngestDialog from './views/IngestDialog.svelte'
   import Dialog from './components/Dialog.svelte'
+  import CommandPalette from './components/CommandPalette.svelte'
   import LiveSync from './components/LiveSync.svelte'
   import { sseConnected } from './lib/events'
   import { m } from './paraglide/messages.js'
@@ -20,6 +21,7 @@
 
   let url = $state<UrlState>(parseUrlState(new URLSearchParams(window.location.search)))
   let sheetOpen = $state(false)
+  let paletteOpen = $state(false)
 
   function setUrl(next: Partial<UrlState>) {
     url = { ...url, ...next }
@@ -38,8 +40,18 @@
     const offKeymap = onShortcut('?', () =>
       setUrl({ dialog: url.dialog === 'help' ? '' : 'help' }),
     )
+    // ⌘K/⌃K toggles the command palette; the single-key dispatcher skips
+    // modifier chords, so this listens on window directly.
+    const onPaletteKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        paletteOpen = !paletteOpen
+      }
+    }
+    window.addEventListener('keydown', onPaletteKey)
     return () => {
       window.removeEventListener('popstate', onPop)
+      window.removeEventListener('keydown', onPaletteKey)
       offKeymap()
     }
   })
@@ -94,6 +106,13 @@
     {#if url.dialog === 'ingest'}
       <IngestDialog open={true} {setUrl} />
     {/if}
+    <CommandPalette
+      open={paletteOpen}
+      {url}
+      {setUrl}
+      invalidate={() => queryClient.invalidateQueries()}
+      onClose={() => (paletteOpen = false)}
+    />
     {#if !$sseConnected}
       <div class="sse-chip" role="status" data-testid="sse-reconnecting">{m.sse_reconnecting()}</div>
     {/if}

@@ -124,6 +124,15 @@ export async function showShellContextMenu(items: ShellMenuItem[]): Promise<void
 	}
 }
 
+/**
+ * Dispatch a menu action on the same `linkinbox:menu-action` bus the shell
+ * uses — lets web-side surfaces (command palette) reuse the views' handlers.
+ */
+export function dispatchMenuAction(a: ShellMenuAction): void {
+	if (typeof window === 'undefined') return
+	window.dispatchEvent(new CustomEvent<ShellMenuAction>('linkinbox:menu-action', { detail: a }))
+}
+
 /** Subscribe to actions picked in a shell-native menu. Returns unsubscribe. */
 export function onShellMenuAction(handler: (a: ShellMenuAction) => void): () => void {
 	if (typeof window === 'undefined') return () => {}

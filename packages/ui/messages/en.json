@@ -1,7 +1,6 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "app_name": "linkinbox",
-
   "aria_open_collections": "Open collections",
   "aria_expand_collections": "Expand collections",
   "aria_collapse_collections": "Collapse collections",
@@ -28,7 +27,6 @@
   "nav_settings": "settings",
   "nav_run": "run",
   "nav_ingest": "ingest",
-
   "filters_aria_label": "Filters and layout",
   "menu_filters": "filters",
   "menu_layout": "layout",
@@ -49,7 +47,6 @@
   "density_aria_label": "Density",
   "density_compact": "compact",
   "density_comfortable": "comfortable",
-
   "search_placeholder": "/ search titles & urls",
   "search_aria": "Search links",
   "list_total_items": "{count} items",
@@ -68,7 +65,6 @@
   "row_retry": "retry {time}",
   "help_aria": "Keyboard shortcuts",
   "help_title": "Keyboard shortcuts (?)",
-
   "action_copy": "copy",
   "action_copied": "copied",
   "action_copy_url": "copy url",
@@ -83,7 +79,6 @@
   "action_discard": "discard",
   "action_reextract": "re-extract",
   "action_open": "open",
-
   "keymap_title": "Keyboard",
   "keymap_move": "move selection",
   "keymap_search": "focus search",
@@ -92,7 +87,6 @@
   "keymap_open": "open link in browser",
   "keymap_help": "this overlay",
   "sse_reconnecting": "reconnecting…",
-
   "preview_back": "‹ back",
   "preview_select_hint": "Select a link to preview it.",
   "preview_shortcuts_hint": "j/k move · / search · a archive · s schedule · d discard",
@@ -125,7 +119,6 @@
   "picker_title": "Re-extract with adapter",
   "picker_subtitle": "Pick the browser adapter for link #{id}.",
   "adapter_healthy": "healthy",
-
   "undo_archived": "archived",
   "undo_discarded": "discarded",
   "undo_label_host": "{label} ({host})",
@@ -134,7 +127,6 @@
   "restore_failed_one": "restore failed: {count} link not restorable",
   "restore_failed_other": "restore failed: {count} links not restorable",
   "restore_partial": "restored {updated} of {total} links",
-
   "attention_aria": "Attention collections",
   "attention_title": "{collection} {count} links",
   "next_step": "Next step:",
@@ -162,11 +154,9 @@
   "bulk_body_post_archive": "will be archived. You can undo from the toast.",
   "bulk_body_pre_discard": "Every {collection} link from",
   "bulk_body_post_discard": "will be discarded. You can undo from the toast.",
-
   "time_just_now": "just now",
   "time_ago": "{text} ago",
   "time_in_future": "in {text}",
-
   "run_failed": "Run failed — {error}",
   "run_busy": "Another run is in progress",
   "run_stage_skipped": "A stage was skipped — another run held the lock",
@@ -174,7 +164,6 @@
   "run_all_clear": "Last run finished — all clear",
   "run_had_errors": "Last run had errors (#{id})",
   "run_finished": "Last run finished",
-
   "col_enriched_label": "enriched",
   "col_enriched_meaning": "Extracted and enriched — ready to read.",
   "col_pending_label": "pending",
@@ -193,13 +182,11 @@
   "col_review_remediation": "Open and read each link, then archive or keep it.",
   "col_triaged_label": "triaged",
   "col_triaged_meaning": "Scheduled, archived or discarded — decisions already made.",
-
   "aria_close": "Close",
   "action_refresh": "refresh",
   "action_done": "Done",
   "count_links_one": "{count} link",
   "count_links_other": "{count} links",
-
   "ingest_title": "Ingest links",
   "ingest_mode_aria": "Ingest mode",
   "ingest_mode_paste": "Paste URLs / text",
@@ -239,7 +226,6 @@
   "val_file_too_large": "file too large (max 10 MB)",
   "val_file_type": "unsupported file type — .md .txt .html .json .csv",
   "ingest_invalid_file": "invalid file",
-
   "run_title": "Pipeline run",
   "run_now": "Run now",
   "run_running": "Running…",
@@ -280,7 +266,6 @@
   "run_deferred_count": "{count} deferred",
   "run_needs_browser": "{count} need browser",
   "run_swept": "{count} swept",
-
   "settings_title": "Settings",
   "settings_browsers": "Browser adapters",
   "settings_browsers_note": "read-only — edit [browser] in config.toml",
@@ -344,7 +329,6 @@
   "copy_data_dir": "copy data dir",
   "settings_server_unavailable": "server info unavailable.",
   "cron_hint": "0 * * * * linkinbox run  # hourly — pick your own cadence",
-
   "metrics_title": "Metrics",
   "metrics_sparkline_aria": "daily tokens sparkline",
   "metrics_load_error": "Failed to load metrics.",
@@ -356,6 +340,19 @@
   "th_cost_usd": "Cost USD",
   "metrics_daily": "Daily usage",
   "metrics_daily_line": "{tokens} tokens · ${cost}",
-
-  "api_error_fallback": "API {status} on {path}"
+  "api_error_fallback": "API {status} on {path}",
+  "palette_placeholder": "type a command or search…",
+  "palette_search_links": "search links for “{q}”",
+  "palette_no_results": "nothing matches",
+  "palette_title": "command palette",
+  "palette_go_triage": "go to triage",
+  "palette_go_attention": "go to attention",
+  "palette_go_run": "go to run",
+  "palette_go_metrics": "go to metrics",
+  "palette_go_settings": "go to settings",
+  "palette_clear_filters": "clear all filters",
+  "palette_toggle_stale": "stale only",
+  "palette_run_pipeline": "run pipeline",
+  "palette_density_toggle": "density: {density}",
+  "palette_layout_set": "layout: {layout}"
 }

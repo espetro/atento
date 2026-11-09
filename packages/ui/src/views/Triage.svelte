@@ -5,7 +5,7 @@
   import type { LinkAction, LinkSummary } from '../lib/types'
   import { api, ApiError } from '../lib/api'
   import { reextractBus } from '../lib/events'
-  import { handleShellMenuAction, isDesktopShell, onShellMenuAction } from '../lib/desktop'
+  import { handleShellMenuAction, onShellMenuAction } from '../lib/desktop'
   import LinkList from './LinkList.svelte'
   import PreviewPane from './PreviewPane.svelte'
   import { m } from '../paraglide/messages.js'
@@ -105,8 +105,9 @@
   // ---- shell-native context menus (desktop only) ------------------------------
   // The shell echoes the picked action back as a `linkinbox:menu-action`
   // CustomEvent; data carries { id, url } from the right-clicked row/pane.
+  // Subscribed unconditionally: the native context menu and the web command
+  // palette both dispatch through `linkinbox:menu-action`.
   $effect(() => {
-    if (!isDesktopShell()) return
     return onShellMenuAction((a) =>
       handleShellMenuAction(a, {
         triage: (id, action) => void onTriage([id], action),
