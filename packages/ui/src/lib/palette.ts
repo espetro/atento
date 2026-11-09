@@ -2,7 +2,7 @@ import type { Component } from 'svelte'
 import { get } from 'svelte/store'
 import { api } from './api'
 import { dispatchMenuAction } from './desktop'
-import { density, setDensity } from './prefs'
+import { density, setDensity, theme, setTheme, type Theme } from './prefs'
 import type { UrlState, ViewName } from './urlState'
 import { m } from '../paraglide/messages.js'
 

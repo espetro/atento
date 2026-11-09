@@ -10,24 +10,11 @@
   import type { LinkAction, LinkSummary } from '../lib/types'
   import { hasShellBridge, linkMenuItems, showShellContextMenu } from '../lib/desktop'
   import { density } from '../lib/prefs'
-  import IconChip from '../lib/components/IconChip.svelte'
   import FilterMenu from '../lib/components/FilterMenu.svelte'
   import IconListFilter from '~icons/lucide/list-filter'
-  import IconCircleQuestionMark from '~icons/lucide/circle-question-mark'
   import IconInbox from '~icons/lucide/inbox'
-  import IconSparkles from '~icons/lucide/sparkles'
-  import IconCode from '~icons/lucide/code'
-  import IconPalette from '~icons/lucide/palette'
-  import IconPackage from '~icons/lucide/package'
-  import IconShield from '~icons/lucide/shield'
-  import IconWrench from '~icons/lucide/wrench'
-  import IconBookOpen from '~icons/lucide/book-open'
-  import IconTag from '~icons/lucide/tag'
-  import IconFlame from '~icons/lucide/flame'
-  import IconClock from '~icons/lucide/clock'
   import IconX from '~icons/lucide/x'
   import { m } from '../paraglide/messages.js'
-  import type { Component } from 'svelte'
 
   let {
     url,
@@ -240,19 +227,7 @@
 
   const ATTENTION = new Set(['needs_login', 'blocked', 'errored', 'review'])
 
-  // Category → lucide icon (A3): type chips are icon-only with title/aria.
-  const CATEGORY_ICONS: Record<string, Component> = {
-    ai: IconSparkles,
-    engineering: IconCode,
-    design: IconPalette,
-    product: IconPackage,
-    security: IconShield,
-    ops: IconWrench,
-    reading: IconBookOpen,
-  }
-  function categoryIcon(cat: string): Component {
-    return CATEGORY_ICONS[cat] ?? IconTag
-  }
+
   const meta = $derived(collectionMeta(collection))
   const hasActiveFilters = $derived(
     url.q !== '' || url.state !== '' || url.category !== '' || url.host !== '' || url.stale,
@@ -418,6 +393,7 @@
               {@render Row({
                 link,
                 collection,
+                index: row.index,
                 selected: link.id === cursorId,
                 checked: checked.has(link.id),
                 isStale,
@@ -435,6 +411,7 @@
             {@render Row({
               link,
               collection,
+              index: i,
               selected: link.id === cursorId,
               checked: checked.has(link.id),
               isStale,
@@ -454,25 +431,13 @@
     </div>
   {/if}
 
-  <!-- A5: footer key-hints are gone; the ? button opens the help dialog
-       (?dialog=help — same URL mechanism as the ingest dialog). -->
-  <footer class="list-foot">
-    <button
-      type="button"
-      class="btn btn-ghost btn-icon help-btn"
-      aria-label={m.help_aria()}
-      title={m.help_title()}
-      onclick={() => setUrl({ dialog: 'help' })}
-      data-testid="help-button"
-    >
-      <IconCircleQuestionMark width={15} height={15} aria-hidden="true" />
-    </button>
-  </footer>
+
 </div>
 
 {#snippet Row(props: {
   link: LinkSummary
   collection: string
+  index: number
   selected: boolean
   checked: boolean
   isStale: (l: LinkSummary) => boolean
@@ -481,7 +446,6 @@
   onClick: (e: MouseEvent) => void
 })}
   {@const link = props.link}
-  {@const meta = collectionMeta(props.collection)}
   {@const headline = props.displayTitle(link)}
   {@const host = link.host ?? hostOf(link.url)}
   <button
@@ -493,22 +457,13 @@
     data-link-id={link.id}
     onclick={props.onClick}
     oncontextmenu={(e) => onRowContextMenu(link, e)}
+    style="--i:{Math.min(props.index, 20)}"
   >
     <span class="row-check" aria-hidden="true">{props.checked ? '✓' : ''}</span>
     <span class="row-avatar av-{hostHue(host)}" aria-hidden="true">{hostInitial(host)}</span>
     <span class="row-main">
       <span class="row-line1">
-        <span
-          class="row-dot chip-state-{meta.tone}"
-          title={meta.label}
-          data-testid="state-dot"
-        ></span>
         <span class="row-title" title={headline} data-testid="row-title">{headline}</span>
-        <span class="row-icons">
-          {#if link.category}<IconChip icon={categoryIcon(link.category)} label={link.category} />{/if}
-          {#if link.priority === 'high'}<IconChip icon={IconFlame} label={m.priority_high()} accent />{/if}
-          {#if props.isStale(link)}<IconChip icon={IconClock} label={m.chip_stale()} tone="blocked" />{/if}
-        </span>
         <span class="meta row-time">{timeAgo(link.updated_at)}</span>
       </span>
       <span class="row-line2">
@@ -519,9 +474,7 @@
             · {reasonLabel(link.reason)}{#if link.next_attempt_at} · {m.row_retry({ time: timeAgo(link.next_attempt_at) })}{/if}
           </span>
         {/if}
-        {#if headline !== link.url}
-          <span class="row-url meta" title={link.url} data-testid="row-url">· {link.url}</span>
-        {/if}
+
       </span>
     </span>
   </button>
@@ -548,6 +501,10 @@
   }
   .list-title {
     font-size: 22px;
+    text-transform: capitalize;
+  }
+  .filter-btn {
+    text-transform: capitalize;
   }
   /* Pill search matches the topbar (Quiet.md reference). */
   .search-input-pill {
@@ -630,18 +587,6 @@
     flex-direction: column;
     gap: 2px;
   }
-  .list-foot {
-    display: flex;
-    justify-content: flex-end;
-    padding: 2px 8px;
-    border-top: 1px solid var(--color-line);
-  }
-  .help-btn {
-    color: var(--color-ink-faint);
-  }
-  .help-btn:hover {
-    color: var(--color-ink);
-  }
   .empty {
     display: flex;
     flex-direction: column;
@@ -685,13 +630,6 @@
     overflow: hidden;
     white-space: nowrap;
   }
-  .row-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 999px;
-    background: currentColor;
-    flex: none;
-  }
   .row-host {
     flex: none;
   }
@@ -705,16 +643,6 @@
     min-width: 0;
     flex: 0 1 auto;
   }
-  .row-icons {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    margin-left: auto;
-    flex: none;
-  }
-  .row-icons + .row-time {
-    margin-left: 4px;
-  }
   .row-title {
     font-size: 14px;
     font-weight: 600;
@@ -723,12 +651,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    min-width: 0;
-  }
-  .row-url {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     min-width: 0;
   }
   .sentinel {
@@ -766,5 +688,11 @@
   }
   .row-reason {
     font-size: 11.5px;
+  }
+  @media (max-width: 767px) {
+    .list-head,
+    .listpane.density-compact .list-head {
+      padding-left: 54px;
+    }
   }
 </style>

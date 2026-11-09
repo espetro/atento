@@ -5,7 +5,7 @@
   "aria_expand_collections": "Expand collections",
   "aria_collapse_collections": "Collapse collections",
   "rail_aria_label": "Collections",
-  "rail_group_collections": "collections",
+  "rail_group_collections": "Collections",
   "rail_group_hosts": "hosts",
   "rail_group_saved_filters": "saved filters",
   "rail_show_more": "show {count} more",
@@ -367,5 +367,7 @@
   "assistant_empty": "ask the agent to triage, search, or rearrange this view",
   "assistant_agent_placeholder": "claude-code-acp",
   "assistant_save_agent": "save agent command",
-  "assistant_error": "agent request failed"
+  "assistant_error": "agent request failed",
+  "rail_group_sites": "By site",
+  "rail_group_types": "By type"
 }

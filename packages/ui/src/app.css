@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@custom-variant dark (&:where(.dark, .dark *));
 @plugin 'daisyui' {
   themes: light --default;
 }
@@ -12,14 +13,14 @@
 @theme {
   /* Editorial-paper ground (Distill/Quiet.md references): warm cream,
      near-black warm ink, ONE blue accent, hairline rules only. */
-  --color-surface: #f5f3ec;
-  --color-surface-raised: #fcfaf4;
-  --color-surface-sunken: #ebe8dd;
-  --color-ink: #1e1c17;
-  --color-ink-soft: #6f6a5c;
-  --color-ink-faint: #a29c8c;
-  --color-line: rgb(30 28 23 / 0.08);
-  --color-line-strong: rgb(30 28 23 / 0.15);
+  --color-surface: #f7f8fa;
+  --color-surface-raised: #ffffff;
+  --color-surface-sunken: #eef0f3;
+  --color-ink: #16181d;
+  --color-ink-soft: #5d6570;
+  --color-ink-faint: #9aa1ab;
+  --color-line: rgb(22 24 29 / 0.08);
+  --color-line-strong: rgb(22 24 29 / 0.15);
   --color-accent-blue: #2c4bd0;
   --color-accent-ink: #ffffff;
 
@@ -29,34 +30,34 @@
   /* shadcn-svelte semantic tokens, bridged to the app palette. `accent`
      is the hover-wash (shadcn semantics); the brand blue is accent-blue /
      primary. */
-  --color-background: #f5f3ec;
-  --color-foreground: #1e1c17;
-  --color-card: #fcfaf4;
-  --color-card-foreground: #1e1c17;
-  --color-popover: #fcfaf4;
-  --color-popover-foreground: #1e1c17;
+  --color-background: #f7f8fa;
+  --color-foreground: #16181d;
+  --color-card: #ffffff;
+  --color-card-foreground: #16181d;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #16181d;
   --color-primary: #2c4bd0;
   --color-primary-foreground: #ffffff;
-  --color-secondary: #ebe8dd;
-  --color-secondary-foreground: #1e1c17;
-  --color-muted: #ebe8dd;
-  --color-muted-foreground: #6f6a5c;
-  --color-accent: rgb(30 28 23 / 0.06);
-  --color-accent-foreground: #1e1c17;
+  --color-secondary: #eef0f3;
+  --color-secondary-foreground: #16181d;
+  --color-muted: #eef0f3;
+  --color-muted-foreground: #5d6570;
+  --color-accent: rgb(22 24 29 / 0.06);
+  --color-accent-foreground: #16181d;
   --color-destructive: #b91c1c;
   --color-destructive-foreground: #ffffff;
-  --color-border: rgb(30 28 23 / 0.09);
-  --color-input: rgb(30 28 23 / 0.12);
+  --color-border: rgb(22 24 29 / 0.09);
+  --color-input: rgb(22 24 29 / 0.12);
   --color-ring: #2c4bd0;
-  --color-sidebar: #edebe2;
-  --color-sidebar-foreground: #1e1c17;
+  --color-sidebar: #f0f1f4;
+  --color-sidebar-foreground: #16181d;
   --color-sidebar-primary: #2c4bd0;
   --color-sidebar-primary-foreground: #ffffff;
-  --color-sidebar-accent: rgb(30 28 23 / 0.05);
-  --color-sidebar-accent-foreground: #1e1c17;
-  --color-sidebar-border: rgb(30 28 23 / 0.07);
+  --color-sidebar-accent: rgb(22 24 29 / 0.05);
+  --color-sidebar-accent-foreground: #16181d;
+  --color-sidebar-border: rgb(22 24 29 / 0.07);
   --color-sidebar-ring: #2c4bd0;
-  --color-accent-wash: rgb(44 75 208 / 0.09);
+  --color-accent-wash: #e6eaf9;
   --color-state-enriched: #15803d;
   --color-state-pending: #475569;
   --color-state-needs-login: #b45309;
@@ -67,7 +68,62 @@
   --color-ok: #15803d;
   --color-warn: #b45309;
   --color-bad: #b91c1c;
-  --shadow-pop: 0 8px 30px rgb(26 26 26 / 0.14), 0 1px 3px rgb(26 26 26 / 0.1);
+}
+
+/* Dark theme (Linear/ElevenLabs near-black cool neutrals). <html class="dark">
+   redeclares the same tokens; every utility/semantic class resolves them. */
+.dark {
+  --color-surface: #0f1114;
+  --color-surface-raised: #15181c;
+  --color-surface-sunken: #1c2026;
+  --color-ink: #e8eaed;
+  --color-ink-soft: #9aa1ab;
+  --color-ink-faint: #626a75;
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-line-strong: rgb(255 255 255 / 0.16);
+  --color-accent-blue: #5b7cfa;
+  --color-accent-ink: #0f1114;
+  --color-accent-wash: rgb(91 124 250 / 0.18);
+
+  --color-background: #0f1114;
+  --color-foreground: #e8eaed;
+  --color-card: #15181c;
+  --color-card-foreground: #e8eaed;
+  --color-popover: #15181c;
+  --color-popover-foreground: #e8eaed;
+  --color-primary: #5b7cfa;
+  --color-primary-foreground: #0f1114;
+  --color-secondary: #1c2026;
+  --color-secondary-foreground: #e8eaed;
+  --color-muted: #1c2026;
+  --color-muted-foreground: #9aa1ab;
+  --color-accent: rgb(255 255 255 / 0.07);
+  --color-accent-foreground: #e8eaed;
+  --color-border: rgb(255 255 255 / 0.1);
+  --color-input: rgb(255 255 255 / 0.14);
+  --color-ring: #5b7cfa;
+  --color-sidebar: #0c0e11;
+  --color-sidebar-foreground: #e8eaed;
+  --color-sidebar-primary: #5b7cfa;
+  --color-sidebar-primary-foreground: #0f1114;
+  --color-sidebar-accent: rgb(255 255 255 / 0.06);
+  --color-sidebar-accent-foreground: #e8eaed;
+  --color-sidebar-border: rgb(255 255 255 / 0.08);
+  --color-sidebar-ring: #5b7cfa;
+  --shadow-pop: 0 8px 30px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
+
+  /* Avatar tiles: muted dark fields, lighter letters. */
+  .av-0 { background: #1e2c3d; color: #8fb4d9; }
+  .av-1 { background: #2e2a1e; color: #c9b478; }
+  .av-2 { background: #222b1e; color: #9db985; }
+  .av-3 { background: #2c2623; color: #bda894; }
+  .av-4 { background: #1e2a36; color: #8aabcc; }
+  .av-5 { background: #2b281f; color: #b3a87e; }
+  .av-6 { background: #1f2b28; color: #8fb5a8; }
+  .av-7 { background: #272533; color: #a79fc9; }
+
+  /* State chips stay colored but fields dim for the dark ground. */
+  color-scheme: dark;
 }
 
 html,
@@ -152,6 +208,27 @@ kbd {
     opacity: 0.55;
   }
 
+  /* Staggered row entrance (Notion reference): rows rise 6px + fade,
+     18ms apart, capped at 20 via --i. Transform+opacity only. */
+  .list-row {
+    animation: row-in 220ms var(--ease-out-expo) both;
+    animation-delay: calc(var(--i, 0) * 18ms);
+  }
+  @keyframes row-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+  /* Floating layers pop in (Notion share/menus). */
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96) translateY(4px);
+    }
+  }
+
   /* Host monogram tile (Mail reference): pastel field + saturated letter,
      hue hashed off the hostname. */
   .row-avatar {
@@ -166,14 +243,14 @@ kbd {
     font-weight: 650;
     margin-top: 1px;
   }
-  .av-0 { background: #dfeaf6; color: #31597e; }
-  .av-1 { background: #f3e4c6; color: #8a5f1d; }
-  .av-2 { background: #e2efd8; color: #4d7534; }
-  .av-3 { background: #f0dfec; color: #8a4a79; }
-  .av-4 { background: #dde9f3; color: #3a5f86; }
-  .av-5 { background: #ece3d3; color: #75603c; }
-  .av-6 { background: #e0eee9; color: #3d7060; }
-  .av-7 { background: #e9e1f0; color: #6b5487; }
+  .av-0 { background: #e4ebf5; color: #3a5f86; }
+  .av-1 { background: #ede9dc; color: #6f653e; }
+  .av-2 { background: #e3ebdf; color: #4f6b3c; }
+  .av-3 { background: #e9e6e2; color: #6a6156; }
+  .av-4 { background: #dfe7f0; color: #3f5d78; }
+  .av-5 { background: #e8e6dc; color: #5f5b48; }
+  .av-6 { background: #dfe9e7; color: #46655d; }
+  .av-7 { background: #e5e4ec; color: #585471; }
 
   /* Collection dot (Distill library sidebar). */
   .dot {

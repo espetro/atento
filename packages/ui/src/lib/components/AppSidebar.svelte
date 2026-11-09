@@ -3,22 +3,34 @@
   import { api } from '../api'
   import { COLLECTION_NAMES } from '../types'
   import { collectionMeta } from '../copy'
-  import type { UrlState } from '../urlState'
+  import { effectiveCollection, type UrlState } from '../urlState'
   import * as Sidebar from '$lib/components/ui/sidebar/index.js'
   import IconInbox from '~icons/lucide/inbox'
-  import IconPlay from '~icons/lucide/play'
-  import IconChartBar from '~icons/lucide/chart-bar'
-  import IconSettings from '~icons/lucide/settings'
-  import IconPlus from '~icons/lucide/plus'
-  import IconCommand from '~icons/lucide/command'
+  import IconSearch from '~icons/lucide/search'
+  import IconLoaderCircle from '~icons/lucide/loader-circle'
+  import IconLock from '~icons/lucide/lock'
+  import IconBan from '~icons/lucide/ban'
+  import IconCircleX from '~icons/lucide/circle-x'
+  import IconEye from '~icons/lucide/eye'
+  import IconCheck from '~icons/lucide/check'
+  import IconSparkles from '~icons/lucide/sparkles'
+  import IconCode from '~icons/lucide/code'
+  import IconPalette from '~icons/lucide/palette'
+  import IconPackage from '~icons/lucide/package'
+  import IconShield from '~icons/lucide/shield'
+  import IconWrench from '~icons/lucide/wrench'
+  import IconBookOpen from '~icons/lucide/book-open'
+  import IconTag from '~icons/lucide/tag'
   import { m } from '../../paraglide/messages.js'
+  import type { Component } from 'svelte'
 
   /**
-   * Primary navigation sidebar (Distill library reference): collections as
-   * colored dots + labels + trailing counts; icons only for app-level
-   * actions. shadcn Sidebar (icon collapse) + Sheet drawer on mobile.
+   * Navigation sidebar (Notion reference): header wordmark + collapse, a
+   * Search row that opens ⌘K, then three grouping views — Collections
+   * (pipeline states), By site (top hosts), By type (enrichment
+   * categories). No footer: app actions live in the palette.
    */
-  let { url, setUrl, onIngest }: {
+  let { url, setUrl, onIngest: _onIngest }: {
     url: UrlState
     setUrl: (next: Partial<UrlState>) => void
     onIngest?: () => void
@@ -30,18 +42,60 @@
   }))
   const summary = $derived(summaryQuery.data)
 
-  const COLLECTION_COLORS: Record<string, string> = {
-    enriched: 'var(--color-state-enriched)',
-    pending: 'var(--color-state-pending)',
-    needs_login: 'var(--color-state-needs-login)',
-    blocked: 'var(--color-state-blocked)',
-    errored: 'var(--color-state-errored)',
-    review: 'var(--color-state-review)',
-    triaged: 'var(--color-state-triaged)',
+  const pipelineQuery = createQuery(() => ({
+    queryKey: ['pipeline'],
+    queryFn: () => api.pipeline(),
+  }))
+  const hosts = $derived((pipelineQuery.data?.byHost ?? []).slice(0, 8))
+
+  // "By type" — category counts over the current collection's visible set.
+  const linksQuery = createQuery(() => ({
+    queryKey: ['links', 'types'],
+    queryFn: () => api.links({ collection: 'enriched', limit: 400 }),
+  }))
+  const types = $derived.by(() => {
+    const counts = new Map<string, number>()
+    for (const l of linksQuery.data?.items ?? []) {
+      if (l.category) counts.set(l.category, (counts.get(l.category) ?? 0) + 1)
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
+  })
+
+  const COLLECTION_ICONS: Record<string, Component> = {
+    enriched: IconInbox,
+    pending: IconLoaderCircle,
+    needs_login: IconLock,
+    blocked: IconBan,
+    errored: IconCircleX,
+    review: IconEye,
+    triaged: IconCheck,
+  }
+  const TYPE_ICONS: Record<string, Component> = {
+    ai: IconSparkles,
+    engineering: IconCode,
+    design: IconPalette,
+    product: IconPackage,
+    security: IconShield,
+    ops: IconWrench,
+    reading: IconBookOpen,
   }
 
   function openCollection(name: string) {
-    setUrl({ view: 'triage', collection: name as UrlState['collection'], selected: null })
+    setUrl({ view: 'triage', collection: name as UrlState['collection'], host: '', category: '', selected: null })
+  }
+  function openHost(host: string) {
+    setUrl({ view: 'triage', collection: '', host, category: '', selected: null })
+  }
+  function openType(category: string) {
+    setUrl({ view: 'triage', collection: 'enriched' as UrlState['collection'], category, host: '', selected: null })
+  }
+  function hostInitial(host: string): string {
+    return (host.replace(/^www\./, '')[0] ?? '·').toUpperCase()
+  }
+  function hostHue(host: string): number {
+    let h = 0
+    for (const c of host) h = (h * 31 + c.charCodeAt(0)) >>> 0
+    return h % 8
   }
 </script>
 
@@ -59,6 +113,18 @@
         </Sidebar.MenuButton>
       </Sidebar.MenuItem>
     </Sidebar.Menu>
+    <Sidebar.Menu>
+      <Sidebar.MenuItem>
+        <Sidebar.MenuButton
+          tooltipContent={`${m.palette_title()} ⌘K`}
+          onclick={() => window.dispatchEvent(new CustomEvent('linkinbox:palette'))}
+          data-testid="sidebar-search"
+        >
+          <IconSearch />
+          <span>{m.search_placeholder()}</span>
+        </Sidebar.MenuButton>
+      </Sidebar.MenuItem>
+    </Sidebar.Menu>
   </Sidebar.Header>
 
   <Sidebar.Content>
@@ -69,15 +135,16 @@
           {#each COLLECTION_NAMES as name (name)}
             {@const meta = collectionMeta(name)}
             {@const count = summary?.collections?.[name] ?? 0}
+            {@const ColIcon = COLLECTION_ICONS[name] ?? IconInbox}
             <Sidebar.MenuItem>
               <Sidebar.MenuButton
-                isActive={url.view === 'triage' && url.collection === name}
+                isActive={url.view === 'triage' && effectiveCollection(url) === name && !url.host && !url.category}
                 tooltipContent={`${meta.label} — ${count}`}
                 onclick={() => openCollection(name)}
                 data-testid={`collection-${name}`}
               >
-                <span class="dot" style={`background: ${COLLECTION_COLORS[name] ?? 'var(--color-ink-faint)'};`}></span>
-                <span>{meta.label}</span>
+                <ColIcon />
+                <span class="capitalize">{meta.label}</span>
               </Sidebar.MenuButton>
               {#if count > 0}
                 <Sidebar.MenuBadge>{count}</Sidebar.MenuBadge>
@@ -87,53 +154,77 @@
         </Sidebar.Menu>
       </Sidebar.GroupContent>
     </Sidebar.Group>
-  </Sidebar.Content>
 
-  <Sidebar.Footer class="border-t border-sidebar-border">
-    <Sidebar.Menu>
-      <Sidebar.MenuItem>
-        <Sidebar.MenuButton tooltipContent={m.nav_ingest()} onclick={() => onIngest?.()} data-testid="nav-ingest">
-          <IconPlus />
-          <span>{m.nav_ingest()}</span>
-        </Sidebar.MenuButton>
-      </Sidebar.MenuItem>
-      <Sidebar.MenuItem>
-        <Sidebar.MenuButton
-          isActive={url.view === 'run'}
-          tooltipContent={m.nav_run()}
-          onclick={() => setUrl({ view: 'run', selected: null })}
-        >
-          <IconPlay />
-          <span>{m.nav_run()}</span>
-        </Sidebar.MenuButton>
-      </Sidebar.MenuItem>
-      <Sidebar.MenuItem>
-        <Sidebar.MenuButton
-          isActive={url.view === 'metrics'}
-          tooltipContent="Metrics"
-          onclick={() => setUrl({ view: 'metrics', selected: null })}
-        >
-          <IconChartBar />
-          <span>Metrics</span>
-        </Sidebar.MenuButton>
-      </Sidebar.MenuItem>
-      <Sidebar.MenuItem>
-        <Sidebar.MenuButton
-          isActive={url.view === 'settings'}
-          tooltipContent={m.nav_settings()}
-          onclick={() => setUrl({ view: 'settings', selected: null })}
-        >
-          <IconSettings />
-          <span>{m.nav_settings()}</span>
-        </Sidebar.MenuButton>
-      </Sidebar.MenuItem>
-      <Sidebar.MenuItem>
-        <Sidebar.MenuButton tooltipContent={`${m.palette_title()} ⌘K`} onclick={() => window.dispatchEvent(new CustomEvent('linkinbox:palette'))}>
-          <IconCommand />
-          <span>{m.palette_title()}</span>
-        </Sidebar.MenuButton>
-      </Sidebar.MenuItem>
-    </Sidebar.Menu>
-  </Sidebar.Footer>
+    {#if hosts.length > 0}
+      <Sidebar.Group>
+        <Sidebar.GroupLabel>{m.rail_group_sites()}</Sidebar.GroupLabel>
+        <Sidebar.GroupContent>
+          <Sidebar.Menu>
+            {#each hosts as h (h.host)}
+              <Sidebar.MenuItem>
+                <Sidebar.MenuButton
+                  isActive={url.view === 'triage' && url.host === h.host}
+                  tooltipContent={`${h.host} — ${h.total}`}
+                  onclick={() => openHost(h.host)}
+                  data-testid={`site-${h.host}`}
+                >
+                  <span class="site-avatar av-{hostHue(h.host)}" aria-hidden="true">{hostInitial(h.host)}</span>
+                  <span class="truncate">{h.host}</span>
+                </Sidebar.MenuButton>
+                <Sidebar.MenuBadge>{h.total}</Sidebar.MenuBadge>
+              </Sidebar.MenuItem>
+            {/each}
+          </Sidebar.Menu>
+        </Sidebar.GroupContent>
+      </Sidebar.Group>
+    {/if}
+
+    {#if types.length > 0}
+      <Sidebar.Group>
+        <Sidebar.GroupLabel>{m.rail_group_types()}</Sidebar.GroupLabel>
+        <Sidebar.GroupContent>
+          <Sidebar.Menu>
+            {#each types as [category, count] (category)}
+              {@const TypeIcon = TYPE_ICONS[category] ?? IconTag}
+              <Sidebar.MenuItem>
+                <Sidebar.MenuButton
+                  isActive={url.view === 'triage' && url.category === category}
+                  tooltipContent={`${category} — ${count}`}
+                  onclick={() => openType(category)}
+                  data-testid={`type-${category}`}
+                >
+                  <TypeIcon />
+                  <span class="capitalize">{category}</span>
+                </Sidebar.MenuButton>
+                <Sidebar.MenuBadge>{count}</Sidebar.MenuBadge>
+              </Sidebar.MenuItem>
+            {/each}
+          </Sidebar.Menu>
+        </Sidebar.GroupContent>
+      </Sidebar.Group>
+    {/if}
+  </Sidebar.Content>
   <Sidebar.Rail />
 </Sidebar.Root>
+
+<style>
+  /* Bottom-edge fade: signals more content below the fold (eval pass 2). */
+  :global([data-slot='sidebar-content']) {
+    mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent);
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent);
+  }
+  .site-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 650;
+    flex: none;
+  }
+  .capitalize {
+    text-transform: capitalize;
+  }
+</style>

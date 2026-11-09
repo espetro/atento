@@ -176,10 +176,10 @@ async function newPage(width, height) {
   await page.goto(BASE, { waitUntil: 'networkidle' })
   await page.waitForSelector('[data-testid=link-row]', { timeout: 15_000 })
 
-  // A5: ? button opens the help dialog; ? shortcut toggles it; state is in URL.
-  await page.click('[data-testid=help-button]')
+  // A5: ? shortcut opens the help dialog; state is in URL.
+  await page.keyboard.press('?')
   await page.waitForSelector('.dialog-card', { timeout: 5_000 })
-  check('help dialog opens via button', page.url().includes('dialog=help'))
+  check('help dialog opens via ? key', page.url().includes('dialog=help'))
   check('help dialog shows keymap', (await page.textContent('.dialog-card')).includes('Keyboard'))
   await page.keyboard.press('Escape')
   await page.waitForTimeout(300)
@@ -257,7 +257,7 @@ async function newPage(width, height) {
   await page.waitForSelector('[data-testid=link-row]', { timeout: 15_000 })
   check('mobile rail hidden', (await page.locator('[data-testid=collections-rail]:visible').count()) === 0)
   check('mobile top bar present', (await page.locator('[data-testid=rail-toggle]').count()) === 1)
-  check('help button present on mobile', (await page.locator('[data-testid=help-button]:visible').count()) === 1)
+  check('mobile sidebar trigger present', (await page.locator('[data-testid=rail-toggle]:visible').count()) === 1)
 
   // Tap a row -> preview overlay opens.
   await page.locator('[data-testid=link-row]').first().click()

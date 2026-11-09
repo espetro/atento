@@ -222,6 +222,13 @@
     font-size: 13px;
     box-shadow: var(--shadow-pop);
     z-index: 60;
+    animation: toast-in 240ms var(--ease-out-expo);
+  }
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) translateY(10px);
+    }
   }
   @media (max-width: 759px) {
     .triage-shell {

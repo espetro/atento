@@ -687,6 +687,7 @@
     box-shadow: var(--shadow-pop, 0 8px 24px rgb(0 0 0 / 0.12));
     display: flex;
     flex-direction: column;
+    animation: pop-in 160ms var(--ease-out-expo);
   }
   .overflow-item {
     border: none;
