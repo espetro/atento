@@ -15,6 +15,7 @@
   import CommandPalette from './components/CommandPalette.svelte'
   import AssistantDrawer from './components/AssistantDrawer.svelte'
   import { acpAvailable, startLayoutToolServer } from './lib/acp'
+  import { PaneGroup, Pane, PaneResizer } from 'paneforge'
   import IconMenu from '~icons/lucide/menu'
   import IconSettings from '~icons/lucide/settings'
   import IconPlus from '~icons/lucide/plus'
@@ -84,8 +85,8 @@
   <div class="app-shell" data-testid="app-shell">
     <!-- Persistent rail: every view renders rail + content (A1). -->
     <CollectionsRail {url} {setUrl} />
-    <div class="app-col">
-      <!-- mobile top bar (<760px): the rail lives behind the sheet toggle -->
+    <PaneGroup direction="horizontal" autoSaveId="linkinbox:shell" class="shell-panes">
+    <Pane class="app-col">
       <header class="mobile-bar">
         <button
           type="button"
@@ -121,7 +122,14 @@
           <Triage {url} {setUrl} />
         {/if}
       </main>
-    </div>
+    </Pane>
+    {#if assistantOpen && assistantAvailable}
+      <PaneResizer class="pane-resizer" />
+      <Pane defaultSize={26} minSize={16} maxSize={45} class="assistant-pane" data-testid="assistant-pane">
+        <AssistantDrawer onClose={() => (assistantOpen = false)} />
+      </Pane>
+    {/if}
+    </PaneGroup>
     {#if sheetOpen}
       <CollectionsRail {url} {setUrl} open={true} onClose={() => (sheetOpen = false)} />
     {/if}
@@ -136,7 +144,6 @@
       openAssistant={assistantAvailable ? () => (assistantOpen = true) : undefined}
       onClose={() => (paletteOpen = false)}
     />
-    <AssistantDrawer open={assistantOpen} onClose={() => (assistantOpen = false)} />
     {#if !$sseConnected}
       <div class="sse-chip" role="status" data-testid="sse-reconnecting">{m.sse_reconnecting()}</div>
     {/if}
@@ -168,10 +175,24 @@
     display: flex;
     overflow: hidden;
   }
-  .app-col {
+  .app-shell :global(.shell-panes) {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+  }
+  :global(.app-col) {
     flex: 1;
     min-width: 0;
     min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .app-shell :global(.assistant-pane) {
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
     display: flex;
     flex-direction: column;
   }

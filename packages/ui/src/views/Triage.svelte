@@ -8,6 +8,7 @@
   import { handleShellMenuAction, onShellMenuAction } from '../lib/desktop'
   import LinkList from './LinkList.svelte'
   import PreviewPane from './PreviewPane.svelte'
+  import { PaneGroup, Pane, PaneResizer } from 'paneforge'
   import { m } from '../paraglide/messages.js'
 
   let { url, setUrl }: { url: UrlState; setUrl: (next: Partial<UrlState>) => void } = $props()
@@ -118,34 +119,39 @@
   })
 </script>
 
-<div class="triage-shell" class:layout-bottom={layout === 'bottom'} class:layout-hidden={layout === 'hidden'} data-testid="triage-shell">
-  <div class="list-col" class:has-selection={url.selected != null}>
-    {#if triageError}
-      <div class="triage-error notice notice-bad" role="alert">
-        {triageError}
-        <button type="button" class="btn btn-sm" onclick={() => (triageError = '')}>{m.action_dismiss()}</button>
-      </div>
-    {/if}
-    <LinkList
-      {url}
-      {setUrl}
-      {collection}
-      {onTriage}
-      onReextract={onReextract}
-      {onOpenUrl}
-    />
-  </div>
-
-  {#if layout !== 'hidden' && (layout === 'right' || url.selected != null)}
-    <div class="preview-col" class:mobile-overlay={url.selected != null} data-testid="preview-col">
-      {#if url.selected != null}
-        <button type="button" class="preview-back" onclick={() => setUrl({ selected: null })}>
-          {m.preview_back()}
-        </button>
+<div class="triage-shell" class:layout-hidden={layout === 'hidden'} data-testid="triage-shell">
+  <PaneGroup direction={layout === 'bottom' ? 'vertical' : 'horizontal'} autoSaveId="linkinbox:triage-split">
+    <Pane defaultSize={30} minSize={15} maxSize={60} class="list-col" data-testid="list-col">
+      {#if triageError}
+        <div class="triage-error notice notice-bad" role="alert">
+          {triageError}
+          <button type="button" class="btn btn-sm" onclick={() => (triageError = '')}>{m.action_dismiss()}</button>
+        </div>
       {/if}
-      <PreviewPane id={url.selected} {onTriage} {collection} />
-    </div>
-  {/if}
+      <LinkList
+        {url}
+        {setUrl}
+        {collection}
+        {onTriage}
+        onReextract={onReextract}
+        {onOpenUrl}
+      />
+    </Pane>
+
+    {#if layout !== 'hidden' && (layout === 'right' || url.selected != null)}
+      <PaneResizer class="pane-resizer" data-testid="list-resizer" />
+      <Pane minSize={25} class={`preview-col${url.selected != null ? ' mobile-overlay' : ''}`} data-testid="preview-col">
+        <div class="preview-col-inner">
+          {#if url.selected != null}
+            <button type="button" class="preview-back" onclick={() => setUrl({ selected: null })}>
+              {m.preview_back()}
+            </button>
+          {/if}
+          <PreviewPane id={url.selected} {onTriage} {collection} />
+        </div>
+      </Pane>
+    {/if}
+  </PaneGroup>
 </div>
 
 {#if undo}
@@ -157,42 +163,35 @@
 
 <style>
   .triage-shell {
-    display: flex;
     height: 100%;
     min-height: 0;
     flex: 1;
   }
-  .list-col {
-    width: 400px;
-    flex: none;
-    border-right: 1px solid var(--color-line);
+  .triage-shell :global([data-pane-group]) {
+    height: 100%;
     min-height: 0;
+  }
+  /* Panes own sizing (paneforge); columns are just containers. */
+  .triage-shell :global(.list-col) {
+    min-height: 0;
+    min-width: 0;
+    height: 100%;
     display: flex;
     flex-direction: column;
     position: relative;
   }
-  /* ?layout=bottom: the list goes full-width on top, the preview docks
-     below it (Gmail-style). ?layout=hidden drops the preview entirely. */
-  .triage-shell.layout-bottom,
-  .triage-shell.layout-hidden {
-    flex-direction: column;
-  }
-  .layout-bottom .list-col,
-  .layout-hidden .list-col {
-    width: 100%;
-    flex: 1;
-    border-right: none;
-  }
-  .layout-bottom .preview-col {
-    flex: none;
-    height: 46%;
-    min-height: 220px;
-    border-top: 1px solid var(--color-line);
-  }
-  .preview-col {
-    flex: 1;
+  .triage-shell :global(.preview-col) {
     min-width: 0;
     min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  .preview-col-inner {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     position: relative;
@@ -228,15 +227,15 @@
     .triage-shell {
       flex-direction: column;
     }
-    .list-col {
+    .triage-shell :global(.list-col) {
       width: 100%;
       border-right: none;
       flex: 1;
     }
-    .preview-col {
+    .triage-shell :global(.preview-col) {
       display: none;
     }
-    .preview-col.mobile-overlay {
+    .triage-shell :global(.preview-col.mobile-overlay) {
       display: flex;
       position: fixed;
       inset: 0;
@@ -259,8 +258,6 @@
     }
   }
   @media (min-width: 760px) and (max-width: 1099px) {
-    .list-col {
-      width: 340px;
-    }
+    /* Paneforge owns column sizing; mid-width screens just use the saved split. */
   }
 </style>

@@ -11,6 +11,7 @@
   import { copyText } from '../lib/format'
   import LinkList from './LinkList.svelte'
   import PreviewPane from './PreviewPane.svelte'
+  import { PaneGroup, Pane, PaneResizer } from 'paneforge'
   import CopyButton from '../components/CopyButton.svelte'
   import Dialog from '../components/Dialog.svelte'
   import StateChip from '../components/StateChip.svelte'
@@ -303,8 +304,8 @@
           <button type="button" class="btn btn-sm" onclick={() => (triageError = '')}>{m.action_dismiss()}</button>
         </div>
       {/if}
-      <div class="att-cols">
-        <div class="att-list">
+      <PaneGroup direction="horizontal" autoSaveId="linkinbox:att-split" class="att-cols">
+        <Pane defaultSize={30} minSize={15} maxSize={60} class="att-list">
           <LinkList
             {url}
             {setUrl}
@@ -313,11 +314,12 @@
             {onReextract}
             {onOpenUrl}
           />
-        </div>
-        <div class="att-preview">
+        </Pane>
+        <PaneResizer class="pane-resizer" />
+        <Pane minSize={25} class="att-preview">
           <PreviewPane id={url.selected} {onTriage} {collection} />
-        </div>
-      </div>
+        </Pane>
+      </PaneGroup>
     </div>
   </div>
 </div>
@@ -462,23 +464,22 @@
     flex-direction: column;
     padding: 12px 16px 16px;
   }
-  .att-cols {
+  :global(.att-cols) {
     flex: 1;
     min-height: 0;
-    display: flex;
-    gap: 12px;
+    height: 100%;
   }
-  .att-list {
-    width: 380px;
-    flex: none;
+  :global(.att-cols .att-list) {
     min-height: 0;
+    min-width: 0;
+    height: 100%;
     display: flex;
     flex-direction: column;
   }
-  .att-preview {
-    flex: 1;
+  :global(.att-cols .att-preview) {
     min-width: 0;
     min-height: 0;
+    height: 100%;
     display: flex;
     flex-direction: column;
   }
@@ -499,11 +500,7 @@
     z-index: 60;
   }
   @media (max-width: 900px) {
-    .att-cols {
-      flex-direction: column;
-    }
-    .att-list {
-      width: 100%;
+    :global(.att-cols .att-list) {
       max-height: 40%;
     }
   }

@@ -18,12 +18,13 @@
   import { m } from '../paraglide/messages.js'
 
   /**
-   * ACP assistant drawer (P3.4). Rendered only when the shell bridge exposes
-   * the /acp endpoints (App checks acpAvailable); hidden on plain web.
-   * The shell owns the agent subprocess — the drawer just sends prompts and
-   * renders streamed session/update payloads.
+   * ACP assistant panel (P3.4). Docked as a resizable pane on the right of
+   * the shell — the parent mounts it conditionally. Rendered only when the
+   * shell bridge exposes the /acp endpoints; hidden on plain web. The shell
+   * owns the agent subprocess — the panel just sends prompts and renders
+   * streamed session/update payloads.
    */
-  let { open, onClose }: { open: boolean; onClose: () => void } = $props()
+  let { onClose }: { onClose: () => void } = $props()
 
   interface Turn {
     role: 'user' | 'agent'
@@ -42,7 +43,6 @@
   let scrollEl = $state<HTMLElement | null>(null)
 
   $effect(() => {
-    if (!open) return
     void acpStatus().then((s) => (status = s))
     const offEvents = onAcpEvent((update) => {
       const u = update as {
@@ -145,7 +145,6 @@
   }
 </script>
 
-{#if open}
   <aside class="assistant" data-testid="assistant-drawer" aria-label={m.assistant_title()}>
     <header class="assistant-head">
       <span class="assistant-title"><IconSparkles /> {m.assistant_title()}</span>
@@ -227,22 +226,16 @@
       </div>
     </footer>
   </aside>
-{/if}
 
 <style>
   .assistant {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 380px;
-    max-width: 92vw;
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
+    flex: 1;
     display: flex;
     flex-direction: column;
     background: var(--color-surface-raised);
-    border-left: 1px solid var(--color-line);
-    box-shadow: var(--shadow-pop);
-    z-index: 45;
   }
   .assistant-head {
     display: flex;

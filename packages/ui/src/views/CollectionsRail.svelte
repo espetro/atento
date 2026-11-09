@@ -474,12 +474,11 @@
     margin-inline: 8px;
   }
   .rail-collapsed .rail-head {
-    padding: 10px 4px 6px;
-  }
-  .rail-collapsed .rail-head .rail-collapse {
-    position: absolute;
-    right: 4px;
-    top: 10px;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 0 6px;
+    border-bottom: 1px solid var(--color-line);
   }
   /* Group headers ("collections", "hosts") don't fit a 56px rail. */
   .rail-collapsed .rail-group {
