@@ -67,6 +67,7 @@ async function startSidecar(): Promise<SidecarServer | null> {
 						...process.env,
 						LINKINBOX_PORT: String(port),
 						LINKINBOX_UI_DIST: join(dir, "ui-dist"),
+						LINKINBOX_PARENT_PID: String(process.pid),
 					},
 					stdout: "inherit",
 					stderr: "inherit",

@@ -73,3 +73,22 @@ async function shutdown() {
 }
 process.once('SIGINT', shutdown)
 process.once('SIGTERM', shutdown)
+
+// Parent watchdog: the Electrobun shell can exit without running JS `exit`
+// handlers (crash, force-quit, OS logout), which would orphan this sidecar
+// on 127.0.0.1:4173. When spawned by the shell it passes its pid via
+// LINKINBOX_PARENT_PID; if that process disappears, shut down gracefully.
+const parentPid = Number(env['LINKINBOX_PARENT_PID'] ?? '') || 0
+if (parentPid > 0 && parentPid !== process.pid) {
+	const watchdog = setInterval(() => {
+		try {
+			process.kill(parentPid, 0)
+		} catch (e) {
+			if (e && e.code === 'ESRCH') {
+				console.log('[linkinbox-server] parent process exited, shutting down')
+				void shutdown()
+			}
+		}
+	}, 2000)
+	watchdog.unref()
+}
