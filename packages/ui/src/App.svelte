@@ -18,6 +18,9 @@
   import * as Sidebar from '$lib/components/ui/sidebar/index.js'
   import IconSparkles from '~icons/lucide/sparkles'
   import IconPanelLeft from '~icons/lucide/panel-left'
+  import IconInbox from '~icons/lucide/inbox'
+  import IconSearch from '~icons/lucide/search'
+  import IconSettings from '~icons/lucide/settings'
   import LiveSync from './lib/components/LiveSync.svelte'
   import { sseConnected } from './lib/events'
   import { initTheme } from './lib/prefs'
@@ -89,8 +92,20 @@
   <Sidebar.Provider class="app-shell" data-testid="app-shell">
     <AppSidebar {url} {setUrl} onIngest={() => setUrl({ dialog: 'ingest' })} />
     <Sidebar.Inset>
-      <!-- Mobile: the sidebar is a Sheet; this floating trigger opens it. -->
-      <Sidebar.Trigger class="mobile-trigger" aria-label={m.aria_open_collections()} data-testid="rail-toggle"><IconPanelLeft /></Sidebar.Trigger>
+      <header class="topbar" data-testid="topbar">
+        <button type="button" class="topbar-logo" onclick={() => setUrl({ view: 'triage', collection: '', host: '', category: '', selected: null })} aria-label={m.app_name()}>
+          <IconInbox />
+        </button>
+        <Sidebar.Trigger aria-label={m.aria_open_collections()} data-testid="rail-toggle" />
+        <span class="topbar-right">
+          <button type="button" class="topbar-btn" aria-label={m.search_aria()} onclick={() => (paletteOpen = true)} data-testid="topbar-search">
+            <IconSearch />
+          </button>
+          <button type="button" class="topbar-btn" aria-label={m.nav_settings()} onclick={() => setUrl({ view: 'settings', selected: null })} data-testid="topbar-settings">
+            <IconSettings />
+          </button>
+        </span>
+      </header>
       <main class="app-main">
         {#if url.view === 'attention'}
           <Attention {url} {setUrl} />
@@ -175,27 +190,47 @@
     display: flex;
     flex-direction: column;
   }
-  /* Mobile-only sidebar opener — the sidebar is a Sheet under 768px. */
-  :global(.mobile-trigger) {
-    display: none;
+  /* Icon-only sticky topbar (Notion/ElevenLabs): transparent, chrome is
+     glyphs only — logotype + sidebar toggle left, search + settings right. */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 12px;
+    flex: none;
+    background: transparent;
   }
-  @media (max-width: 767px) {
-    :global(.mobile-trigger) {
-      display: inline-flex;
-      position: fixed;
-      top: 10px;
-      left: 10px;
-      z-index: 40;
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
-      background: var(--color-surface-raised);
-      border: 1px solid var(--color-line);
-      box-shadow: var(--shadow-pop);
-      color: var(--color-ink-soft);
-      align-items: center;
-      justify-content: center;
-    }
+  .topbar-logo,
+  .topbar-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: var(--color-ink-soft);
+    cursor: pointer;
+    transition:
+      background-color 140ms var(--ease-out-expo),
+      color 140ms var(--ease-out-expo);
+  }
+  .topbar-logo {
+    color: var(--color-ink);
+  }
+  .topbar-logo:hover,
+  .topbar-btn:hover {
+    background: var(--color-accent);
+    color: var(--color-ink);
+  }
+  .topbar-right {
+    margin-left: auto;
+    display: flex;
+    gap: 2px;
   }
   /* Notion-style agent: FAB bottom-right → floating chat panel. */
   .agent-fab {

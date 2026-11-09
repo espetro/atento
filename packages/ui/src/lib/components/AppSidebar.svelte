@@ -21,6 +21,9 @@
   import IconWrench from '~icons/lucide/wrench'
   import IconBookOpen from '~icons/lucide/book-open'
   import IconTag from '~icons/lucide/tag'
+  import IconGlobe from '~icons/lucide/globe'
+  import IconPlus from '~icons/lucide/plus'
+  import IconFolder from '~icons/lucide/folder'
   import { m } from '../../paraglide/messages.js'
   import type { Component } from 'svelte'
 
@@ -30,6 +33,34 @@
    * (pipeline states), By site (top hosts), By type (enrichment
    * categories). No footer: app actions live in the palette.
    */
+  type Section = 'collections' | 'sites' | 'types' | 'custom'
+  let section = $state<Section>('collections')
+  interface CustomCollection { name: string; host?: string; category?: string; collection?: string }
+  let customs = $state<CustomCollection[]>(loadCustoms())
+  function loadCustoms(): CustomCollection[] {
+    try { return JSON.parse(localStorage.getItem('linkinbox:collections') ?? '[]') } catch { return [] }
+  }
+  function saveCustoms() {
+    try { localStorage.setItem('linkinbox:collections', JSON.stringify(customs)) } catch { /* private */ }
+  }
+  let addOpen = $state(false)
+  let addName = $state('')
+  function addCustom() {
+    const name = addName.trim()
+    if (name === '') return
+    customs = [...customs, { name, collection: 'enriched' }]
+    saveCustoms()
+    addName = ''
+    addOpen = false
+  }
+  function removeCustom(name: string) {
+    customs = customs.filter((c) => c.name !== name)
+    saveCustoms()
+  }
+  function openCustom(c: CustomCollection) {
+    setUrl({ view: 'triage', collection: (c.collection ?? 'enriched') as UrlState['collection'], host: c.host ?? '', category: c.category ?? '', selected: null })
+  }
+
   let { url, setUrl, onIngest: _onIngest }: {
     url: UrlState
     setUrl: (next: Partial<UrlState>) => void
@@ -127,7 +158,65 @@
     </Sidebar.Menu>
   </Sidebar.Header>
 
+  <div class="sidebar-chips" data-testid="sidebar-chips">
+    {#each ([['collections', IconInbox, m.rail_group_collections()], ['sites', IconGlobe, m.rail_group_sites()], ['types', IconTag, m.rail_group_types()]] as const) as [id, ChipIcon, label] (id)}
+      <button
+        type="button"
+        class="sidebar-chip"
+        class:is-active={section === id}
+        onclick={() => (section = id)}
+        data-testid={`chip-${id}`}
+      >
+        <ChipIcon />
+        <span>{label}</span>
+      </button>
+    {/each}
+    <button
+      type="button"
+      class="sidebar-chip"
+      class:is-active={section === 'custom' || addOpen}
+      onclick={() => { section = 'custom'; addOpen = !addOpen }}
+      data-testid="chip-add"
+      title="Add collection"
+    >
+      <IconPlus />
+      <span>Add</span>
+    </button>
+  </div>
+
   <Sidebar.Content>
+    {#if addOpen}
+      <div class="add-row">
+        <input
+          class="input add-input"
+          placeholder="Collection name"
+          bind:value={addName}
+          onkeydown={(e) => { if (e.key === 'Enter') addCustom(); if (e.key === 'Escape') addOpen = false }}
+          data-testid="add-collection-input"
+        />
+        <button type="button" class="btn btn-sm btn-primary" onclick={addCustom} data-testid="add-collection-save">Add</button>
+      </div>
+    {/if}
+    {#if section === 'custom'}
+      <Sidebar.Group>
+        <Sidebar.GroupContent>
+          <Sidebar.Menu>
+            {#each customs as c (c.name)}
+              <Sidebar.MenuItem>
+                <Sidebar.MenuButton tooltipContent={c.name} onclick={() => openCustom(c)}>
+                  <IconFolder />
+                  <span class="capitalize truncate">{c.name}</span>
+                </Sidebar.MenuButton>
+                <Sidebar.MenuBadge><button type="button" class="chip-del" aria-label={`remove ${c.name}`} onclick={(e) => { e.stopPropagation(); removeCustom(c.name) }}>×</button></Sidebar.MenuBadge>
+              </Sidebar.MenuItem>
+            {:else}
+              <p class="meta-faint add-empty">No custom collections yet.</p>
+            {/each}
+          </Sidebar.Menu>
+        </Sidebar.GroupContent>
+      </Sidebar.Group>
+    {/if}
+    {#if section === 'collections'}
     <Sidebar.Group>
       <Sidebar.GroupLabel>{m.rail_group_collections()}</Sidebar.GroupLabel>
       <Sidebar.GroupContent>
@@ -154,8 +243,9 @@
         </Sidebar.Menu>
       </Sidebar.GroupContent>
     </Sidebar.Group>
+    {/if}
 
-    {#if hosts.length > 0}
+    {#if section === 'sites' && hosts.length > 0}
       <Sidebar.Group>
         <Sidebar.GroupLabel>{m.rail_group_sites()}</Sidebar.GroupLabel>
         <Sidebar.GroupContent>
@@ -179,7 +269,7 @@
       </Sidebar.Group>
     {/if}
 
-    {#if types.length > 0}
+    {#if section === 'types' && types.length > 0}
       <Sidebar.Group>
         <Sidebar.GroupLabel>{m.rail_group_types()}</Sidebar.GroupLabel>
         <Sidebar.GroupContent>
@@ -226,5 +316,69 @@
   }
   .capitalize {
     text-transform: capitalize;
+  }
+  .sidebar-chips {
+    display: flex;
+    gap: 2px;
+    padding: 8px 8px 6px;
+    border-bottom: 1px solid var(--color-sidebar-border);
+    flex-wrap: wrap;
+  }
+  .sidebar-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 8px;
+    border-radius: 7px;
+    border: none;
+    background: transparent;
+    color: var(--color-ink-soft);
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      background-color 140ms var(--ease-out-expo),
+      color 140ms var(--ease-out-expo);
+  }
+  .sidebar-chip:hover {
+    background: var(--color-sidebar-accent);
+    color: var(--color-ink);
+  }
+  .sidebar-chip.is-active {
+    background: var(--color-sidebar-accent);
+    color: var(--color-ink);
+    font-weight: 600;
+  }
+  .sidebar-chip :global(svg) {
+    width: 13px;
+    height: 13px;
+  }
+  .add-row {
+    display: flex;
+    gap: 6px;
+    padding: 8px;
+    border-bottom: 1px solid var(--color-sidebar-border);
+  }
+  .add-input {
+    flex: 1;
+    min-width: 0;
+    font-size: 12.5px;
+    padding: 5px 8px;
+  }
+  .add-empty {
+    padding: 8px 14px;
+    font-size: 12px;
+  }
+  .chip-del {
+    border: none;
+    background: transparent;
+    color: var(--color-ink-faint);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+  }
+  .chip-del:hover {
+    color: var(--color-state-blocked);
   }
 </style>
