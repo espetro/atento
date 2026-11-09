@@ -354,5 +354,6 @@
   "palette_toggle_stale": "stale only",
   "palette_run_pipeline": "run pipeline",
   "palette_density_toggle": "density: {density}",
-  "palette_layout_set": "layout: {layout}"
+  "palette_layout_set": "layout: {layout}",
+  "layout_reset": "reset layout"
 }

@@ -17,6 +17,9 @@
   import { hasShellBridge, isDesktopShell, linkMenuItems, showShellContextMenu } from '../lib/desktop'
   import { copyText } from '../lib/format'
   import IconEllipsis from '~icons/lucide/ellipsis'
+  import Renderer from '../gen/Renderer.svelte'
+  import { viewLayout, resetLayout } from '../gen/layout'
+  import type { UIElement } from '../gen/catalog'
   import { m } from '../paraglide/messages.js'
 
   let {
@@ -240,6 +243,23 @@
     fn()
   }
 
+  // ---- GenUI layout (P2.4) ---------------------------------------------------
+  // The pane's sections render from a layout schema. Users/agents can reorder
+  // or extend it; defaults live here, overrides in localStorage via gen/layout.
+  const DEFAULT_LAYOUT_NODES: UIElement[] = [
+    { id: 'preview', type: 'previewPanel' },
+    { id: 'metadata', type: 'metadataPanel' },
+  ]
+  const layout = viewLayout('preview', DEFAULT_LAYOUT_NODES)
+
+  /** Generic `button` node actions resolve here by opaque id. */
+  function onLayoutAction(actionId: string) {
+    if (actionId === 'reextract') onReextractClick()
+    else if (actionId === 'open' && detail?.url) window.open(detail.url, '_blank', 'noopener')
+    else if (actionId === 'copy-url' && detail?.url) void copyText(detail.url)
+    else if (actionId === 'archive' || actionId === 'schedule' || actionId === 'discard') void act(actionId)
+  }
+
   const stateLine = $derived.by(() => {
     if (!detail) return ''
     const parts: string[] = []
@@ -314,6 +334,10 @@
               <button type="button" role="menuitem" class="overflow-item" onclick={() => overflowRun(() => void copyText(detail.url))}>
                 {m.action_copy_url()}
               </button>
+              <hr class="overflow-sep" />
+              <button type="button" role="menuitem" class="overflow-item" onclick={() => overflowRun(() => resetLayout('preview'))}>
+                {m.layout_reset()}
+              </button>
             </div>
           {/if}
         </div>
@@ -330,6 +354,17 @@
     </header>
 
     <div class="preview-body scroll-thin" data-testid="preview-body">
+      <Renderer
+        nodes={$layout}
+        parts={{ previewPanel: previewSection, metadataPanel: metadataSection }}
+        onAction={onLayoutAction}
+      />
+    </div>
+  </div>
+{/if}
+
+{#snippet previewSection(_node: UIElement)}
+  {#if detail && id != null}
       <section class="panel-section" data-testid="section-preview">
         {#if nativePreview && detail.url !== ''}
           <NativePreview url={detail.url} />
@@ -355,7 +390,11 @@
           </div>
         {/if}
       </section>
+  {/if}
+{/snippet}
 
+{#snippet metadataSection(_node: UIElement)}
+  {#if detail}
       <section class="panel-section" data-testid="metadata-pane">
         <h3 class="section-title">{m.section_enrichment()}</h3>
         <p class="meta-faint section-note">{m.enrichment_note()}</p>
@@ -440,10 +479,8 @@
           {/if}
         </div>
       </section>
-
-    </div>
-  </div>
-{/if}
+  {/if}
+{/snippet}
 
 <Dialog open={pickerOpen} labelledBy="adapter-picker-title" onClose={() => (pickerOpen = false)}>
   <div class="picker">
@@ -530,7 +567,7 @@
   .panel-section {
     padding-block: 4px 14px;
   }
-  .panel-section + .panel-section {
+  .panel-section + :global(.panel-section) {
     border-top: 1px solid var(--color-line);
     padding-top: 14px;
   }
@@ -540,7 +577,7 @@
   .density-compact .panel-section {
     padding-block: 2px 10px;
   }
-  .density-compact .panel-section + .panel-section {
+  .density-compact :global(.panel-section + .panel-section) {
     padding-top: 10px;
   }
   .density-compact .preview-head {
