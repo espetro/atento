@@ -4,7 +4,7 @@
   import { get } from 'svelte/store'
   import { api } from '../lib/api'
   import { onShortcut } from '../lib/keyboard'
-  import { hostOf, timeAgo, truncate } from '../lib/format'
+  import { hostOf, renderTitle, timeAgo, truncate } from '../lib/format'
   import { collectionMeta, reasonLabel } from '../lib/copy'
   import type { UrlState } from '../lib/urlState'
   import type { LinkAction, LinkSummary } from '../lib/types'
@@ -288,8 +288,15 @@
     return link.expires_at != null && new Date(link.expires_at).getTime() < Date.now()
   }
 
-  function rowTitle(link: LinkSummary): string {
-    return link.title !== '' ? link.title : link.url
+  // Headline priority: the enrichment summary reads best, then a real
+  // extracted title, then a title rendered from the URL slug. The raw URL
+  // itself only surfaces as the metadata line, never as the headline.
+  function displayTitle(link: LinkSummary): string {
+    const why = link.why_it_matters.trim()
+    if (why !== '') return why
+    const t = link.title.trim()
+    if (t !== '') return t
+    return renderTitle(link.url)
   }
 </script>
 
@@ -395,7 +402,7 @@
                 selected: link.id === cursorId,
                 checked: checked.has(link.id),
                 isStale,
-                rowTitle,
+                displayTitle,
                 showHost: items[row.index - 1]?.host !== link.host,
                 onClick: (e: MouseEvent) => onRowClick(link, e),
               })}
@@ -412,7 +419,7 @@
               selected: link.id === cursorId,
               checked: checked.has(link.id),
               isStale,
-              rowTitle,
+              displayTitle,
               showHost: items[i - 1]?.host !== link.host,
               onClick: (e: MouseEvent) => onRowClick(link, e),
             })}
@@ -450,12 +457,13 @@
   selected: boolean
   checked: boolean
   isStale: (l: LinkSummary) => boolean
-  rowTitle: (l: LinkSummary) => string
+  displayTitle: (l: LinkSummary) => string
   showHost: boolean
   onClick: (e: MouseEvent) => void
 })}
   {@const link = props.link}
   {@const meta = collectionMeta(props.collection)}
+  {@const headline = props.displayTitle(link)}
   <button
     type="button"
     class="list-row"
@@ -489,9 +497,9 @@
           {#if props.isStale(link)}<IconChip icon={IconClock} label={m.chip_stale()} tone="blocked" />{/if}
         </span>
       </span>
-      <span class="row-title" title={props.rowTitle(link)} data-testid="row-title">{props.rowTitle(link)}</span>
-      {#if link.why_it_matters}
-        <span class="row-why meta">{truncate(link.why_it_matters, 140)}</span>
+      <span class="row-title" title={headline} data-testid="row-title">{headline}</span>
+      {#if headline !== link.url}
+        <span class="row-url meta" title={link.url} data-testid="row-url">{link.url}</span>
       {/if}
     </span>
   </button>
@@ -673,7 +681,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .row-why {
+  .row-url {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -701,13 +709,13 @@
   .listpane.density-compact .row-title {
     font-size: 13px;
   }
-  .listpane.density-compact .row-why {
+  .listpane.density-compact .row-url {
     font-size: 12px;
   }
   .listpane.density-compact .row-reason {
     font-size: 11px;
   }
-  .row-why {
+  .row-url {
     font-size: 12.5px;
     line-height: 1.45;
   }

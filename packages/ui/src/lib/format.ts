@@ -13,6 +13,59 @@ export function truncate(s: string, n: number): string {
   return s.length <= n ? s : `${s.slice(0, n - 1)}…`
 }
 
+// Path segments that never make a useful headline.
+const TITLE_STOP_SEGMENTS = new Set([
+  'index',
+  'home',
+  'status',
+  'statuses',
+  'tweet',
+  'post',
+  'photo',
+  'video',
+  'watch',
+  'about',
+  'login',
+  'signin',
+  'signup',
+  'tag',
+  'topic',
+  'search',
+])
+
+/**
+ * Best-effort readable title derived from the URL path, used when a link has
+ * neither a summary nor an extracted title. Falls back to the bare hostname
+ * when no path segment looks like a slug, and to the raw url if it does not
+ * parse at all.
+ */
+export function renderTitle(url: string): string {
+  try {
+    const u = new URL(url)
+    const segs = u.pathname.split('/').filter(Boolean)
+    for (let i = segs.length - 1; i >= 0; i--) {
+      let seg = segs[i]!
+      try {
+        seg = decodeURIComponent(seg)
+      } catch {
+        // malformed escape — keep the raw segment
+      }
+      const stem = seg.replace(/\.(?:html?|php|aspx?|jsp)$/i, '')
+      if (!/[a-zA-Z]/.test(stem)) continue
+      if (/^\d+$/.test(stem) || TITLE_STOP_SEGMENTS.has(stem.toLowerCase())) continue
+      const pretty = stem
+        .replace(/[-_+.]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+      if (pretty.length < 2) continue
+      return pretty.replace(/\b\w/g, (c) => c.toUpperCase())
+    }
+    return u.hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
+}
+
 /** Relative-ish timestamp: "just now", "5m ago", "in 4m", "2h ago", "3d ago", else a date. */
 export function timeAgo(iso: string | null | undefined): string {
   if (!iso) return '—'
