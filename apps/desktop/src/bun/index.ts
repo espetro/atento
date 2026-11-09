@@ -1,6 +1,13 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { BrowserWindow, BrowserView, Session } from "electrobun/main";
+import {
+	ApplicationMenu,
+	BrowserWindow,
+	BrowserView,
+	ContextMenu,
+	Session,
+	type ApplicationMenuItemConfig,
+} from "electrobun/main";
 
 // linkinbox desktop shell (Workstream B1).
 //
@@ -108,6 +115,171 @@ console.log(`[desktop] window created, loading ${UI_URL}`);
 
 process.on("exit", () => {
 	sidecar?.proc.kill();
+});
+
+// ---------------------------------------------------------------------------
+// App menubar + context menus.
+//
+// The menubar gives the shell the standard macOS menus (app/edit/view/window/
+// help) — the Edit roles matter because the UI has text inputs. Custom actions
+// arrive as { action, data } on "application-menu-clicked".
+//
+// The hosted page is remote, so Electrobun's preload exposes no RPC global to
+// it. Right-click menus therefore go through a tiny localhost bridge: the page
+// POSTs the menu spec, we showContextMenu() at the pointer, and the chosen
+// action is forwarded back into the page as a `linkinbox:menu-action`
+// CustomEvent via executeJavascript.
+// ---------------------------------------------------------------------------
+
+const shellBridge = Bun.serve({
+	hostname: "127.0.0.1",
+	port: 0,
+	fetch: async (req) => {
+		const cors = {
+			"access-control-allow-origin": "*",
+			"access-control-allow-methods": "POST, OPTIONS",
+			"access-control-allow-headers": "content-type",
+		};
+		if (req.method === "OPTIONS") return new Response(null, { headers: cors });
+		if (req.method === "POST" && new URL(req.url).pathname === "/context-menu") {
+			try {
+				const body = (await req.json()) as { items?: unknown };
+				if (Array.isArray(body.items)) {
+					ContextMenu.showContextMenu(body.items as ApplicationMenuItemConfig[]);
+				}
+			} catch {
+				// malformed payload — ignore
+			}
+			return new Response("ok", { headers: cors });
+		}
+		return new Response("not found", { status: 404, headers: cors });
+	},
+});
+const SHELL_BRIDGE_URL = `http://127.0.0.1:${shellBridge.port}`;
+
+function evalInPage(js: string) {
+	try {
+		mainWindow.webview.executeJavascript(js);
+	} catch (e) {
+		console.error("[desktop] page eval failed:", e);
+	}
+}
+
+// Tell the hosted page where the bridge lives. did-commit-navigation lands
+// before the SPA's module scripts evaluate (so first render already sees it);
+// dom-ready is the fallback if the early eval has no document yet.
+for (const evt of ["did-commit-navigation", "dom-ready"] as const) {
+	mainWindow.webview.on(evt, () => {
+		evalInPage(`window.__linkinboxBridge=${JSON.stringify(SHELL_BRIDGE_URL)};`);
+	});
+}
+
+function forwardMenuAction(action: string, data: unknown) {
+	const detail = JSON.stringify({ action, data: data ?? null });
+	evalInPage(
+		`window.dispatchEvent(new CustomEvent("linkinbox:menu-action",{detail:${detail}}))`,
+	);
+}
+
+ContextMenu.on("context-menu-clicked", (event: unknown) => {
+	const e = event as { action?: string; data?: unknown };
+	if (typeof e.action === "string" && e.action !== "") {
+		forwardMenuAction(e.action, e.data);
+	}
+});
+
+// Set a single URL search param without dropping the rest of the state,
+// then ping the SPA's popstate listener (same trick as the dom-probe).
+function navigatePageParam(key: string, value: string) {
+	evalInPage(
+		`(()=>{const u=new URL(location.href);u.searchParams.set(${JSON.stringify(key)},${JSON.stringify(value)});history.pushState(null,"",u.search);dispatchEvent(new PopStateEvent("popstate"))})()`,
+	);
+}
+
+ApplicationMenu.setApplicationMenu([
+	{
+		// First unlabeled submenu becomes the macOS app menu.
+		submenu: [
+			{ label: "About linkinbox", role: "about" },
+			{ type: "separator" },
+			{
+				label: "Settings…",
+				action: "app.settings",
+				accelerator: "CommandOrControl+,",
+			},
+			{ type: "separator" },
+			{ label: "Hide linkinbox", role: "hide" },
+			{ label: "Hide Others", role: "hideOthers" },
+			{ label: "Show All", role: "showAll" },
+			{ type: "separator" },
+			{
+				label: "Quit linkinbox",
+				role: "quit",
+				accelerator: "CommandOrControl+Q",
+			},
+		],
+	},
+	{
+		label: "Edit",
+		submenu: [
+			{ role: "undo" },
+			{ role: "redo" },
+			{ type: "separator" },
+			{ role: "cut" },
+			{ role: "copy" },
+			{ role: "paste" },
+			{ role: "pasteAndMatchStyle" },
+			{ role: "delete" },
+			{ type: "separator" },
+			{ role: "selectAll" },
+		],
+	},
+	{
+		label: "View",
+		submenu: [
+			{
+				label: "Reload",
+				action: "view.reload",
+				accelerator: "CommandOrControl+R",
+			},
+			{ type: "separator" },
+			{ role: "toggleFullScreen" },
+		],
+	},
+	{
+		label: "Window",
+		submenu: [
+			{ role: "minimize" },
+			{ role: "zoom" },
+			{ type: "separator" },
+			{ role: "bringAllToFront" },
+		],
+	},
+	{
+		label: "Help",
+		submenu: [
+			{
+				label: "linkinbox Help",
+				action: "app.help",
+				accelerator: "CommandOrControl+/",
+			},
+		],
+	},
+]);
+
+ApplicationMenu.on("application-menu-clicked", (event: unknown) => {
+	const e = event as { action?: string };
+	switch (e.action) {
+		case "view.reload":
+			mainWindow.webview.loadURL(UI_URL);
+			break;
+		case "app.settings":
+			navigatePageParam("view", "settings");
+			break;
+		case "app.help":
+			navigatePageParam("dialog", "help");
+			break;
+	}
 });
 
 mainWindow.webview.on("did-navigate", (event: unknown) => {
