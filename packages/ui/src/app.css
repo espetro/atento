@@ -16,8 +16,8 @@
   --color-ink: #1a1a1a;
   --color-ink-soft: #6f6a62;
   --color-ink-faint: #9a948a;
-  --color-line: rgb(26 26 26 / 0.09);
-  --color-line-strong: rgb(26 26 26 / 0.16);
+  --color-line: rgb(26 26 26 / 0.07);
+  --color-line-strong: rgb(26 26 26 / 0.15);
   --color-accent: #2c4bd0;
   --color-accent-ink: #ffffff;
   --color-accent-wash: rgb(44 75 208 / 0.09);
@@ -455,7 +455,9 @@ kbd {
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  background: rgb(26 26 26 / 0.35);
+  background: rgb(26 26 26 / 0.28);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
   display: flex;
   align-items: flex-start;
   justify-content: center;

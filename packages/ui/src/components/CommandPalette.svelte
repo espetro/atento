@@ -167,7 +167,10 @@
     font-size: 15px;
   }
   .palette-item.active {
-    background: var(--color-surface-sunken, rgb(0 0 0 / 0.05));
+    background: var(--color-accent-wash);
+  }
+  .palette-item.active :global(svg) {
+    color: var(--color-accent);
   }
   .palette-label {
     flex: 1;

@@ -661,7 +661,7 @@
     outline: none;
   }
   .overflow-danger {
-    color: var(--color-danger, #c0392b);
+    color: var(--color-state-blocked);
   }
   .overflow-sep {
     border: none;
