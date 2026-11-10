@@ -54,7 +54,7 @@ Then ask your agent: "ingest my reading list, triage the inbox and tell me what 
 
 ### Desktop app
 
-Download `Atento-<version>-<os>-<arch>` from the [latest release](https://github.com/espetro/atento/releases/latest) and open it. There is no setup dialog: the app starts its own local server, opens the inbox and shows its health in the footer status dot (green, orange or red, details in the dropdown).
+Download `Atento-desktop-<version>-<os>-<arch>` from the [latest release](https://github.com/espetro/atento/releases/latest) and open it. There is no setup dialog: the app starts its own local server, opens the inbox and shows its health in the footer status dot (green, orange or red, details in the dropdown).
 
 macOS builds are not notarized yet, so the first launch needs `xattr -dr com.apple.quarantine /Applications/Atento.app`. Windows is not supported yet (see [Roadmap](#roadmap)).
 

@@ -81,7 +81,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.target }}
-          path: dist-release/Atento-*
+          path: dist-release/Atento-desktop-*
 
   publish:
     needs: [cli, desktop]

@@ -4,7 +4,7 @@
 # signs, and installs to ~/Applications.
 #
 #   package.sh              build and install to ~/Applications
-#   package.sh --release    build and write dist-release/Atento-<version>-<os>-<arch>.{zip,tar.gz}
+#   package.sh --release    build and write dist-release/Atento-desktop-<version>-<os>-<arch>.{zip,tar.gz}
 #                           (no install; used by the release workflow)
 #
 # The server runtime is packed into the app by electrobun.config.ts
@@ -83,9 +83,9 @@ if [ "$MODE" = "--release" ]; then
 	OUT="$REPO/dist-release"
 	mkdir -p "$OUT"
 	if [ "$OS" = darwin ]; then
-		ditto -c -k --keepParent "$APP" "$OUT/Atento-$VERSION-$OS-$ARCH.zip"
+		ditto -c -k --keepParent "$APP" "$OUT/Atento-desktop-$VERSION-$OS-$ARCH.zip"
 	else
-		tar -C "$(dirname "$APP")" -czf "$OUT/Atento-$VERSION-$OS-$ARCH.tar.gz" "$(basename "$APP")"
+		tar -C "$(dirname "$APP")" -czf "$OUT/Atento-desktop-$VERSION-$OS-$ARCH.tar.gz" "$(basename "$APP")"
 	fi
 	echo "==> $OUT"
 	exit 0
