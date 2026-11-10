@@ -6,7 +6,16 @@
   import { effectiveCollection, type UrlState } from '../urlState'
   import * as Sidebar from '$lib/components/ui/sidebar/index.js'
   import IconInbox from '~icons/lucide/inbox'
-  import IconSearch from '~icons/lucide/search'
+  import IconChevronLeft from '~icons/lucide/chevron-left'
+  import IconBookmarkCheck from '~icons/lucide/bookmark-check'
+  import IconLibrary from '~icons/lucide/library'
+  import IconBot from '~icons/lucide/bot'
+  import IconGlobeLock from '~icons/lucide/globe-lock'
+  import IconRss from '~icons/lucide/rss'
+  import IconClock from '~icons/lucide/clock'
+  import IconLink from '~icons/lucide/link'
+  import IconServer from '~icons/lucide/server'
+  import { SETTINGS_GROUPS, settingsSection } from '../settingsNav'
   import IconLoaderCircle from '~icons/lucide/loader-circle'
   import IconLock from '~icons/lucide/lock'
   import IconBan from '~icons/lucide/ban'
@@ -93,7 +102,7 @@
   })
 
   const COLLECTION_ICONS: Record<string, Component> = {
-    enriched: IconInbox,
+    enriched: IconBookmarkCheck,
     pending: IconLoaderCircle,
     needs_login: IconLock,
     blocked: IconBan,
@@ -110,6 +119,27 @@
     ops: IconWrench,
     reading: IconBookOpen,
   }
+
+  const SETTINGS_ICONS: Record<string, Component> = {
+    agent: IconBot,
+    browsers: IconGlobeLock,
+    sources: IconRss,
+    schedule: IconClock,
+    pairing: IconLink,
+    server: IconServer,
+  }
+  // Unknown categories still get a stable, distinct glyph.
+  const FALLBACK_TYPE_ICONS: Component[] = [IconTag, IconFolder, IconGlobe, IconLibrary]
+  function typeIcon(category: string): Component {
+    const known = TYPE_ICONS[category]
+    if (known) return known
+    let h = 0
+    for (const c of category) h = (h * 31 + c.charCodeAt(0)) >>> 0
+    return FALLBACK_TYPE_ICONS[h % FALLBACK_TYPE_ICONS.length] as Component
+  }
+  // Favicon straight from the site itself (no third-party lookup); the
+  // monogram tile shows until/unless it loads.
+  let faviconOk = $state<Record<string, boolean>>({})
 
   function openCollection(name: string) {
     setUrl({ view: 'triage', collection: name as UrlState['collection'], host: '', category: '', selected: null })
@@ -131,6 +161,47 @@
 </script>
 
 <Sidebar.Root collapsible="icon" data-testid="app-sidebar">
+  {#if url.view === 'settings'}
+    <Sidebar.Header>
+      <Sidebar.Menu>
+        <Sidebar.MenuItem>
+          <Sidebar.MenuButton
+            tooltipContent="Back to app"
+            onclick={() => setUrl({ view: 'triage', selected: null })}
+            data-testid="settings-back"
+          >
+            <IconChevronLeft />
+            <span>Back to app</span>
+          </Sidebar.MenuButton>
+        </Sidebar.MenuItem>
+      </Sidebar.Menu>
+    </Sidebar.Header>
+    <Sidebar.Content>
+      {#each SETTINGS_GROUPS as g (g.label)}
+        <Sidebar.Group>
+          <Sidebar.GroupLabel>{g.label}</Sidebar.GroupLabel>
+          <Sidebar.GroupContent>
+            <Sidebar.Menu>
+              {#each g.items as [id, label] (id)}
+                {@const SIcon = SETTINGS_ICONS[id] ?? IconFolder}
+                <Sidebar.MenuItem>
+                  <Sidebar.MenuButton
+                    isActive={$settingsSection === id}
+                    tooltipContent={label}
+                    onclick={() => settingsSection.set(id)}
+                    data-testid={`settings-nav-${id}`}
+                  >
+                    <SIcon />
+                    <span>{label}</span>
+                  </Sidebar.MenuButton>
+                </Sidebar.MenuItem>
+              {/each}
+            </Sidebar.Menu>
+          </Sidebar.GroupContent>
+        </Sidebar.Group>
+      {/each}
+    </Sidebar.Content>
+  {:else}
   <Sidebar.Header>
     <Sidebar.Menu>
       <Sidebar.MenuItem>
@@ -139,27 +210,15 @@
           tooltipContent={m.app_name()}
           onclick={() => openCollection('enriched')}
         >
-          <IconInbox />
-          <span class="display" style="font-size: 15px;">{m.app_name()}</span>
-        </Sidebar.MenuButton>
-      </Sidebar.MenuItem>
-    </Sidebar.Menu>
-    <Sidebar.Menu>
-      <Sidebar.MenuItem>
-        <Sidebar.MenuButton
-          tooltipContent={`${m.palette_title()} ⌘K`}
-          onclick={() => window.dispatchEvent(new CustomEvent('linkinbox:palette'))}
-          data-testid="sidebar-search"
-        >
-          <IconSearch />
-          <span>{m.search_title()}</span>
+          <IconInbox class="logomark" />
+          <span class="display wordmark" style="font-size: 15px;">{m.app_name()}</span>
         </Sidebar.MenuButton>
       </Sidebar.MenuItem>
     </Sidebar.Menu>
   </Sidebar.Header>
 
   <div class="sidebar-chips" data-testid="sidebar-chips">
-    {#each ([['collections', IconInbox, m.rail_group_collections()], ['sites', IconGlobe, m.rail_group_sites()], ['types', IconTag, m.rail_group_types()]] as const) as [id, ChipIcon, label] (id)}
+    {#each ([['collections', IconLibrary, m.rail_group_collections()], ['sites', IconGlobe, m.rail_group_sites()], ['types', IconTag, m.rail_group_types()]] as const) as [id, ChipIcon, label] (id)}
       <button
         type="button"
         class="sidebar-chip"
@@ -258,7 +317,20 @@
                   onclick={() => openHost(h.host)}
                   data-testid={`site-${h.host}`}
                 >
-                  <span class="site-avatar av-{hostHue(h.host)}" aria-hidden="true">{hostInitial(h.host)}</span>
+                  <span class="site-avatar av-{hostHue(h.host)}" aria-hidden="true">
+                    {#if faviconOk[h.host] !== false}
+                      <img
+                        class="site-favicon"
+                        src={`https://${h.host}/favicon.ico`}
+                        alt=""
+                        loading="lazy"
+                        referrerpolicy="no-referrer"
+                        onerror={() => (faviconOk[h.host] = false)}
+                        onload={(e) => { if ((e.currentTarget as HTMLImageElement).naturalWidth < 2) faviconOk[h.host] = false }}
+                      />
+                    {/if}
+                    {#if faviconOk[h.host] === false}{hostInitial(h.host)}{/if}
+                  </span>
                   <span class="truncate">{h.host}</span>
                 </Sidebar.MenuButton>
                 <Sidebar.MenuBadge>{h.total}</Sidebar.MenuBadge>
@@ -275,7 +347,7 @@
         <Sidebar.GroupContent>
           <Sidebar.Menu>
             {#each types as [category, count] (category)}
-              {@const TypeIcon = TYPE_ICONS[category] ?? IconTag}
+              {@const TypeIcon = typeIcon(category)}
               <Sidebar.MenuItem>
                 <Sidebar.MenuButton
                   isActive={url.view === 'triage' && url.category === category}
@@ -294,6 +366,7 @@
       </Sidebar.Group>
     {/if}
   </Sidebar.Content>
+  {/if}
   <Sidebar.Rail />
 </Sidebar.Root>
 
@@ -359,6 +432,19 @@
     font-size: 11px;
     font-weight: 650;
     flex: none;
+  }
+  .site-favicon {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    object-fit: contain;
+  }
+  :global(.logomark) {
+    color: var(--color-accent-blue);
+  }
+  /* Collapsed rail shows the logomark only. */
+  :global([data-collapsible='icon'] .wordmark) {
+    display: none;
   }
   .capitalize {
     text-transform: capitalize;

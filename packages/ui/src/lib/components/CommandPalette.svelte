@@ -17,6 +17,7 @@
     invalidate,
     openAssistant,
     onClose,
+    query = $bindable(''),
   }: {
     open: boolean
     url: UrlState
@@ -24,9 +25,10 @@
     invalidate: () => void
     openAssistant?: () => void
     onClose: () => void
+    /** Shared with the topbar search input (one search state). */
+    query?: string
   } = $props()
 
-  let query = $state('')
   let active = $state(0)
   let listEl = $state<HTMLElement | null>(null)
 
@@ -40,7 +42,6 @@
   // Fresh state every open.
   $effect(() => {
     if (open) {
-      query = ''
       active = 0
     }
   })

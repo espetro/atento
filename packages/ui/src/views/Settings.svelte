@@ -6,6 +6,7 @@
   import { acpAvailable } from '../lib/acp'
   import { m } from '../paraglide/messages.js'
   import type { UrlState } from '../lib/urlState'
+  import { SETTINGS_GROUPS, settingsSection } from '../lib/settingsNav'
 
   let { url, setUrl }: { url: UrlState; setUrl: (next: Partial<UrlState>) => void } = $props()
 
@@ -38,16 +39,10 @@
   const latestRun = $derived(runsQuery.data?.runs?.[0] ?? null)
   const serverUrl = $derived(typeof window !== 'undefined' ? window.location.origin : '')
 
-  type SettingsSection = 'agent' | 'browsers' | 'sources' | 'schedule' | 'pairing' | 'server'
-  let section = $state<SettingsSection>('agent')
-  const SECTIONS: [SettingsSection, string][] = [
-    ['agent', 'Agent'],
-    ['browsers', 'Browsers'],
-    ['sources', 'Sources'],
-    ['schedule', 'Schedule'],
-    ['pairing', 'Pairing'],
-    ['server', 'Server'],
-  ]
+  const section = $derived($settingsSection)
+  const sectionLabel = $derived(
+    SETTINGS_GROUPS.flatMap((g) => g.items).find(([id]) => id === section)?.[1] ?? '',
+  )
 
   interface AcpAgent { id: string; label: string; command: string[]; path: string }
   interface AgentsResponse { configured: string[] | null; available: AcpAgent[] }
@@ -120,317 +115,328 @@
   }
 </script>
 
-<div class="settings settings-shell" data-testid="settings-view">
-  <nav class="settings-nav" aria-label={m.settings_title()}>
-    <div class="settings-nav-head">
+<div class="settings" data-testid="settings-view">
+  <div class="settings-col">
+    <header class="settings-head">
       <h1 class="settings-title display">{m.settings_title()}</h1>
-    </div>
-    {#each SECTIONS as [id, label] (id)}
-      <button
-        type="button"
-        class="settings-nav-item"
-        class:is-active={section === id}
-        onclick={() => (section = id)}
-        data-testid={`settings-nav-${id}`}
-      >{label}</button>
-    {/each}
-    <button type="button" class="settings-nav-item settings-nav-refresh" onclick={() => void refresh()}>{m.action_refresh()}</button>
-  </nav>
-  <div class="settings-body">
+      <button type="button" class="btn btn-sm btn-ghost" onclick={() => void refresh()}>{m.action_refresh()}</button>
+    </header>
+    <h2 class="section-title">{sectionLabel}</h2>
 
-  <!-- Browser adapters -->
-  {#if section === 'agent'}
-  <section class="pane card" data-testid="settings-agent">
-    <h2 class="card-title">Agent</h2>
-    <p class="card-note">Pick the ACP agent binary the shell spawns for the in-app agent. Detected clients are listed automatically; use a custom command for anything else.</p>
-    {#if !acpOn}
-      <p class="meta">{m.assistant_not_configured()}</p>
-    {:else if agents === null}
-      <div class="skeleton" style="height: 60px;"></div>
-    {:else}
-      <ul class="agent-list">
+    {#if section === 'agent'}
+    <section class="card" data-testid="settings-agent">
+      <p class="card-note">Pick the ACP agent binary the shell spawns for the in-app agent. Detected clients are listed automatically; use a custom command for anything else.</p>
+      {#if !acpOn}
+        <div class="row"><div class="row-text"><div class="row-desc">{m.assistant_not_configured()}</div></div></div>
+      {:else if agents === null}
+        <div class="row"><div class="skeleton" style="height: 40px; width: 100%;"></div></div>
+      {:else}
         {#each agents.available as a (a.id)}
           {@const active = agents!.configured !== null && agents!.configured.join(' ') === a.command.join(' ')}
-          <li>
+          <div class="row">
+            <div class="row-text">
+              <div class="row-title">{a.label}</div>
+              <code class="row-desc mono">{a.path} {a.command.slice(1).join(' ')}</code>
+            </div>
+            <div class="row-ctl">
+              {#if active}
+                <span class="agent-active">Active</span>
+              {:else}
+                <button type="button" class="btn btn-sm" disabled={agentBusy} onclick={() => void pickAgent(a.command)} data-testid={`agent-pick-${a.id}`}>Use</button>
+              {/if}
+            </div>
+          </div>
+        {:else}
+          <div class="row"><div class="row-desc">No known ACP clients found on PATH.</div></div>
+        {/each}
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title">Custom command</div>
+            <div class="row-desc">Any ACP-speaking binary, e.g. <code class="mono">maki acp</code>.</div>
+          </div>
+          <div class="row-ctl row-ctl-wide">
+            <input class="input" placeholder="command args…" bind:value={customCmd} data-testid="agent-custom-input" />
             <button
               type="button"
-              class="agent-option"
-              class:is-active={active}
-              disabled={agentBusy}
-              onclick={() => void pickAgent(a.command)}
-              data-testid={`agent-pick-${a.id}`}
-            >
-              <span class="agent-name">{a.label}</span>
-              <code class="mono agent-cmd">{a.path} {a.command.slice(1).join(' ')}</code>
-              {#if active}<span class="agent-active">active</span>{/if}
-            </button>
-          </li>
-        {:else}
-          <li class="meta">No known ACP clients found on PATH.</li>
-        {/each}
-      </ul>
-      <div class="agent-custom">
-        <input
-          class="input"
-          placeholder="custom command — e.g. maki acp"
-          bind:value={customCmd}
-          data-testid="agent-custom-input"
-        />
-        <button
-          type="button"
-          class="btn btn-sm"
-          disabled={agentBusy || customCmd.trim() === ''}
-          onclick={() => { void pickAgent(customCmd.trim().split(/\s+/)); customCmd = '' }}
-          data-testid="agent-custom-save"
-        >Use custom</button>
-      </div>
-      {#if agents.configured !== null}
-        <p class="meta-faint">Configured: <code class="mono">{agents.configured.join(' ')}</code></p>
+              class="btn btn-sm"
+              disabled={agentBusy || customCmd.trim() === ''}
+              onclick={() => { void pickAgent(customCmd.trim().split(/\s+/)); customCmd = '' }}
+              data-testid="agent-custom-save"
+            >Use</button>
+          </div>
+        </div>
+        {#if agents.configured !== null}
+          <div class="row"><div class="row-text"><div class="row-title">Configured</div><code class="row-desc mono">{agents.configured.join(' ')}</code></div></div>
+        {/if}
       {/if}
+    </section>
     {/if}
-  </section>
-  {/if}
 
-  {#if section === 'browsers'}
-  <section class="pane card" data-testid="settings-browsers">
-    <h2 class="card-title">{m.settings_browsers()}</h2>
-    <p class="card-note">{m.settings_browsers_note()}</p>
-    {#if browsersQuery.isPending}
-      <div class="skeleton" style="height: 80px;"></div>
-    {:else if browsers == null}
-      <p class="meta">{m.settings_browsers_unavailable()}</p>
-    {:else}
-      <table class="table">
-        <thead>
-          <tr><th>id</th><th>{m.th_kind()}</th><th>{m.th_caps()}</th><th>{m.th_roles()}</th><th>{m.th_health()}</th></tr>
-        </thead>
-        <tbody>
-          {#each browsers.adapters as a (a.id)}
-            <tr data-testid="adapter-row-{a.id}">
-              <td class="mono">{a.id}</td>
-              <td class="mono">{a.kind}</td>
-              <td class="meta">{capsChips(a)}</td>
-              <td class="meta">{a.roles.join(' + ') || '—'}{#if a.inEscalate} · {m.adapter_escalate()}{/if}</td>
-              <td>
-                {#if a.health.ok}
-                  <span class="chip chip-state-enriched">{m.health_ok()}</span>
-                {:else}
-                  <span class="chip chip-state-errored" title={a.health.detail}>{m.health_fail()}</span>
-                  <div class="meta adapter-detail">{a.health.detail}</div>
-                {/if}
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-      {#if Object.keys(browsers.hostMappings).length > 0}
-        <p class="meta host-map">
-          {m.settings_host_overrides()}
-          {#each Object.entries(browsers.hostMappings) as [host, adapter] (host)}
-            <code class="mono">{host} → {adapter}</code>
-          {/each}
-        </p>
-      {/if}
-      <p class="meta">
-        {m.settings_reader()} <code class="mono">{browsers.reader}</code> ·
-        {m.settings_login()} <code class="mono">{browsers.login}</code>
-        {#if browsers.escalate.length > 0}· {m.settings_escalate()} {browsers.escalate.join(' → ')}{/if}
-      </p>
-      <p class="meta-faint">{m.settings_refresh_note()}</p>
-    {/if}
-  </section>
-  {/if}
-
-  <!-- Sources -->
-  {#if section === 'sources'}
-  <section class="pane card" data-testid="settings-sources">
-    <h2 class="card-title">{m.settings_sources()}</h2>
-    <p class="card-note">{m.settings_sources_note_pre()} <code>[sources]</code> {m.settings_sources_note_post()}</p>
-    {#if config}
-      {#if config.sources.length > 0}
-        <ul class="source-list">
-          {#each config.sources as s (s)}
-            <li class="mono">{s}</li>
-          {/each}
-        </ul>
+    {#if section === 'browsers'}
+    <section class="card" data-testid="settings-browsers">
+      <p class="card-note">{m.settings_browsers_note()}</p>
+      {#if browsersQuery.isPending}
+        <div class="row"><div class="skeleton" style="height: 80px; width: 100%;"></div></div>
+      {:else if browsers == null}
+        <div class="row"><div class="row-desc">{m.settings_browsers_unavailable()}</div></div>
       {:else}
-        <p class="meta">{m.settings_no_sources_pre()} <code>[sources]</code> {m.settings_no_sources_post()}</p>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>id</th><th>{m.th_kind()}</th><th>{m.th_caps()}</th><th>{m.th_roles()}</th><th>{m.th_health()}</th></tr>
+            </thead>
+            <tbody>
+              {#each browsers.adapters as a (a.id)}
+                <tr data-testid="adapter-row-{a.id}">
+                  <td class="mono">{a.id}</td>
+                  <td class="mono">{a.kind}</td>
+                  <td class="meta">{capsChips(a)}</td>
+                  <td class="meta">{a.roles.join(' + ') || '—'}{#if a.inEscalate} · {m.adapter_escalate()}{/if}</td>
+                  <td>
+                    {#if a.health.ok}
+                      <span class="chip chip-state-enriched">{m.health_ok()}</span>
+                    {:else}
+                      <span class="chip chip-state-errored" title={a.health.detail}>{m.health_fail()}</span>
+                      <div class="meta adapter-detail">{a.health.detail}</div>
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        {#each Object.entries(browsers.hostMappings) as [host, adapter] (host)}
+          <div class="row"><div class="row-title">{m.settings_host_overrides()} <code class="mono">{host}</code></div><div class="row-ctl"><code class="mono">{adapter}</code></div></div>
+        {/each}
+        <div class="row"><div class="row-title">{m.settings_reader()}</div><div class="row-ctl"><code class="mono">{browsers.reader}</code></div></div>
+        <div class="row"><div class="row-title">{m.settings_login()}</div><div class="row-ctl"><code class="mono">{browsers.login}</code></div></div>
+        {#if browsers.escalate.length > 0}
+          <div class="row"><div class="row-title">{m.settings_escalate()}</div><div class="row-ctl"><code class="mono">{browsers.escalate.join(' → ')}</code></div></div>
+        {/if}
+        <p class="card-note card-foot">{m.settings_refresh_note()}</p>
       {/if}
-      <p class="meta">{m.settings_config_path()} <code class="mono">{config.configPath}</code></p>
-    {:else}
-      <p class="meta">{m.settings_config_unreadable_pre()} <code>linkinbox config</code>{m.settings_config_unreadable_post()}</p>
+    </section>
     {/if}
-  </section>
-  {/if}
 
-  <!-- Schedule -->
-  {#if section === 'schedule'}
-  <section class="pane card" data-testid="settings-schedule">
-    <h2 class="card-title">{m.settings_schedule()}</h2>
-    <p class="card-note">{m.settings_schedule_note()}</p>
-    <p class="meta">{m.settings_suggested()} <code class="mono">{CRON_HINT}</code></p>
-    {#if latestRun}
-      <p class="meta">
-        {m.settings_last_run()} <code class="mono">#{latestRun.id} {latestRun.stage}</code>
-        {timeAgo(latestRun.startedAt)}
-        {#if latestRun.errorCount > 0}· {m.settings_last_run_errors({ count: latestRun.errorCount })}{/if}
-        <button type="button" class="btn btn-sm btn-ghost" onclick={() => setUrl({ view: 'run', selected: null })}>{m.settings_view_run()}</button>
-      </p>
-    {:else}
-      <p class="meta">{m.settings_last_run_none()}</p>
+    {#if section === 'sources'}
+    <section class="card" data-testid="settings-sources">
+      <p class="card-note">{m.settings_sources_note_pre()} <code>[sources]</code> {m.settings_sources_note_post()}</p>
+      {#if config}
+        {#each config.sources as s (s)}
+          <div class="row"><code class="mono row-title">{s}</code></div>
+        {:else}
+          <div class="row"><div class="row-desc">{m.settings_no_sources_pre()} <code>[sources]</code> {m.settings_no_sources_post()}</div></div>
+        {/each}
+        <div class="row"><div class="row-title">{m.settings_config_path()}</div><div class="row-ctl"><code class="mono">{config.configPath}</code></div></div>
+      {:else}
+        <div class="row"><div class="row-desc">{m.settings_config_unreadable_pre()} <code>linkinbox config</code>{m.settings_config_unreadable_post()}</div></div>
+      {/if}
+    </section>
     {/if}
-    <p class="meta-faint">{m.settings_next_run()}</p>
-    <CopyButton text={CRON_HINT} label={m.copy_cron()} />
-    <details class="legend">
-      <summary class="meta">{m.settings_exit_codes()}</summary>
-      <ul class="meta legend-list">
-        <li><code>0</code> {m.exit_code_0()}</li>
-        <li><code>2</code> {m.exit_code_2()}</li>
-        <li><code>1</code> {m.exit_code_1()}</li>
-        <li><code>3</code> {m.exit_code_3()}</li>
-      </ul>
-    </details>
-  </section>
-  {/if}
 
-  <!-- Extension pairing -->
-  {#if section === 'pairing'}
-  <section class="pane card" data-testid="settings-pairing">
-    <h2 class="card-title">{m.settings_pairing()}</h2>
-    <p class="card-note">{m.settings_pairing_note()}</p>
-    <div class="pair-row">
-      <span class="meta">{m.settings_server_url()}</span>
-      <code class="mono pair-url">{serverUrl}</code>
-      <CopyButton text={serverUrl} />
-    </div>
-    {#if pairCode}
-      <div class="pair-code" role="status" data-testid="pair-code">
-        <code class="mono pair-code-value">{pairCode}</code>
-        <p class="meta">{pairExpiry ? m.pair_expires({ time: timeAgo(pairExpiry) }) : m.pair_shown_once()}</p>
-        <CopyButton text={pairCode} label={m.copy_code()} />
+    {#if section === 'schedule'}
+    <section class="card" data-testid="settings-schedule">
+      <p class="card-note">{m.settings_schedule_note()}</p>
+      <div class="row">
+        <div class="row-text"><div class="row-title">{m.settings_suggested()}</div><code class="row-desc mono">{CRON_HINT}</code></div>
+        <div class="row-ctl"><CopyButton text={CRON_HINT} label={m.copy_cron()} /></div>
       </div>
-    {:else}
-      <button
-        type="button"
-        class="btn btn-sm"
-        disabled={pairBusy}
-        onclick={() => void genPairCode()}
-        data-testid="gen-pair-code"
-      >
-        {pairBusy ? m.pair_generating() : m.pair_generate()}
-      </button>
+      <div class="row">
+        <div class="row-text">
+          <div class="row-title">{m.settings_last_run()}</div>
+          <div class="row-desc">
+            {#if latestRun}
+              <code class="mono">#{latestRun.id} {latestRun.stage}</code> {timeAgo(latestRun.startedAt)}
+              {#if latestRun.errorCount > 0}· {m.settings_last_run_errors({ count: latestRun.errorCount })}{/if}
+            {:else}
+              {m.settings_last_run_none()}
+            {/if}
+          </div>
+        </div>
+        {#if latestRun}
+          <div class="row-ctl"><button type="button" class="btn btn-sm" onclick={() => setUrl({ view: 'run', selected: null })}>{m.settings_view_run()}</button></div>
+        {/if}
+      </div>
+      <div class="row"><div class="row-desc">{m.settings_next_run()}</div></div>
+      <details class="row legend">
+        <summary class="row-title">{m.settings_exit_codes()}</summary>
+        <ul class="meta legend-list">
+          <li><code>0</code> {m.exit_code_0()}</li>
+          <li><code>2</code> {m.exit_code_2()}</li>
+          <li><code>1</code> {m.exit_code_1()}</li>
+          <li><code>3</code> {m.exit_code_3()}</li>
+        </ul>
+      </details>
+    </section>
     {/if}
-    {#if pairError}<p class="field-error">{pairError}</p>{/if}
-    <p class="meta">{m.settings_pair_status()}</p>
-    <details class="legend">
-      <summary class="meta">{m.pair_how_title()}</summary>
-      <p class="meta legend-list">
-        {m.pair_how_body_pre()} <code>[capture] allowed_origins</code>{m.pair_how_body_post()}
-      </p>
-    </details>
-  </section>
-  {/if}
 
-  <!-- Server -->
-  {#if section === 'server'}
-  <section class="pane card" data-testid="settings-server">
-    <h2 class="card-title">{m.settings_server()}</h2>
-    {#if config}
-      <dl class="facts">
-        <div class="fact"><dt>{m.fact_bind()}</dt><dd class="mono">{config.bind.hostname}:{config.bind.port}</dd></div>
-        <div class="fact"><dt>{m.fact_api_token()}</dt><dd>{config.bind.tokenRequired ? m.token_required() : m.token_not_required()}</dd></div>
-        <div class="fact"><dt>{m.fact_capture()}</dt><dd>{config.capture.tokenConfigured ? m.capture_enabled() : m.capture_disabled()}</dd></div>
-        <div class="fact"><dt>{m.fact_data_dir()}</dt><dd class="mono">{config.dir}</dd></div>
-      </dl>
-      {#if config.capture.allowedOrigins.length > 0}
-        <p class="meta">{m.settings_capture_origins()} {config.capture.allowedOrigins.join(', ')}</p>
-      {/if}
-      <CopyButton text={config.dir} label={m.copy_data_dir()} />
-    {:else}
-      <p class="meta">{m.settings_server_unavailable()}</p>
+    {#if section === 'pairing'}
+    <section class="card" data-testid="settings-pairing">
+      <p class="card-note">{m.settings_pairing_note()}</p>
+      <div class="row">
+        <div class="row-text"><div class="row-title">{m.settings_server_url()}</div><code class="row-desc mono">{serverUrl}</code></div>
+        <div class="row-ctl"><CopyButton text={serverUrl} /></div>
+      </div>
+      <div class="row">
+        {#if pairCode}
+          <div class="row-text" role="status" data-testid="pair-code">
+            <code class="mono pair-code-value">{pairCode}</code>
+            <div class="row-desc">{pairExpiry ? m.pair_expires({ time: timeAgo(pairExpiry) }) : m.pair_shown_once()}</div>
+          </div>
+          <div class="row-ctl"><CopyButton text={pairCode} label={m.copy_code()} /></div>
+        {:else}
+          <div class="row-text"><div class="row-title">Pairing code</div><div class="row-desc">{m.settings_pair_status()}</div></div>
+          <div class="row-ctl">
+            <button type="button" class="btn btn-sm" disabled={pairBusy} onclick={() => void genPairCode()} data-testid="gen-pair-code">
+              {pairBusy ? m.pair_generating() : m.pair_generate()}
+            </button>
+          </div>
+        {/if}
+      </div>
+      {#if pairError}<div class="row"><p class="field-error">{pairError}</p></div>{/if}
+      <details class="row legend">
+        <summary class="row-title">{m.pair_how_title()}</summary>
+        <p class="meta legend-list">{m.pair_how_body_pre()} <code>[capture] allowed_origins</code>{m.pair_how_body_post()}</p>
+      </details>
+    </section>
     {/if}
-  </section>
-  {/if}
+
+    {#if section === 'server'}
+    <section class="card" data-testid="settings-server">
+      {#if config}
+        <div class="row"><div class="row-title">{m.fact_bind()}</div><div class="row-ctl"><code class="mono">{config.bind.hostname}:{config.bind.port}</code></div></div>
+        <div class="row"><div class="row-title">{m.fact_api_token()}</div><div class="row-ctl">{config.bind.tokenRequired ? m.token_required() : m.token_not_required()}</div></div>
+        <div class="row"><div class="row-title">{m.fact_capture()}</div><div class="row-ctl">{config.capture.tokenConfigured ? m.capture_enabled() : m.capture_disabled()}</div></div>
+        <div class="row"><div class="row-title">{m.fact_data_dir()}</div><div class="row-ctl"><code class="mono">{config.dir}</code><CopyButton text={config.dir} label={m.copy_data_dir()} /></div></div>
+        {#if config.capture.allowedOrigins.length > 0}
+          <div class="row"><div class="row-title">{m.settings_capture_origins()}</div><div class="row-ctl">{config.capture.allowedOrigins.join(', ')}</div></div>
+        {/if}
+      {:else}
+        <div class="row"><div class="row-desc">{m.settings_server_unavailable()}</div></div>
+      {/if}
+    </section>
+    {/if}
   </div>
 </div>
 
 <style>
   .settings {
-    max-width: 768px;
+    height: 100%;
+    overflow-y: auto;
+    padding: 40px 24px 72px;
+  }
+  .settings-col {
+    max-width: 680px;
     margin: 0 auto;
-    padding: 20px 20px 56px;
     display: flex;
     flex-direction: column;
     gap: 14px;
-    height: 100%;
-    overflow-y: auto;
+  }
+  .settings-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 18px;
   }
   .settings-title {
-    font-size: 22px;
+    font-size: 28px;
   }
-  .card-title {
+  .section-title {
     font-size: 15px;
-    margin-bottom: 4px;
+    font-weight: 600;
+    padding-left: 2px;
+  }
+  .card {
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
+    overflow: hidden;
   }
   .card-note {
     font-size: 12.5px;
     color: var(--color-ink-faint);
-    margin-bottom: 10px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--color-line);
+  }
+  .card-foot {
+    border-bottom: none;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 18px;
+    min-height: 56px;
+  }
+  .row + .row {
+    border-top: 1px solid var(--color-line);
+  }
+  .row-text {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .row-title {
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--color-ink);
+  }
+  .row-desc {
+    font-size: 12px;
+    color: var(--color-ink-faint);
+    overflow-wrap: anywhere;
+  }
+  .row-ctl {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--color-ink-soft);
+    max-width: 60%;
+    overflow-wrap: anywhere;
+  }
+  .row-ctl-wide .input {
+    width: 200px;
+    font-size: 12.5px;
+  }
+  .agent-active {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-accent-blue);
+  }
+  .table-wrap {
+    overflow-x: auto;
+    padding: 4px 10px;
   }
   .table {
     width: 100%;
     border-collapse: collapse;
     font-size: 13px;
-    margin-bottom: 8px;
   }
   .table th {
     text-align: left;
-    font-size: 11px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.06em;
     color: var(--color-ink-faint);
-    padding: 5px 8px;
+    padding: 8px;
     border-bottom: 1px solid var(--color-line);
   }
   .table td {
-    padding: 7px 8px;
+    padding: 9px 8px;
     border-bottom: 1px solid var(--color-line);
     vertical-align: top;
+  }
+  .table tr:last-child td {
+    border-bottom: none;
   }
   .adapter-detail {
     font-size: 11.5px;
     max-width: 220px;
-  }
-  .host-map {
-    margin: 6px 0;
-  }
-  .host-map code {
-    margin-right: 10px;
-  }
-  .source-list {
-    margin: 4px 0 8px;
-    padding-left: 18px;
-    font-size: 13px;
-  }
-  .pair-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 10px;
-    flex-wrap: wrap;
-  }
-  .pair-url {
-    font-size: 13px;
-  }
-  .pair-code {
-    border: 1px solid var(--color-line);
-    border-radius: 10px;
-    padding: 12px 14px;
-    margin-bottom: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    align-items: flex-start;
   }
   .pair-code-value {
     font-size: 20px;
@@ -438,177 +444,35 @@
     font-weight: 700;
   }
   .legend {
-    margin-top: 8px;
+    display: block;
+  }
+  .legend summary {
+    cursor: pointer;
   }
   .legend-list {
-    margin: 6px 0 0;
+    margin: 8px 0 0;
     padding-left: 18px;
     display: flex;
     flex-direction: column;
     gap: 3px;
   }
-  .facts {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px 18px;
-    margin: 4px 0 10px;
-  }
-  .fact {
-    display: flex;
-    gap: 8px;
-    font-size: 12.5px;
-  }
-  .fact dt {
-    color: var(--color-ink-faint);
-    min-width: 90px;
-    flex: none;
-  }
-  .fact dd {
-    margin: 0;
-  }
-  .settings-shell {
-    display: flex;
-    gap: 20px;
-    align-items: flex-start;
-  }
-  .settings-nav {
-    flex: none;
-    width: 148px;
-    position: sticky;
-    top: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    padding-top: 18px;
-  }
-  .settings-nav-head {
-    margin-bottom: 10px;
-    padding: 0 10px;
-  }
-  .settings-nav-item {
-    text-align: left;
-    padding: 6px 10px;
-    border-radius: 7px;
-    border: none;
-    background: transparent;
-    color: var(--color-ink-soft);
-    font-size: 12.5px;
-    font-weight: 500;
-    cursor: pointer;
-    transition:
-      background-color 140ms var(--ease-out-expo),
-      color 140ms var(--ease-out-expo);
-  }
-  .settings-nav-item:hover {
-    color: var(--color-ink);
-    background: var(--color-accent);
-  }
-  .settings-nav-item.is-active {
-    background: var(--color-accent);
-    color: var(--color-ink);
-  }
-  .settings-nav-refresh {
-    margin-top: 14px;
-    color: var(--color-ink-faint);
-  }
-  .settings-body {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-  }
-  .agent-list {
-    list-style: none;
-    margin: 0 0 10px;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .agent-option {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 9px 12px;
-    border-radius: 9px;
-    border: 1px solid var(--color-line);
-    background: var(--color-surface-raised);
-    text-align: left;
-    cursor: pointer;
-    transition:
-      border-color 140ms var(--ease-out-expo),
-      background-color 140ms var(--ease-out-expo);
-  }
-  .agent-option:hover:not(:disabled) {
-    border-color: var(--color-line-strong);
-  }
-  .agent-option.is-active {
-    border-color: var(--color-accent-blue);
-    background: var(--color-accent-wash);
-  }
-  .agent-name {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--color-ink);
-    flex: none;
-  }
-  .agent-cmd {
-    font-size: 11.5px;
-    color: var(--color-ink-faint);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-  }
-  .agent-active {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--color-accent-blue);
-    flex: none;
-  }
-  .agent-custom {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-  .agent-custom .input {
-    flex: 1;
-    font-size: 12.5px;
-  }
   .mono {
-    font-family: var(--font-mono, ui-monospace, monospace);
+    font-family: var(--font-mono);
   }
   .meta {
     color: var(--color-ink-soft);
     font-size: 12.5px;
-  }
-  .meta-faint {
-    color: var(--color-ink-faint);
-    font-size: 12px;
   }
   .field-error {
     color: var(--color-state-errored, #b3261e);
     font-size: 12.5px;
   }
   @media (max-width: 759px) {
-    .table thead {
-      display: none;
+    .row {
+      flex-wrap: wrap;
     }
-    .table,
-    .table tbody,
-    .table tr,
-    .table td {
-      display: block;
-      width: 100%;
-    }
-    .table tr {
-      border-bottom: 1px solid var(--color-line);
-      padding: 8px 0;
-    }
-    .table td {
-      border: none;
-      padding: 2px 0;
+    .row-ctl {
+      max-width: 100%;
     }
   }
 </style>

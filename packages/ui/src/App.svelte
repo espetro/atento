@@ -42,6 +42,12 @@
     if (searchTimer !== null) clearTimeout(searchTimer)
     searchTimer = setTimeout(() => setUrl({ q: qInput }), 220)
   }
+  // The palette edits the same `qInput`; commit it to the URL when it changes.
+  $effect(() => {
+    if (paletteOpen && qInput !== url.q) onSearchInput()
+  })
+  const isMac = typeof navigator !== 'undefined' && /mac|iphone|ipad/i.test(navigator.platform)
+  const paletteHint = isMac ? '⌘K' : 'Ctrl K'
   // ACP assistant: only when the shell bridge exposes /acp (never on web).
   let assistantAvailable = $state(false)
 
@@ -127,6 +133,7 @@
         <header class="topbar" data-testid="topbar">
           <Sidebar.Trigger aria-label={m.aria_open_collections()} data-testid="rail-toggle" />
           <span class="topbar-right">
+            {#if url.view !== 'settings'}
             <label class="topbar-search-wrap">
               <IconSearch />
               <input
@@ -139,6 +146,7 @@
               bind:value={qInput}
               oninput={onSearchInput}
               />
+              <kbd class="kbd topbar-kbd" aria-hidden="true">{paletteHint}</kbd>
             </label>
             <span class="filter-anchor">
               <button
@@ -156,6 +164,7 @@
                 <FilterMenu {url} {setUrl} />
               {/if}
             </span>
+            {/if}
             <button type="button" class="topbar-btn" aria-label={m.nav_settings()} onclick={() => setUrl({ view: 'settings', selected: null })} data-testid="topbar-settings">
               <IconSettings />
             </button>
@@ -199,6 +208,7 @@
     {url}
     {setUrl}
     invalidate={() => queryClient.invalidateQueries()}
+    bind:query={qInput}
     openAssistant={assistantAvailable ? () => (agentOpen = true) : undefined}
     onClose={() => (paletteOpen = false)}
   />
@@ -391,7 +401,12 @@
   }
   .topbar-search:focus,
   .topbar-search:not(:placeholder-shown) {
-    width: 200px;
+    width: 160px;
+  }
+  .topbar-kbd {
+    margin-left: 2px;
+    border-bottom-width: 1px;
+    background: transparent;
   }
   .topbar-search::-webkit-search-cancel-button {
     display: none;

@@ -156,7 +156,12 @@
   .filter-menu {
     position: absolute;
     top: calc(100% + 4px);
-    left: 0;
+    /* Anchored to the button's right edge (it sits at the card's right) and
+       clamped so it can never extend past the app area. */
+    right: 0;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 90px);
+    overflow-y: auto;
     z-index: 55;
     width: 232px;
     padding: 10px;
