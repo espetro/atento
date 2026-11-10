@@ -4,6 +4,7 @@ import { importMarkdown, parseMarkdown, MARKDOWN_SOURCE } from './markdown.js'
 import { importJson, parseJsonLinks, JSON_SOURCE } from './json.js'
 import { importUrlList, parseUrlList, URL_LIST_SOURCE } from './url-list.js'
 import {
+  importSafariBookmarks,
   importSafariReadingList,
   SAFARI_SOURCE,
   DEFAULT_BOOKMARKS_PATH,
@@ -30,7 +31,7 @@ export const importers: Importer[] = [
   {
     name: SAFARI_SOURCE,
     matches: (p) => /^\.plist$/i.test(extname(p)),
-    import: (p) => importSafariReadingList(p),
+    import: (p) => importSafariBookmarks(p),
   },
 ]
 

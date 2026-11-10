@@ -42,11 +42,32 @@ interface SafariLeaf {
     DateAdded?: Date | string
     DateLastViewed?: Date | string
   }
+  Title?: string
   Children?: SafariLeaf[]
 }
 
 export async function importSafariReadingList(
   filePath: string = DEFAULT_BOOKMARKS_PATH,
+): Promise<ImportResult> {
+  return importSafariPlist(filePath, { readingListOnly: true })
+}
+
+/**
+ * Import a Safari `Bookmarks.plist` (binary or XML): Reading List entries
+ * plus ordinary bookmarks (the enclosing folder becomes a tag). Used for
+ * uploaded `.plist` files; the Reading List-only reader above stays the
+ * default for the automatic Safari source.
+ */
+export async function importSafariBookmarks(filePath: string): Promise<ImportResult> {
+  return importSafariPlist(filePath, { readingListOnly: false })
+}
+
+/** Top-level Safari folders that carry no meaning as a tag. */
+const GENERIC_FOLDERS = new Set(['BookmarksBar', 'BookmarksMenu', 'com.apple.ReadingList', 'Favorites'])
+
+async function importSafariPlist(
+  filePath: string,
+  { readingListOnly }: { readingListOnly: boolean },
 ): Promise<ImportResult> {
   const warnings: string[] = []
 
@@ -80,25 +101,26 @@ export async function importSafariReadingList(
     return { links: [], warnings: [`Malformed plist at ${filePath}: ${(err as Error).message}`] }
   }
 
-  const leaves: SafariLeaf[] = []
+  const leaves: Array<{ leaf: SafariLeaf; folder?: string }> = []
   collectLeaves(tree as SafariLeaf, leaves)
 
   const links: RawLink[] = []
   let skipped = 0
-  for (const leaf of leaves) {
+  for (const { leaf, folder } of leaves) {
     const url = typeof leaf.URLString === 'string' ? leaf.URLString : undefined
     if (!url) continue
-    if (!leaf.ReadingList) {
-      // Not a Reading List entry (plain bookmark); not a warning.
-      continue
-    }
+    // Plain bookmarks are skipped for the Reading List reader; javascript:
+    // bookmarklets and other non-web schemes are never links to triage.
+    if (readingListOnly && !leaf.ReadingList) continue
+    if (!/^https?:\/\//i.test(url)) continue
     const link: RawLink = { url, source: SAFARI_SOURCE }
     const title = leaf.URIDictionary?.title
     if (typeof title === 'string' && title.trim() !== '') link.title = title.trim()
-    const note = leaf.ReadingList.PreviewText
+    const note = leaf.ReadingList?.PreviewText
     if (typeof note === 'string' && note.trim() !== '') link.note = note.trim()
-    const added = toDate(leaf.ReadingList.DateAdded)
+    const added = toDate(leaf.ReadingList?.DateAdded)
     if (added) link.addedAt = added
+    if (!leaf.ReadingList && folder) link.tags = [folder]
     links.push(link)
   }
 
@@ -106,18 +128,28 @@ export async function importSafariReadingList(
     warnings.push(`Skipped ${skipped} Reading List entry(ies) without a URL.`)
   }
   if (links.length === 0) {
-    warnings.push('Safari Reading List is empty (or the plist had no Reading List entries).')
+    warnings.push(
+      readingListOnly
+        ? 'Safari Reading List is empty (or the plist had no Reading List entries).'
+        : 'No web bookmarks found in the plist.',
+    )
   }
   return { links, warnings }
 }
 
-function collectLeaves(node: SafariLeaf, out: SafariLeaf[]): void {
+function collectLeaves(
+  node: SafariLeaf,
+  out: Array<{ leaf: SafariLeaf; folder?: string }>,
+  folder?: string,
+): void {
   if (!node || typeof node !== 'object') return
   if (node.WebBookmarkType === 'WebBookmarkTypeLeaf') {
-    out.push(node)
+    out.push({ leaf: node, ...(folder ? { folder } : {}) })
   }
   if (Array.isArray(node.Children)) {
-    for (const child of node.Children) collectLeaves(child, out)
+    const title = typeof node.Title === 'string' ? node.Title.trim() : ''
+    const next = title !== '' && !GENERIC_FOLDERS.has(title) ? title : folder
+    for (const child of node.Children) collectLeaves(child, out, next)
   }
 }
 

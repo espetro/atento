@@ -320,3 +320,25 @@ describe('safari reading list importer', () => {
     expect(result.warnings.length).toBeGreaterThan(0)
   })
 })
+
+describe('safari bookmarks (all web bookmarks)', () => {
+  it('imports plain bookmarks with the folder as a tag and skips non-web schemes', async () => {
+    const { writeFile, mkdtemp } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const { importFile } = await import('../src/index.js')
+    const dir = await mkdtemp(join(tmpdir(), 'bm-'))
+    const f = join(dir, 'Bookmarks.plist')
+    await writeFile(
+      f,
+      `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>Children</key><array>
+<dict><key>Title</key><string>BookmarksBar</string><key>WebBookmarkType</key><string>WebBookmarkTypeList</string><key>Children</key><array>
+<dict><key>Title</key><string>Reading</string><key>WebBookmarkType</key><string>WebBookmarkTypeList</string><key>Children</key><array>
+<dict><key>WebBookmarkType</key><string>WebBookmarkTypeLeaf</string><key>URLString</key><string>https://a.example/</string><key>URIDictionary</key><dict><key>title</key><string>A</string></dict></dict>
+<dict><key>WebBookmarkType</key><string>WebBookmarkTypeLeaf</string><key>URLString</key><string>javascript:alert(1)</string></dict>
+</array></dict></array></dict></array></dict></plist>`,
+    )
+    const r = await importFile(f)
+    expect(r.links).toHaveLength(1)
+    expect(r.links[0]).toMatchObject({ url: 'https://a.example/', title: 'A', tags: ['Reading'] })
+  })
+})
