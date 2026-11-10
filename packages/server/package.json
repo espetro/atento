@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "hono api + static ui server for atento",
+  "license": "Apache-2.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

@@ -3,7 +3,8 @@
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",
-	"description": "atento desktop shell (Electrobun) \u2014 hosts the web UI and provides native preview webviews",
+	"description": "atento desktop shell (Electrobun) — hosts the web UI and provides native preview webviews",
+	"license": "Apache-2.0",
 	"devDependencies": {
 		"@types/bun": "latest"
 	},

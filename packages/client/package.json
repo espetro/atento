@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "typed fetch client generated from the atento OpenAPI document (packages/server /openapi.json)",
+  "license": "Apache-2.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

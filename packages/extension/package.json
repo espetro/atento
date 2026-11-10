@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "atento browser extension: capture links and page content from the user's own logged-in session",
+  "license": "Apache-2.0",
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "vitest run",

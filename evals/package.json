@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Golden-set eval runner for atento (enrichment + extraction checks)",
+  "license": "Apache-2.0",
   "main": "./dist/run.js",
   "types": "./dist/run.d.ts",
   "exports": {

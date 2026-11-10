@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Structured-output enrichment for atento: one model call per link",
+  "license": "Apache-2.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Browser adapters for atento: agent-browser, patchright, cdp-attach and external plugin kinds behind the core PageReaderPort/SessionLoginPort interfaces",
+  "license": "Apache-2.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {

@@ -1,0 +1,18 @@
+{
+  "name": "atento",
+  "version": "0.1.0",
+  "description": "Atento release umbrella: carries the product version and the root CHANGELOG. Binaries ship through GitHub Releases.",
+  "license": "Apache-2.0",
+  "author": "Joaquin Terrasa and contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espetro/atento.git",
+    "directory": "packages/atento"
+  },
+  "homepage": "https://github.com/espetro/atento#readme",
+  "type": "module",
+  "dependencies": {},
+  "engines": {
+    "node": ">=24"
+  }
+}

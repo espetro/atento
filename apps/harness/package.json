@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "atento service harness: lifecycle CLI, recurrence scheduler, native notifications and static web serving",
+  "license": "Apache-2.0",
   "bin": {
     "atento-harness": "./dist/bin.js"
   },

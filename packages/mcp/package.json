@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "atento MCP server: thin wrapper over the core ops and pipeline functions, exposed over stdio or any MCP transport",
+  "license": "Apache-2.0",
   "bin": {
     "atento-mcp": "./dist/bin.js"
   },

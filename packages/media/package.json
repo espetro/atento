@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Tiered media stage for atento: caption, transcript (yt-dlp + ffmpeg + local ASR), frames (not implemented yet)",
+  "license": "Apache-2.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
