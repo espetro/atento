@@ -13,6 +13,7 @@
   import IconInbox from '~icons/lucide/inbox'
   import IconX from '~icons/lucide/x'
   import { m } from '../paraglide/messages.js'
+  import SiteFavicon from '../lib/components/SiteFavicon.svelte'
 
   let {
     url,
@@ -243,11 +244,7 @@
     return renderTitle(link.url)
   }
 
-  // Host monogram tile (Mail reference): first letter, pastel hue hashed
-  // off the hostname so each site gets a stable color.
-  function hostInitial(host: string): string {
-    return (host.replace(/^www\./, '')[0] ?? '·').toUpperCase()
-  }
+  // Pastel hue hashed off the hostname so each site gets a stable color.
   function hostHue(host: string): number {
     let h = 0
     for (const c of host) h = (h * 31 + c.charCodeAt(0)) >>> 0
@@ -388,7 +385,7 @@
     style="--i:{Math.min(props.index, 20)}"
   >
     <span class="row-check" aria-hidden="true">{props.checked ? '✓' : ''}</span>
-    <span class="row-avatar av-{hostHue(host)}" aria-hidden="true">{hostInitial(host)}</span>
+    <SiteFavicon class="row-avatar" {host} hue={hostHue(host)} size={30} />
     <span class="row-main">
       <span class="row-line1">
         <span class="row-title" title={headline} data-testid="row-title">{headline}</span>

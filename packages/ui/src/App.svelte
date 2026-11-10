@@ -36,6 +36,14 @@
   $effect(() => { if (url.q !== qInput) qInput = url.q })
   let searchEl = $state<HTMLInputElement | null>(null)
   let filterOpen = $state(false)
+  function dismissFilter(e: Event) {
+    if (!filterOpen) return
+    if (e instanceof KeyboardEvent) {
+      if (e.key === 'Escape') filterOpen = false
+      return
+    }
+    if (!(e.target as Element | null)?.closest('.filter-anchor')) filterOpen = false
+  }
   let searchTimer: ReturnType<typeof setTimeout> | null = null
 
   function onSearchInput() {
@@ -123,6 +131,8 @@
     }
   })
 </script>
+
+<svelte:window onpointerdown={dismissFilter} onkeydown={dismissFilter} />
 
 <QueryClientProvider client={queryClient}>
   <LiveSync />

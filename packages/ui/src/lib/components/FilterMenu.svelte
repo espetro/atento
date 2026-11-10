@@ -148,7 +148,6 @@
         {/each}
       </select>
     </label>
-    <p class="meta-faint menu-note">{m.layout_note()}</p>
   </div>
 </div>
 
@@ -238,8 +237,5 @@
     color: var(--color-ink);
     font-weight: 600;
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
-  }
-  .menu-note {
-    margin: 0;
   }
 </style>

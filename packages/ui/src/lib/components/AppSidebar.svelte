@@ -6,6 +6,7 @@
   import { effectiveCollection, type UrlState } from '../urlState'
   import * as Sidebar from '$lib/components/ui/sidebar/index.js'
   import IconInbox from '~icons/lucide/inbox'
+  import SiteFavicon from './SiteFavicon.svelte'
   import IconChevronLeft from '~icons/lucide/chevron-left'
   import IconBookmarkCheck from '~icons/lucide/bookmark-check'
   import IconLibrary from '~icons/lucide/library'
@@ -137,9 +138,6 @@
     for (const c of category) h = (h * 31 + c.charCodeAt(0)) >>> 0
     return FALLBACK_TYPE_ICONS[h % FALLBACK_TYPE_ICONS.length] as Component
   }
-  // Favicon straight from the site itself (no third-party lookup); the
-  // monogram tile shows until/unless it loads.
-  let faviconOk = $state<Record<string, boolean>>({})
 
   function openCollection(name: string) {
     setUrl({ view: 'triage', collection: name as UrlState['collection'], host: '', category: '', selected: null })
@@ -149,9 +147,6 @@
   }
   function openType(category: string) {
     setUrl({ view: 'triage', collection: 'enriched' as UrlState['collection'], category, host: '', selected: null })
-  }
-  function hostInitial(host: string): string {
-    return (host.replace(/^www\./, '')[0] ?? '·').toUpperCase()
   }
   function hostHue(host: string): number {
     let h = 0
@@ -210,7 +205,7 @@
           tooltipContent={m.app_name()}
           onclick={() => openCollection('enriched')}
         >
-          <IconInbox class="logomark" />
+          <img class="logomark" src="/icons/icon-64.png" alt="" width="20" height="20" />
           <span class="display wordmark" style="font-size: 15px;">{m.app_name()}</span>
         </Sidebar.MenuButton>
       </Sidebar.MenuItem>
@@ -317,20 +312,7 @@
                   onclick={() => openHost(h.host)}
                   data-testid={`site-${h.host}`}
                 >
-                  <span class="site-avatar av-{hostHue(h.host)}" aria-hidden="true">
-                    {#if faviconOk[h.host] !== false}
-                      <img
-                        class="site-favicon"
-                        src={`https://${h.host}/favicon.ico`}
-                        alt=""
-                        loading="lazy"
-                        referrerpolicy="no-referrer"
-                        onerror={() => (faviconOk[h.host] = false)}
-                        onload={(e) => { if ((e.currentTarget as HTMLImageElement).naturalWidth < 2) faviconOk[h.host] = false }}
-                      />
-                    {/if}
-                    {#if faviconOk[h.host] === false}{hostInitial(h.host)}{/if}
-                  </span>
+                  <SiteFavicon host={h.host} hue={hostHue(h.host)} />
                   <span class="truncate">{h.host}</span>
                 </Sidebar.MenuButton>
                 <Sidebar.MenuBadge>{h.total}</Sidebar.MenuBadge>
@@ -422,25 +404,12 @@
     mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent);
     -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent);
   }
-  .site-avatar {
+  :global(.logomark) {
     width: 20px;
     height: 20px;
-    border-radius: 6px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    font-weight: 650;
+    border-radius: 5px;
     flex: none;
-  }
-  .site-favicon {
-    width: 16px;
-    height: 16px;
-    border-radius: 3px;
-    object-fit: contain;
-  }
-  :global(.logomark) {
-    color: var(--color-accent-blue);
+    object-fit: cover;
   }
   /* Header row centres on the topbar (card top 8 + 9 + 15 = y 32). */
   :global([data-slot='sidebar-header']) {

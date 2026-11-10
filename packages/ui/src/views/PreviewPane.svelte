@@ -62,6 +62,29 @@
   }))
   const adapters = $derived(browsersQuery.data?.adapters ?? [])
 
+  // Offline: show the cached last render (sanitized HTML on the server)
+  // instead of a live webview that cannot load.
+  let online = $state(typeof navigator === 'undefined' ? true : navigator.onLine)
+  let renderCached = $state(false)
+  $effect(() => {
+    const up = () => (online = true)
+    const down = () => (online = false)
+    window.addEventListener('online', up)
+    window.addEventListener('offline', down)
+    return () => {
+      window.removeEventListener('online', up)
+      window.removeEventListener('offline', down)
+    }
+  })
+  $effect(() => {
+    renderCached = false
+    if (online || id == null) return
+    const linkId = id
+    void fetch(api.renderUrl(linkId), { method: 'HEAD' })
+      .then((r) => { if (id === linkId) renderCached = r.ok })
+      .catch(() => undefined)
+  })
+
   let snapshotMissing = $state(false)
   $effect(() => {
     // Reset the artifact-missing flag whenever the link changes.
@@ -371,7 +394,17 @@
 {#snippet previewSection(_node: UIElement)}
   {#if detail && id != null}
       <section class="panel-section" data-testid="section-preview">
-        {#if nativePreview && detail.url !== ''}
+        {#if !online && renderCached}
+          <iframe
+            class="render-frame"
+            title={m.preview_cached_title()}
+            src={api.renderUrl(id)}
+            sandbox=""
+            referrerpolicy="no-referrer"
+            data-testid="render-frame"
+          ></iframe>
+          <p class="meta-faint render-note">{m.preview_cached_note()}</p>
+        {:else if nativePreview && detail.url !== ''}
           <NativePreview url={detail.url} />
         {:else if readerHtml !== ''}
           <article class="markdown-body" data-testid="reader-markdown">
@@ -652,6 +685,16 @@
     gap: 10px;
     margin-top: 16px;
     flex-wrap: wrap;
+  }
+  .render-frame {
+    width: 100%;
+    min-height: 60vh;
+    border: 0;
+    border-radius: 8px;
+    background: #fff;
+  }
+  .render-note {
+    margin-top: 6px;
   }
   .snapshot-img {
     max-width: 100%;

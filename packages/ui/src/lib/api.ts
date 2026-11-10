@@ -123,6 +123,14 @@ export const api = {
       body: JSON.stringify(options),
     })
   },
+  /** Cached favicon for a host (served from disk, works offline). */
+  faviconUrl(host: string) {
+    return `/api/favicon/${encodeURIComponent(host)}`
+  },
+  /** Cached last render (sanitized HTML) of a link's page. */
+  renderUrl(id: number) {
+    return `/api/links/${id}/render`
+  },
   /** URL of one stored artifact (snapshot.png, ...); 404 means absent. */
   artifactUrl(id: number, name: string) {
     return `/api/links/${id}/artifacts/${encodeURIComponent(name)}`
