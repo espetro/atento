@@ -3,7 +3,7 @@
   import { api } from '../lib/api'
   import { timeAgo } from '../lib/format'
   import CopyButton from '../lib/components/CopyButton.svelte'
-  import { acpAvailable } from '../lib/acp'
+  import AgentSettings from './AgentSettings.svelte'
   import { m } from '../paraglide/messages.js'
   import type { UrlState } from '../lib/urlState'
   import { SETTINGS_GROUPS, settingsSection } from '../lib/settingsNav'
@@ -43,37 +43,6 @@
   const sectionLabel = $derived(
     SETTINGS_GROUPS.flatMap((g) => g.items).find(([id]) => id === section)?.[1] ?? '',
   )
-
-  interface AcpAgent { id: string; label: string; command: string[]; path: string }
-  interface AgentsResponse { configured: string[] | null; available: AcpAgent[] }
-  let agents = $state<AgentsResponse | null>(null)
-  let agentBusy = $state(false)
-  let customCmd = $state('')
-  const bridge = () => (window as unknown as { __linkinboxBridge?: string }).__linkinboxBridge ?? null
-
-  async function loadAgents() {
-    const b = bridge()
-    if (b === null) return
-    try {
-      const res = await fetch(`${b}/acp/agents`)
-      if (res.ok) agents = await res.json()
-    } catch { /* bridge down */ }
-  }
-  async function pickAgent(command: string[]) {
-    const b = bridge()
-    if (b === null || agentBusy) return
-    agentBusy = true
-    try {
-      await fetch(`${b}/acp/config`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ command }),
-      })
-      await loadAgents()
-    } finally { agentBusy = false }
-  }
-  let acpOn = $state(false)
-  void acpAvailable().then((ok) => { acpOn = ok; void loadAgents() })
 
   let pairCode = $state<string | null>(null)
   let pairExpiry = $state<string | null>(null)
@@ -124,52 +93,7 @@
     <h2 class="section-title">{sectionLabel}</h2>
 
     {#if section === 'agent'}
-    <section class="card" data-testid="settings-agent">
-      <p class="card-note">Pick the ACP agent binary the shell spawns for the in-app agent. Detected clients are listed automatically; use a custom command for anything else.</p>
-      {#if !acpOn}
-        <div class="row"><div class="row-text"><div class="row-desc">{m.assistant_not_configured()}</div></div></div>
-      {:else if agents === null}
-        <div class="row"><div class="skeleton" style="height: 40px; width: 100%;"></div></div>
-      {:else}
-        {#each agents.available as a (a.id)}
-          {@const active = agents!.configured !== null && agents!.configured.join(' ') === a.command.join(' ')}
-          <div class="row">
-            <div class="row-text">
-              <div class="row-title">{a.label}</div>
-              <code class="row-desc mono">{a.path} {a.command.slice(1).join(' ')}</code>
-            </div>
-            <div class="row-ctl">
-              {#if active}
-                <span class="agent-active">Active</span>
-              {:else}
-                <button type="button" class="btn btn-sm" disabled={agentBusy} onclick={() => void pickAgent(a.command)} data-testid={`agent-pick-${a.id}`}>Use</button>
-              {/if}
-            </div>
-          </div>
-        {:else}
-          <div class="row"><div class="row-desc">No known ACP clients found on PATH.</div></div>
-        {/each}
-        <div class="row">
-          <div class="row-text">
-            <div class="row-title">Custom command</div>
-            <div class="row-desc">Any ACP-speaking binary, e.g. <code class="mono">maki acp</code>.</div>
-          </div>
-          <div class="row-ctl row-ctl-wide">
-            <input class="input" placeholder="command args…" bind:value={customCmd} data-testid="agent-custom-input" />
-            <button
-              type="button"
-              class="btn btn-sm"
-              disabled={agentBusy || customCmd.trim() === ''}
-              onclick={() => { void pickAgent(customCmd.trim().split(/\s+/)); customCmd = '' }}
-              data-testid="agent-custom-save"
-            >Use</button>
-          </div>
-        </div>
-        {#if agents.configured !== null}
-          <div class="row"><div class="row-text"><div class="row-title">Configured</div><code class="row-desc mono">{agents.configured.join(' ')}</code></div></div>
-        {/if}
-      {/if}
-    </section>
+      <AgentSettings />
     {/if}
 
     {#if section === 'browsers'}
@@ -397,15 +321,6 @@
     color: var(--color-ink-soft);
     max-width: 60%;
     overflow-wrap: anywhere;
-  }
-  .row-ctl-wide .input {
-    width: 200px;
-    font-size: 12.5px;
-  }
-  .agent-active {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--color-accent-blue);
   }
   .table-wrap {
     overflow-x: auto;

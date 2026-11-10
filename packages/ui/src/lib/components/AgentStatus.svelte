@@ -19,7 +19,7 @@
   async function refresh() {
     const [s, a] = await Promise.all([acpStatus(), acpAgents()])
     status = s
-    agents = a?.available ?? []
+    agents = (a?.agents ?? []).filter((x) => x.path !== null && x.enabled)
     configured = a?.configured ?? null
   }
 

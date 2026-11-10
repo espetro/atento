@@ -60,15 +60,39 @@ export async function acpStatus(): Promise<AcpStatus | null> {
 	}
 }
 
+export interface AcpProbe {
+	ok: boolean
+	at: number
+	ms: number
+	error?: string
+	agent?: { name?: string; version?: string }
+	protocolVersion?: number
+	authMethods?: { id: string; name?: string }[]
+	models?: { current: string | null; available: { modelId: string; name?: string; description?: string }[] }
+	modes?: { current: string | null; available: { id: string; name?: string }[] }
+}
+
 export interface AcpAgent {
 	id: string
 	label: string
 	command: string[]
-	path: string
+	/** Resolved binary path; null when not installed. */
+	path: string | null
+	custom: boolean
+	enabled: boolean
+	active: boolean
+	/** Preferred model id, applied when a session starts. */
+	model: string | null
+	probe: AcpProbe | null
 }
 
-/** Agents found on PATH plus the configured command (null on plain web). */
-export async function acpAgents(): Promise<{ configured: string[] | null; available: AcpAgent[] } | null> {
+export interface AcpAgents {
+	configured: string[] | null
+	agents: AcpAgent[]
+}
+
+/** Every known agent (installed or not) plus the configured command; null on plain web. */
+export async function acpAgents(): Promise<AcpAgents | null> {
 	const base = bridge()
 	if (base === null) return null
 	try {
@@ -79,8 +103,24 @@ export async function acpAgents(): Promise<{ configured: string[] | null; availa
 	}
 }
 
-export function acpConfigure(command: string[]) {
-	return post('/acp/config', { command })
+export interface AcpConfigPatch {
+	/** Make this command the active agent. */
+	command?: string[]
+	id?: string
+	enabled?: boolean
+	/** Preferred model for `id`; empty string clears it. */
+	model?: string
+	custom?: { id?: string; label?: string; command: string[] }
+	removeCustom?: string
+}
+
+export function acpConfigure(patch: AcpConfigPatch | string[]) {
+	return post('/acp/config', Array.isArray(patch) ? { command: patch } : patch)
+}
+
+/** Spawn the agent, run initialize + session/new, and report what it advertises. */
+export function acpTest(id: string) {
+	return post<AcpProbe>('/acp/test', { id })
 }
 
 export function acpPrompt(text: string) {
