@@ -27,7 +27,7 @@ VERSION="$(node -p "require('$REPO/packages/atento/package.json').version")"
 case "$(uname -s)" in Darwin) OS=darwin ;; *) OS=linux ;; esac
 case "$(uname -m)" in arm64 | aarch64) ARCH=arm64 ;; *) ARCH=x64 ;; esac
 # Dev machines bundle node 26 (ABI-rebuilt below); CI bundles the node it built with.
-NODE_BIN="${ATENTO_NODE_BIN:-$(mise where node@26 2>/dev/null)/bin/node}"
+NODE_BIN="${ATENTO_NODE_BIN:-$(mise where node@26 2>/dev/null || true)/bin/node}"
 [ -x "$NODE_BIN" ] || NODE_BIN="$(command -v node)"
 
 [ -x "$NODE_BIN" ] || { echo "node binary not found: $NODE_BIN" >&2; exit 1; }
