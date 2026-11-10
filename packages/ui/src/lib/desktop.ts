@@ -210,6 +210,9 @@ export function partitionForHost(host: string): string {
 
 const POOL_MAX = 8
 
+/** Selectors whose rects are cut out of every native preview. */
+const NATIVE_MASKS = '.agent-panel'
+
 interface PoolEntry {
 	el: ElectrobunWebviewTag
 	/** Last URL requested via showNativePreview; used to skip redundant loads. */
@@ -304,6 +307,9 @@ export function showNativePreview(container: HTMLElement, url: string) {
 		) as unknown as ElectrobunWebviewTag
 		el.setAttribute('sandbox', '')
 		el.setAttribute('partition', partitionForHost(host))
+		// DOM overlays punch holes in the native view so they stay visible and
+		// clickable on top of it (the floating assistant panel).
+		el.setAttribute('masks', NATIVE_MASKS)
 		el.className = 'native-preview-wv'
 		entry = { el, url: '', lastUsed: 0 }
 		pool.set(host, entry)

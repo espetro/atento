@@ -13,12 +13,11 @@
   import Dialog from './lib/components/Dialog.svelte'
   import CommandPalette from './lib/components/CommandPalette.svelte'
   import AssistantDrawer from './lib/components/AssistantDrawer.svelte'
-  import { suppressNativePreviews } from './lib/desktop'
   import AgentStatus from './lib/components/AgentStatus.svelte'
+  import Persona from './lib/components/Persona.svelte'
   import AppSidebar from './lib/components/AppSidebar.svelte'
   import { acpAvailable, startLayoutToolServer } from './lib/acp'
   import * as Sidebar from '$lib/components/ui/sidebar/index.js'
-  import IconSparkles from '~icons/lucide/sparkles'
   import IconPanelLeft from '~icons/lucide/panel-left'
   import IconSearch from '~icons/lucide/search'
   import IconSettings from '~icons/lucide/settings'
@@ -50,11 +49,6 @@
     }
     if (!(e.target as Element | null)?.closest('.filter-anchor')) filterOpen = false
   }
-  // The native preview webview composites above the DOM; hide it while the
-  // floating assistant overlaps it.
-  $effect(() => {
-    if (agentOpen) return suppressNativePreviews()
-  })
   let searchTimer: ReturnType<typeof setTimeout> | null = null
 
   function onSearchInput() {
@@ -103,14 +97,18 @@
     // (Dialog captures Esc first and stops propagation).
     const onSettingsEsc = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || url.view !== 'settings') return
-      if (url.dialog !== '' || paletteOpen || agentOpen) return
+      if (url.dialog !== '' || paletteOpen) return
       const t = e.target as HTMLElement | null
+      if (t?.closest('.agent-panel')) return
       if (t && /^(input|textarea|select)$/i.test(t.tagName)) { t.blur(); return }
       setUrl({ view: viewBeforeSettings === 'settings' ? 'triage' : viewBeforeSettings })
     }
     window.addEventListener('keydown', onSettingsEsc)
     const onAgentEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && agentOpen && !e.defaultPrevented) agentOpen = false
+      // Non-modal: only Esc typed inside the panel closes it.
+      if (e.key === 'Escape' && agentOpen && !e.defaultPrevented && (e.target as Element | null)?.closest('.agent-panel')) {
+        agentOpen = false
+      }
     }
     window.addEventListener('keydown', onAgentEsc)
     const onPaletteEvt = () => (paletteOpen = true)
@@ -215,7 +213,7 @@
             onclick={() => (agentOpen = !agentOpen)}
             data-testid="agent-fab"
           >
-            <IconSparkles />
+            <Persona size={16} />
             <span>Agent</span>
           </button>
           <AgentStatus />
@@ -239,7 +237,7 @@
 
   {#if assistantAvailable}
     {#if agentOpen}
-      <div class="agent-panel" role="dialog" aria-label={m.assistant_title()} data-testid="assistant-pane">
+      <div class="agent-panel" role="complementary" aria-label={m.assistant_title()} data-testid="assistant-pane">
         <AssistantDrawer onClose={() => (agentOpen = false)} />
       </div>
     {/if}

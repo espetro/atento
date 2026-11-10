@@ -12,7 +12,7 @@
     type AcpStatus,
   } from '../acp'
   import IconX from '~icons/lucide/x'
-  import IconSparkles from '~icons/lucide/sparkles'
+  import Persona, { type PersonaState } from './Persona.svelte'
   import IconSendHorizontal from '~icons/lucide/send-horizontal'
   import { m } from '../../paraglide/messages.js'
 
@@ -39,6 +39,19 @@
   let pendingPermission = $state<AcpPermissionRequest | null>(null)
   let error = $state('')
   let scrollEl = $state<HTMLElement | null>(null)
+
+  // Face mood: thinking until the first chunk lands, then working.
+  const mood = $derived<PersonaState>(
+    error
+      ? 'error'
+      : pendingPermission
+        ? 'listening'
+        : busy
+          ? turns[turns.length - 1]?.streaming
+            ? 'working'
+            : 'thinking'
+          : 'idle',
+  )
 
   $effect(() => {
     void acpStatus().then((s) => (status = s))
@@ -145,7 +158,7 @@
 
   <aside class="assistant" data-testid="assistant-drawer" aria-label={m.assistant_title()}>
     <header class="assistant-head">
-      <span class="assistant-title"><IconSparkles /> {m.assistant_title()}</span>
+      <span class="assistant-title"><Persona size={22} state={mood} track /> {m.assistant_title()}</span>
       <button type="button" class="btn btn-ghost btn-icon" aria-label={m.aria_close()} onclick={onClose}>
         <IconX />
       </button>
@@ -168,7 +181,7 @@
         </div>
       {:else}
         <div class="assistant-empty">
-          <div class="empty-glyph" aria-hidden="true"><IconSparkles /></div>
+          <div class="persona-stage" aria-hidden="true"><Persona size={52} state={mood} track /></div>
           <p class="display empty-title">{m.assistant_title()}</p>
           <p class="meta-faint">{m.assistant_empty()}</p>
         </div>
@@ -247,8 +260,19 @@
     font-weight: 600;
     font-size: 13.5px;
   }
-  .assistant-title :global(svg) {
-    color: var(--color-accent-blue);
+  .assistant-title :global(.persona) {
+    color: var(--color-ink);
+  }
+  .persona-stage {
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-ink);
+    background: var(--color-surface-sunken);
+    margin-bottom: 6px;
   }
   .assistant-setup {
     margin: 0;
