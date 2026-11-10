@@ -1,0 +1,2 @@
+[tools]
+"github:Y2Z/monolith" = { version = "2.12.0", rename_exe = "monolith" }

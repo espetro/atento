@@ -85,6 +85,12 @@
       .catch(() => undefined)
   })
 
+  // Opening a link while online queues a page snapshot (background, fire and forget).
+  $effect(() => {
+    if (!online || id == null) return
+    void api.requestSnapshot(id).catch(() => undefined)
+  })
+
   let snapshotMissing = $state(false)
   $effect(() => {
     // Reset the artifact-missing flag whenever the link changes.

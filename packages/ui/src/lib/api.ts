@@ -123,6 +123,10 @@ export const api = {
       body: JSON.stringify(options),
     })
   },
+  /** Opening a link: ask the server to snapshot the page for offline use. */
+  requestSnapshot(id: number) {
+    return request<{ state: string }>(`/api/links/${id}/snapshot`, { method: 'POST' })
+  },
   /** Cached favicon for a host (served from disk, works offline). */
   faviconUrl(host: string) {
     return `/api/favicon/${encodeURIComponent(host)}`

@@ -28,9 +28,12 @@
     "@linkinbox/extractors": "workspace:*",
     "@linkinbox/importers": "workspace:*",
     "@linkinbox/media": "workspace:*",
+    "http-cache-semantics": "^4.3.0",
+    "single-file-cli": "^2.25.0",
     "smol-toml": "^1.9.1"
   },
   "devDependencies": {
+    "@types/http-cache-semantics": "^4.2.0",
     "@types/node": "^24.10.1",
     "typescript": "^5.9.0",
     "vitest": "^3.0.0"

@@ -267,10 +267,19 @@ importers:
       '@linkinbox/media':
         specifier: workspace:*
         version: link:../media
+      http-cache-semantics:
+        specifier: ^4.3.0
+        version: 4.3.0
+      single-file-cli:
+        specifier: ^2.25.0
+        version: 2.25.0
       smol-toml:
         specifier: ^1.9.1
         version: 1.9.1
     devDependencies:
+      '@types/http-cache-semantics':
+        specifier: ^4.2.0
+        version: 4.2.0
       '@types/node':
         specifier: ^24.10.1
         version: 24.19.2
@@ -2065,6 +2074,9 @@ packages:
   '@types/har-format@1.2.16':
     resolution: {integrity: sha512-fluxdy7ryD3MV6h8pTfTYpy/xQzCFC7m89nOH9y94cNqJ1mDIDPut7MnRHI3F6qRmh/cT2fUjG1MLdCNb4hE9A==}
 
+  '@types/http-cache-semantics@4.2.0':
+    resolution: {integrity: sha512-L3LgimLHXtGkWikKnsPg0/VFx9OGZaC+eN1u4r+OB1XRqH3meBIAVC2zr1WdMH+RHmnRkqliQAOHNJ/E0j/e0Q==}
+
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
@@ -2600,6 +2612,9 @@ packages:
   htmlparser2@10.1.0:
     resolution: {integrity: sha512-VTZkM9GWRAtEpveh7MSF6SjjrpNVNNVJfFup7xTY3UpFtm67foy9HDVXneLtFVt4pMz5kZtgNcvCniNFb1hlEQ==}
 
+  http-cache-semantics@4.3.0:
+    resolution: {integrity: sha512-M5t5LlJpS1UHMjvwRQVdFHvPISGeLAxNcrWuJkeGh0KxsqCHZ1O3NXZU/8x7cD0BDcGW8kapxMKTvwlqrNkHkA==}
+
   http-proxy-agent@7.0.2:
     resolution: {integrity: sha512-T1gkAiYYDWYx3V5Bmyu7HcfcvL7mUrTWiM6yOfa3PIphViJ/gFPbvidQ+veqSOHci/PxBcDabeUNCzpOODJZig==}
     engines: {node: '>= 14'}
@@ -3049,11 +3064,20 @@ packages:
   siginfo@2.0.0:
     resolution: {integrity: sha512-ybx0WO1/8bSBLEWXZvEd7gMW3Sn3JFlW3TvX1nREbDLRNQNaeNN8WK0meBwPdAaOI7TtRRRJn/Es1zhrrCHu7g==}
 
+  simple-cdp@1.10.2:
+    resolution: {integrity: sha512-7+ZtihebRzHqewTN9Y7gsGgsBlopjAlD8mKlaFd2VR/ag9ipSjfJ7G8/UT3aAzgeWAQLFnZNMH/+bm29j6ymMQ==}
+    engines: {bun: '>=1.0', deno: '>=1.4'}
+
   simple-concat@1.0.1:
     resolution: {integrity: sha512-cSFtAPtRhljv69IK0hTVZQ+OfE9nePi/rtJmw5UjHeVyVroEqJXP1sFztKUy1qU+xvz3u/sfYJLa947b7nAN2Q==}
 
   simple-get@4.0.1:
     resolution: {integrity: sha512-brv7p5WgH0jmQJr1ZDDfKDOSeWWg+OVypG99A/5vYGPqJ6pxiaHLy8nxtFjBA7oMa01ebA9gfh1uMCFqOuXxvA==}
+
+  single-file-cli@2.25.0:
+    resolution: {integrity: sha512-2uR5vwGV6DJT+lInRYsn3zwnZfktFnEHslpi4PCa9wrJuCWhd51Vgb2TScX/qWAljWql+R9LmtUrg9E+kmVkZA==}
+    engines: {bun: '>=1.2', deno: '>=2.2', node: '>=24.0.0'}
+    hasBin: true
 
   smol-toml@1.9.1:
     resolution: {integrity: sha512-j7WyPdf0CJoutMzMoPLF/bVXHtKZIT9Rb4eGeEbWw8X2t5oirjPgpL+OpaENZrILYaXqYwnVH+qgUwVbl+pUJQ==}
@@ -4406,6 +4430,8 @@ snapshots:
 
   '@types/har-format@1.2.16': {}
 
+  '@types/http-cache-semantics@4.2.0': {}
+
   '@types/json-schema@7.0.15': {}
 
   '@types/node@24.19.2':
@@ -4898,6 +4924,8 @@ snapshots:
       domutils: 3.2.2
       entities: 7.0.1
 
+  http-cache-semantics@4.3.0: {}
+
   http-proxy-agent@7.0.2(supports-color@10.2.2):
     dependencies:
       agent-base: 7.1.4
@@ -5347,6 +5375,8 @@ snapshots:
 
   siginfo@2.0.0: {}
 
+  simple-cdp@1.10.2: {}
+
   simple-concat@1.0.1: {}
 
   simple-get@4.0.1:
@@ -5354,6 +5384,10 @@ snapshots:
       decompress-response: 6.0.0
       once: 1.4.0
       simple-concat: 1.0.1
+
+  single-file-cli@2.25.0:
+    dependencies:
+      simple-cdp: 1.10.2
 
   smol-toml@1.9.1: {}
 

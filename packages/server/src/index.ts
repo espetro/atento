@@ -1138,10 +1138,26 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
         headers: {
           'content-type': page.contentType,
           // Defence in depth: the cached page can never run script or phone home.
-          'content-security-policy': "default-src 'none'; img-src * data:; style-src * 'unsafe-inline'; font-src *; sandbox",
+          'content-security-policy': "default-src 'none'; img-src * data: blob:; media-src * data:; style-src * data: 'unsafe-inline'; font-src * data:; sandbox",
         },
       })
     },
+  )
+
+  // Opening a link asks for a page snapshot (single-file via Chrome, else
+  // monolith). Fire and forget: the capture runs in the background.
+  app.post(
+    '/api/links/:id{[0-9]+}/snapshot',
+    describeRoute({
+      tags: ['links'],
+      summary: 'Queue a page snapshot for offline viewing (no-op when fresh)',
+      parameters: [ID_PARAM],
+      responses: {
+        200: { description: 'Queue state', content: { 'application/json': { schema: { type: 'object' } } } },
+        ...errorResponses,
+      },
+    }),
+    async (c) => c.json({ state: await ops.requestSnapshot(Number(c.req.param('id'))) }),
   )
 
   // ---- run journal ---------------------------------------------------------

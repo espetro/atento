@@ -28,3 +28,15 @@ An object store only pays off with multi-device sync or a remote/headless deploy
 - It is the server-fetched HTML, not a browser screenshot: styles/images load from the origin when online and degrade offline. A true offline-faithful capture (single-file inlining or a headless screenshot) is a follow-up.
 - Favicons are fetched directly from the site (`/favicon.ico`, then `<link rel=icon>`), no third-party lookup. Hosts must be public DNS names (no IPs, localhost, `.local`).
 - No size cap or LRU on `pages/` yet; prune by mtime when needed.
+
+## Page snapshots (on open)
+
+Opening a link while online calls `POST /api/links/:id/snapshot`. The server queues one capture at a time and skips links with a snapshot younger than 7 days.
+
+Order: single-file-cli driving the installed Chrome (`LINKINBOX_CHROME` overrides the path), then monolith (`LINKINBOX_MONOLITH`, or next to the node binary), then the sanitized extract HTML saved at extract time.
+
+The result is `pages/<sha1(url)>.snap.html`, one file with CSS, images and fonts inlined. Scripts are removed, so animations that need JS and interactivity are not preserved. Pages that need a login are captured as logged out. The render route serves it under a strict CSP with `sandbox`.
+
+Favicons use http-cache-semantics for freshness (ttl clamped to 1 to 30 days) and conditional GETs (ETag, Last-Modified) when stale.
+
+Deferred: replayweb.page/WACZ for true interactive replay.

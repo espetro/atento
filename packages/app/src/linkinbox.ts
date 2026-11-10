@@ -18,7 +18,8 @@ import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 import { openStore } from '@linkinbox/db'
-import { createSiteCache, type CachedFile } from './site-cache.js'
+import { createSnapshotter, type SnapshotRequest } from './snapshot.js'
+import { createSiteCache, urlKey, type CachedFile } from './site-cache.js'
 import { importFile, type ImportResult } from '@linkinbox/importers'
 import {
   createAgentBrowserAdapter,
@@ -581,8 +582,10 @@ export interface LinkinboxOps {
   readArtifact(linkId: number, name: string): Promise<ArtifactContent | null>
   /** Cached favicon for a host (fetched once, then served from disk offline). */
   favicon(host: string): Promise<CachedFile | null>
-  /** The last good render (sanitized HTML) cached for a link, or null. */
+  /** The link's page snapshot (else last sanitized extract), or null. */
   readRender(linkId: number): Promise<CachedFile | null>
+  /** Called when a link is opened: queue a page snapshot unless one is fresh. */
+  requestSnapshot(linkId: number): Promise<SnapshotRequest>
   /**
    * Re-extract one link: RETRY it back to the `created` queue when its FSM
    * state allows, then run the extract stage scoped to that link only.
@@ -868,6 +871,7 @@ export function createLinkinboxOps(
   }
 
   const siteCache = createSiteCache(dirname(artifactsDir))
+  const snapshotter = createSnapshotter(join(dirname(artifactsDir), 'pages'), urlKey)
 
   const ops: LinkinboxOps = {
     store,
@@ -1292,7 +1296,15 @@ export function createLinkinboxOps(
 
     async readRender(linkId) {
       const link = await store.getLink(linkId)
-      return link ? siteCache.readRender(link.url) : null
+      if (!link) return null
+      const snap = await snapshotter.read(link.url)
+      if (snap) return { body: snap, contentType: 'text/html; charset=utf-8' }
+      return siteCache.readRender(link.url)
+    },
+
+    async requestSnapshot(linkId) {
+      const link = await store.getLink(linkId)
+      return link ? snapshotter.request(link.url) : 'unavailable'
     },
 
     async readArtifact(linkId, name) {
