@@ -8,10 +8,10 @@ import type { ElectrobunConfig } from "electrobun";
 // creates are composited natively by Electrobun.
 export default {
 	app: {
-		name: "atento",
+		name: "Atento",
 		identifier: "dev.atento.app",
 		version: "0.1.0",
-		description: "atento — link triage pipeline",
+		description: "Atento: a link inbox that triages itself",
 	},
 	build: {
 		mainProcess: "bun",

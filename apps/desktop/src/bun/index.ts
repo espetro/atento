@@ -105,7 +105,7 @@ if (process.env.ATENTO_URL === undefined && sidecar === null) {
 const UI_URL = process.env.ATENTO_URL ?? sidecar?.url ?? "http://localhost:4173";
 
 const mainWindow = new BrowserWindow({
-	title: "atento",
+	title: "Atento",
 	url: UI_URL,
 	frame: savedWindowFrame(),
 });
