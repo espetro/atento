@@ -442,6 +442,33 @@
   :global(.logomark) {
     color: var(--color-accent-blue);
   }
+  /* Header row centres on the topbar (card top 8 + 9 + 15 = y 32). */
+  :global([data-slot='sidebar-header']) {
+    padding: 17px 8px 0;
+  }
+  :global([data-slot='sidebar-header'] [data-sidebar='menu-button']) {
+    height: 30px;
+  }
+  /* Collapsed rail: every row is a centred 32px square; no hover slide. */
+  :global([data-collapsible='icon'] [data-sidebar='menu-button']) {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+    margin-inline: auto;
+    transform: none;
+  }
+  :global([data-collapsible='icon'] [data-slot='sidebar-header'] [data-sidebar='menu-button']) {
+    height: 30px;
+  }
+  :global([data-collapsible='icon'] [data-slot='sidebar-group']) {
+    padding-inline: 8px;
+  }
+  :global([data-collapsible='icon'] [data-slot='sidebar-menu-item']) {
+    display: flex;
+    justify-content: center;
+  }
   /* Collapsed rail shows the logomark only. */
   :global([data-collapsible='icon'] .wordmark) {
     display: none;
@@ -457,6 +484,9 @@
     overflow-x: auto;
     scrollbar-width: none;
     padding-right: 28px;
+  }
+  :global([data-collapsible='icon'] .sidebar-chips) {
+    display: none;
   }
   .sidebar-chips::-webkit-scrollbar {
     display: none;

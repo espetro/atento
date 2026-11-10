@@ -74,6 +74,26 @@
   --color-bad: #b91c1c;
 }
 
+/* daisyUI's light theme redefines --color-accent/primary/secondary (teal,
+   purple...) at :root and beats @theme. Pin the app tokens above it so no
+   legacy accent leaks into hover/focus washes. */
+:root:root {
+  --color-accent: rgb(22 24 29 / 0.06);
+  --color-accent-foreground: #16181d;
+  --color-primary: #3f93ec;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #eef0f3;
+  --color-secondary-foreground: #16181d;
+}
+:root.dark:root {
+  --color-accent: rgb(255 255 255 / 0.07);
+  --color-accent-foreground: #e8eaed;
+  --color-primary: #6fb1ff;
+  --color-primary-foreground: #0f1114;
+  --color-secondary: #1c2026;
+  --color-secondary-foreground: #e8eaed;
+}
+
 /* Dark theme (Linear/ElevenLabs near-black cool neutrals). <html class="dark">
    redeclares the same tokens; every utility/semantic class resolves them. */
 .dark {
