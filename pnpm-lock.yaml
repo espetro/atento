@@ -340,6 +340,9 @@ importers:
       '@atento/extractors':
         specifier: workspace:*
         version: link:../extractors
+      '@atento/mcp':
+        specifier: workspace:*
+        version: link:../mcp
       '@atento/media':
         specifier: workspace:*
         version: link:../media
@@ -362,10 +365,6 @@ importers:
       vitest:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@24.19.2)(jiti@2.7.0)(jsdom@26.1.0(supports-color@10.2.2))(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.23.15)
-    optionalDependencies:
-      '@atento/mcp':
-        specifier: workspace:*
-        version: link:../mcp
 
   packages/client:
     dependencies:

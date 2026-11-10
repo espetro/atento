@@ -1,6 +1,7 @@
 /**
  * metrics, eval and serve commands.
  */
+import { optionalModule } from '../modules.js'
 import type { Command } from 'commander'
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -158,14 +159,7 @@ export async function runServe(
   onStart?: (server: { port: number; close(): Promise<void> }) => void,
   options: ServeOptions = {},
 ): Promise<boolean> {
-  let mod: { startServer?: (opts: unknown) => Promise<unknown> } | null = null
-  try {
-    // Indirected so @atento/server stays optional at build time.
-    const specifier = '@atento/server'
-    mod = (await import(specifier)) as { startServer?: (opts: unknown) => Promise<unknown> }
-  } catch {
-    mod = null
-  }
+  const mod = optionalModule('server') ?? null
   if (!mod || typeof mod.startServer !== 'function') {
     console.log('server not available: @atento/server is not installed')
     return false
@@ -179,23 +173,15 @@ export async function runServe(
   // context carries a live app — the extract/enrich/browse adapters the
   // tools call. Optional like the server package itself.
   let mcpFetch: ((request: Request) => Promise<Response>) | undefined
-  try {
-    const mcp = await import('@atento/mcp')
-    const app = ctx.app as CliContext['app'] | undefined
-    if (
-      app !== undefined &&
-      typeof mcp.createMcpHttpHandler === 'function' &&
-      typeof mcp.createMcpDeps === 'function'
-    ) {
-      const handler = mcp.createMcpHttpHandler(mcp.createMcpDeps(app, ctx.logger))
-      mcpFetch = (request) => handler.fetch(request)
-    }
-  } catch {
-    // @atento/mcp not installed: serve the api/ui without /mcp.
+  const mcp = optionalModule('mcp')
+  const app = ctx.app as CliContext['app'] | undefined
+  if (mcp !== undefined && app !== undefined) {
+    const handler = mcp.createMcpHttpHandler(mcp.createMcpDeps(app, ctx.logger))
+    mcpFetch = (request) => handler.fetch(request)
   }
 
   console.log(`serving on http://${hostname}:${effective}`)
-  const started = (await mod.startServer({
+  const started = (await (mod.startServer as (opts: unknown) => Promise<unknown>)({
     port: effective,
     store: ctx.store,
     ops: ctx.app,

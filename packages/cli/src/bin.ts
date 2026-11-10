@@ -3,7 +3,12 @@
  * atento CLI entry point. The command bodies live in program.ts; this
  * file only wires the process to it.
  */
+import * as mcp from '@atento/mcp'
+import * as server from '@atento/server'
+import { registerModules } from './modules.js'
 import { createProgram } from './program.js'
+
+registerModules({ mcp, server })
 
 const program = createProgram()
 
