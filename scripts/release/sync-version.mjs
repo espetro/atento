@@ -9,10 +9,10 @@ const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const read = (p) => readFileSync(join(repo, p), 'utf8')
 const version = JSON.parse(read('packages/atento/package.json')).version
 
-for (const file of ['package.json', 'apps/desktop/package.json']) {
+for (const file of ['package.json']) {
   const json = JSON.parse(read(file))
   json.version = version
-  writeFileSync(join(repo, file), `${JSON.stringify(json, null, file.startsWith('apps') ? '\t' : 2)}\n`)
+  writeFileSync(join(repo, file), `${JSON.stringify(json, null, 2)}\n`)
 }
 const cfg = 'apps/desktop/electrobun.config.ts'
 writeFileSync(join(repo, cfg), read(cfg).replace(/version: "[^"]*"/, `version: "${version}"`))
