@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { QueryClientProvider } from '@tanstack/svelte-query'
   import { createQueryClient } from './lib/api'
   import { parseUrlState, toUrlState, type UrlState } from './lib/urlState'
@@ -13,6 +13,8 @@
   import Dialog from './lib/components/Dialog.svelte'
   import CommandPalette from './lib/components/CommandPalette.svelte'
   import AssistantDrawer from './lib/components/AssistantDrawer.svelte'
+  import { suppressNativePreviews } from './lib/desktop'
+  import AgentStatus from './lib/components/AgentStatus.svelte'
   import AppSidebar from './lib/components/AppSidebar.svelte'
   import { acpAvailable, startLayoutToolServer } from './lib/acp'
   import * as Sidebar from '$lib/components/ui/sidebar/index.js'
@@ -33,7 +35,11 @@
   let paletteOpen = $state(false)
   let agentOpen = $state(false)
   let qInput = $state('')
-  $effect(() => { if (url.q !== qInput) qInput = url.q })
+  // Mirror url.q into the input only when the URL changes (not on every keystroke).
+  $effect(() => {
+    const q = url.q
+    untrack(() => { if (q !== qInput) qInput = q })
+  })
   let searchEl = $state<HTMLInputElement | null>(null)
   let filterOpen = $state(false)
   function dismissFilter(e: Event) {
@@ -44,6 +50,11 @@
     }
     if (!(e.target as Element | null)?.closest('.filter-anchor')) filterOpen = false
   }
+  // The native preview webview composites above the DOM; hide it while the
+  // floating assistant overlaps it.
+  $effect(() => {
+    if (agentOpen) return suppressNativePreviews()
+  })
   let searchTimer: ReturnType<typeof setTimeout> | null = null
 
   function onSearchInput() {
@@ -59,7 +70,10 @@
   // ACP assistant: only when the shell bridge exposes /acp (never on web).
   let assistantAvailable = $state(false)
 
+  // Esc in settings returns to the view the user came from.
+  let viewBeforeSettings: UrlState['view'] = 'triage'
   function setUrl(next: Partial<UrlState>) {
+    if (next.view === 'settings' && url.view !== 'settings') viewBeforeSettings = url.view
     url = { ...url, ...next }
     const qs = toUrlState(url).toString()
     history.pushState(null, '', qs ? `?${qs}` : window.location.pathname)
@@ -85,6 +99,20 @@
       }
     }
     window.addEventListener('keydown', onPaletteKey)
+    // Esc leaves settings unless it is closing a dialog/menu or editing a field
+    // (Dialog captures Esc first and stops propagation).
+    const onSettingsEsc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || url.view !== 'settings') return
+      if (url.dialog !== '' || paletteOpen || agentOpen) return
+      const t = e.target as HTMLElement | null
+      if (t && /^(input|textarea|select)$/i.test(t.tagName)) { t.blur(); return }
+      setUrl({ view: viewBeforeSettings === 'settings' ? 'triage' : viewBeforeSettings })
+    }
+    window.addEventListener('keydown', onSettingsEsc)
+    const onAgentEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && agentOpen && !e.defaultPrevented) agentOpen = false
+    }
+    window.addEventListener('keydown', onAgentEsc)
     const onPaletteEvt = () => (paletteOpen = true)
     window.addEventListener('linkinbox:palette', onPaletteEvt)
     const onFocusSearch = () => { searchEl?.focus(); searchEl?.select() }
@@ -101,29 +129,14 @@
     // source of truth and lives in the page).
     const offTheme = initTheme()
     const offLayoutServer = startLayoutToolServer()
-    // Persist window bounds so the next launch restores last size (B-shell).
-    let boundsTimer: ReturnType<typeof setTimeout> | null = null
-    const postBounds = () => {
-      const bridge = (window as unknown as { __linkinboxBridge?: string }).__linkinboxBridge
-      if (bridge === undefined) return
-      if (boundsTimer !== null) clearTimeout(boundsTimer)
-      boundsTimer = setTimeout(() => {
-        void fetch(`${bridge}/window-bounds`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ w: window.innerWidth, h: window.innerHeight, x: window.screenX, y: window.screenY }),
-        }).catch(() => {})
-      }, 400)
-    }
-    window.addEventListener('resize', postBounds)
-    postBounds()
     void acpAvailable().then((ok) => (assistantAvailable = ok))
     return () => {
       window.removeEventListener('keydown', onAssistantKey)
+      window.removeEventListener('keydown', onSettingsEsc)
+      window.removeEventListener('keydown', onAgentEsc)
       window.removeEventListener('linkinbox:palette', onPaletteEvt)
       window.removeEventListener('linkinbox:focus-search', onFocusSearch)
       offTheme()
-      window.removeEventListener('resize', postBounds)
       offLayoutServer()
       window.removeEventListener('popstate', onPop)
       window.removeEventListener('keydown', onPaletteKey)
@@ -205,6 +218,7 @@
             <IconSparkles />
             <span>Agent</span>
           </button>
+          <AgentStatus />
         {/if}
       </div>
     </Sidebar.Inset>
@@ -225,11 +239,9 @@
 
   {#if assistantAvailable}
     {#if agentOpen}
-      <Dialog open={true} labelledBy="agent-title" onClose={() => (agentOpen = false)}>
-        <div class="agent-dialog" data-testid="assistant-pane">
-          <AssistantDrawer onClose={() => (agentOpen = false)} />
-        </div>
-      </Dialog>
+      <div class="agent-panel" role="dialog" aria-label={m.assistant_title()} data-testid="assistant-pane">
+        <AssistantDrawer onClose={() => (agentOpen = false)} />
+      </div>
     {/if}
   {/if}
 
@@ -280,6 +292,7 @@
     display: flex;
     align-items: center;
     justify-content: flex-end;
+    gap: 2px;
     padding: 0 12px;
   }
   .app-main {
@@ -365,13 +378,27 @@
     background: var(--color-sidebar-accent);
     color: var(--color-ink);
   }
-  .agent-dialog {
-    width: min(560px, calc(100vw - 48px));
-    height: min(620px, calc(100dvh - 120px));
+  /* Floating assistant: a non-modal card anchored above the dock, bottom
+     right, growing out of the Agent button. The page stays interactive. */
+  .agent-panel {
+    position: fixed;
+    right: 16px;
+    bottom: 52px;
+    width: min(400px, calc(100vw - 32px));
+    height: min(560px, calc(100dvh - 120px));
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    margin: -10px;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-line);
+    border-radius: 18px;
+    box-shadow: var(--shadow-pop);
+    transform-origin: bottom right;
+    animation: agent-pop 220ms cubic-bezier(0.19, 1, 0.22, 1);
+    z-index: 40;
+  }
+  @keyframes agent-pop {
+    from { opacity: 0; transform: translateY(8px) scale(0.92); }
   }
   /* Minimal search: glyph + title, no field chrome; grows on focus. */
   .topbar-search-wrap {
@@ -426,19 +453,20 @@
     display: inline-flex;
   }
   .keymap {
-    min-width: 320px;
-    padding: 8px;
+    min-width: 340px;
+    padding: 20px 24px 22px;
   }
   .keymap-title {
-    font-size: 16px;
-    margin-bottom: 10px;
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0 0 14px;
   }
   .keymap-table {
     border-collapse: collapse;
     font-size: 13px;
   }
   .keymap-table td {
-    padding: 4px 14px 4px 0;
+    padding: 6px 22px 6px 0;
   }
   .keymap-table td:last-child {
     color: var(--color-ink-soft);

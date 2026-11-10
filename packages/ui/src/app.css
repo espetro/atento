@@ -460,12 +460,6 @@ kbd {
     outline: none;
     transition: border-color 130ms ease, box-shadow 130ms ease;
   }
-  .input:focus,
-  .textarea:focus,
-  .select:focus {
-    border-color: var(--color-accent-blue);
-    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent-blue) 18%, transparent);
-  }
   .input::placeholder,
   .textarea::placeholder {
     color: var(--color-ink-faint);
@@ -727,6 +721,11 @@ kbd {
   box-shadow: var(--shadow-pop);
   animation: rise 200ms cubic-bezier(0.19, 1, 0.22, 1);
 }
+/* The card takes programmatic focus (focus trap); it needs no ring. */
+.dialog-card:focus,
+.dialog-card:focus-visible {
+  outline: none;
+}
 @keyframes fade-in {
   from { opacity: 0; }
 }
@@ -740,5 +739,17 @@ kbd {
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* daisyUI emits its focus outline in the utilities layer, which outranks
+   components: restate our focus ring there (later wins within the layer). */
+@layer utilities {
+  .input.input:is(:focus, :focus-within, :focus-visible),
+  .textarea.textarea:is(:focus, :focus-within, :focus-visible),
+  .select.select:is(:focus, :focus-within, :focus-visible) {
+    outline: none;
+    border-color: var(--color-accent-blue);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent-blue) 18%, transparent);
   }
 }

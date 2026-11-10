@@ -3,7 +3,6 @@
   import DOMPurify from 'dompurify'
   import {
     acpCancel,
-    acpConfigure,
     acpPermission,
     acpPrompt,
     acpStatus,
@@ -38,7 +37,6 @@
   let draft = $state('')
   let busy = $state(false)
   let pendingPermission = $state<AcpPermissionRequest | null>(null)
-  let agentCmd = $state('')
   let error = $state('')
   let scrollEl = $state<HTMLElement | null>(null)
 
@@ -137,17 +135,6 @@
     }
   }
 
-  async function saveCommand() {
-    const cmd = agentCmd.trim().split(/\s+/).filter(Boolean)
-    if (cmd.length === 0) return
-    try {
-      await acpConfigure(cmd)
-      status = await acpStatus()
-    } catch (e) {
-      error = String(e)
-    }
-  }
-
   function answerPermission(optionId: string) {
     if (!pendingPermission) return
     void acpPermission(pendingPermission.requestId, optionId).catch(() => {})
@@ -165,18 +152,7 @@
     </header>
 
     {#if status && !status.configured}
-      <div class="assistant-setup">
-        <p class="meta">{m.assistant_not_configured()}</p>
-        <input
-          class="input"
-          bind:value={agentCmd}
-          placeholder={m.assistant_agent_placeholder()}
-          data-testid="assistant-agent-input"
-        />
-        <button type="button" class="btn btn-sm btn-primary" onclick={saveCommand}>
-          {m.assistant_save_agent()}
-        </button>
-      </div>
+      <p class="assistant-setup meta">{m.assistant_not_configured()}</p>
     {/if}
 
     <div class="assistant-scroll scroll-thin" bind:this={scrollEl}>
@@ -261,7 +237,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 12px;
+    padding: 12px 14px;
     border-bottom: 1px solid var(--color-line);
   }
   .assistant-title {
@@ -275,10 +251,8 @@
     color: var(--color-accent-blue);
   }
   .assistant-setup {
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    margin: 0;
+    padding: 10px 14px;
     border-bottom: 1px solid var(--color-line);
   }
   .assistant-scroll {
@@ -296,7 +270,7 @@
     align-items: center;
     text-align: center;
     gap: 6px;
-    margin-top: 32px;
+    margin-block: auto;
   }
   .empty-title {
     font-size: 17px;

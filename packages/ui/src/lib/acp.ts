@@ -60,6 +60,25 @@ export async function acpStatus(): Promise<AcpStatus | null> {
 	}
 }
 
+export interface AcpAgent {
+	id: string
+	label: string
+	command: string[]
+	path: string
+}
+
+/** Agents found on PATH plus the configured command (null on plain web). */
+export async function acpAgents(): Promise<{ configured: string[] | null; available: AcpAgent[] } | null> {
+	const base = bridge()
+	if (base === null) return null
+	try {
+		const res = await fetch(`${base}/acp/agents`)
+		return res.ok ? await res.json() : null
+	} catch {
+		return null
+	}
+}
+
 export function acpConfigure(command: string[]) {
 	return post('/acp/config', { command })
 }

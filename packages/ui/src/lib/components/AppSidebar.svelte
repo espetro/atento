@@ -219,10 +219,12 @@
         class="sidebar-chip"
         class:is-active={section === id}
         onclick={() => (section = id)}
+        aria-label={label}
+        title={label}
         data-testid={`chip-${id}`}
       >
         <ChipIcon />
-        <span>{label}</span>
+        {#if section === id}<span>{label}</span>{/if}
       </button>
     {/each}
     <button
@@ -452,17 +454,12 @@
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
-    padding-right: 28px;
   }
   :global([data-collapsible='icon'] .sidebar-chips) {
     display: none;
   }
   .sidebar-chips::-webkit-scrollbar {
     display: none;
-  }
-  .sidebar-chips {
-    mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
-    -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
   }
   .sidebar-chip {
     display: inline-flex;

@@ -211,7 +211,7 @@
   {/if}
 
   {#if liveRunning && !runResult}
-    <section class="pane live-panel" data-testid="live-run">
+    <section class="pane pane-pad live-panel" data-testid="live-run">
       <p class="live-title"><IconRefreshCw /> {m.run_live_title()}{sseRun?.id ? ` — ${m.run_live_run({ id: sseRun.id })}` : ''}</p>
       <div class="stage-stepper">
         {#each STAGES as stage, i (stage)}
@@ -227,7 +227,7 @@
   {/if}
 
   {#if busyInfo}
-    <section class="pane busy-panel" data-testid="busy-panel">
+    <section class="pane pane-pad busy-panel" data-testid="busy-panel">
       <p class="busy-title"><IconPause /> {m.busy_title()}</p>
       <p class="meta">
         {busyInfo.runId != null ? m.busy_subject_run({ id: busyInfo.runId }) : m.busy_subject_generic()} {m.busy_holds_lock()}
@@ -238,7 +238,7 @@
   {/if}
 
   {#if runResult}
-    <section class="pane">
+    <section class="pane pane-pad">
       <p class="run-line meta" data-testid="run-line">
         {m.run_line({ id: runResult.runId, before: runResult.cursorBefore, after: runResult.cursorAfter })}
       </p>
@@ -266,7 +266,7 @@
     </section>
 
     {#if runResult.summary.needsAction || attentionTotal > 0}
-      <section class="pane needs-action" data-testid="needs-action">
+      <section class="pane pane-pad needs-action" data-testid="needs-action">
         <h2 class="section-title">{m.needs_action()}</h2>
         {#each ['needs_login', 'blocked', 'errored', 'review'] as c (c)}
           {@const count = (attentionCounts as Record<string, number>)[c] ?? 0}
@@ -290,7 +290,7 @@
     {/if}
   {/if}
 
-  <section class="pane journal" data-testid="run-journal">
+  <section class="pane pane-pad journal" data-testid="run-journal">
     <h2 class="section-title">{m.journal_title()}</h2>
     {#if runs.length === 0}
       <p class="meta">{m.journal_empty()}</p>

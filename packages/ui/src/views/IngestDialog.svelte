@@ -22,7 +22,7 @@
   const queryClient = useQueryClient()
 
   const MAX_URLS = 500
-  const ACCEPT = '.md,.markdown,.txt,.html,.htm,.json,.jsonl,.csv'
+  const ACCEPT = '.md,.markdown,.txt,.html,.htm,.json,.jsonl,.csv,.plist'
   const FILE_MAX_BYTES = 10 * 1024 * 1024
 
   // ---- valibot schemas (formisch fields for paste mode; file checked on pick)
@@ -58,7 +58,7 @@
     v.custom<File>((i) => i instanceof File, m.val_choose_file()),
     v.check((f) => f.size <= FILE_MAX_BYTES, m.val_file_too_large()),
     v.check(
-      (f) => /\.(md|markdown|txt|html?|jsonl?|csv)$/i.test(f.name),
+      (f) => /\.(md|markdown|txt|html?|jsonl?|csv|plist)$/i.test(f.name),
       m.val_file_type(),
     ),
   )
@@ -410,6 +410,7 @@
             />
           </label>
           <p class="meta">{m.dropzone_types()}</p>
+          <p class="meta">{m.dropzone_safari()}</p>
         </div>
       {/if}
 
@@ -524,10 +525,12 @@
 
 <style>
   .ingest-dialog {
-    width: min(560px, calc(100vw - 32px));
+    width: min(580px, calc(100vw - 32px));
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
+    padding: 20px 24px 22px;
+    overflow-y: auto;
   }
   .ingest-head {
     display: flex;
@@ -536,6 +539,8 @@
   }
   .ingest-title {
     font-size: 17px;
+    font-weight: 600;
+    margin: 0;
   }
   .mode-tabs {
     display: flex;
@@ -561,20 +566,27 @@
     font-size: 13px;
   }
   .ingest-hint {
-    margin-top: -4px;
+    margin: 0;
+    font-size: 12px;
+  }
+  :global(.ingest-form) {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
   }
   .field-row {
     display: flex;
-    gap: 10px;
+    gap: 14px;
   }
   .field {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
   }
   .field-label {
     font-size: 12px;
+    font-weight: 500;
     color: var(--color-ink-soft);
   }
   .dropzone {
@@ -608,6 +620,7 @@
     justify-content: flex-end;
     gap: 8px;
     align-items: center;
+    padding-top: 4px;
   }
   .job-view {
     display: flex;
