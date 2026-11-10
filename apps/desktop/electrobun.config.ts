@@ -18,6 +18,9 @@ export default {
 		bun: {
 			entrypoint: "src/bun/index.ts",
 		},
+		copy: {
+			"server-runtime/server.tar.gz": "server.tar.gz",
+		},
 		mac: {
 			bundleCEF: false,
 			icons: "icon.iconset",

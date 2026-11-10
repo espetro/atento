@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { AcpClient, type AcpMcpServer, type AcpModel, type AcpSpawned } from "./acp";
@@ -42,9 +42,28 @@ interface SidecarServer {
 const SIDECAR_PORTS = [4173, 4174, 4175];
 
 function resourcesDir(): string | null {
-	// Packaged: <App>.app/Contents/MacOS/<exe> -> ../Resources/server
-	const candidate = join(dirname(process.execPath), "..", "Resources", "server");
-	return existsSync(join(candidate, "server-entry.mjs")) ? candidate : null;
+	// Packaged: <App>.app/Contents/MacOS/<exe> -> ../Resources/app/server.tar.gz
+	// (copied in by build.copy). It is a tarball because build.copy flattens
+	// the symlinks pnpm uses in node_modules. Extracted once per build into
+	// the data dir, keyed by archive size + mtime.
+	const resources = join(dirname(process.execPath), "..", "Resources");
+	for (const candidate of [join(resources, "app", "server"), join(resources, "server")]) {
+		if (existsSync(join(candidate, "server-entry.mjs"))) return candidate;
+	}
+	const archive = join(resources, "app", "server.tar.gz");
+	if (!existsSync(archive)) return null;
+	const st = statSync(archive);
+	const target = join(homedir(), ".atento", "runtime", `${st.size}-${Math.floor(st.mtimeMs)}`);
+	const entry = join(target, "server", "server-entry.mjs");
+	if (!existsSync(entry)) {
+		mkdirSync(target, { recursive: true });
+		const res = Bun.spawnSync(["tar", "-xzf", archive, "-C", target]);
+		if (res.exitCode !== 0) {
+			console.error("[desktop] failed to extract sidecar runtime:", res.stderr.toString());
+			return null;
+		}
+	}
+	return existsSync(entry) ? join(target, "server") : null;
 }
 
 async function waitForServer(port: number, proc: SidecarServer["proc"], timeoutMs = 20000): Promise<boolean> {

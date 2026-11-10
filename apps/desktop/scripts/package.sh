@@ -7,11 +7,13 @@
 #   package.sh --release    build and write dist-release/Atento-<version>-<os>-<arch>.{zip,tar.gz}
 #                           (no install; used by the release workflow)
 #
-# Layout inside the .app:
-#   Contents/Resources/server/node                  self-contained Node 26
-#   Contents/Resources/server/server-entry.mjs      sidecar entry point
-#   Contents/Resources/server/ui-dist/              built packages/ui
-#   Contents/Resources/server/{dist,node_modules}/  pnpm-deployed @atento/cli
+# The server runtime is packed into the app by electrobun.config.ts
+# (build.copy), because the launcher re-extracts Resources on first run and
+# would drop anything injected afterwards. Layout inside the app:
+#   Resources/app/server/node                  self-contained Node
+#   Resources/app/server/server-entry.mjs      sidecar entry point
+#   Resources/app/server/ui-dist/              built packages/ui
+#   Resources/app/server/{dist,node_modules}/  pnpm-deployed @atento/cli
 #
 # The sidecar exists because better-sqlite3 cannot run under the Bun
 # runtime that hosts the Electrobun main process.
@@ -58,6 +60,9 @@ cp "$APP_DIR/mcp-ui-layout.mjs" "$RUNTIME/server/"
 cp -R "$REPO/packages/ui/dist" "$RUNTIME/server/ui-dist"
 cp "$NODE_BIN" "$RUNTIME/server/node"
 chmod +x "$RUNTIME/server/node"
+# build.copy flattens symlinks (pnpm node_modules) into empty files, so ship
+# the runtime as one tarball; the shell extracts it on first launch.
+tar -C "$RUNTIME" -czf "$RUNTIME/server.tar.gz" server
 
 echo "==> building electrobun app"
 cd "$APP_DIR"
@@ -65,19 +70,9 @@ export PATH="$HOME/.hutch/bin:$PATH"
 hutch run build
 
 APP="$(find "$APP_DIR/build" -maxdepth 3 -name "*.app" | head -1)"
-if [ -n "$APP" ]; then
-	RES="$APP/Contents/Resources"
-else
-	# Linux: the bundle is a directory with a Resources folder next to the launcher.
-	APP="$(find "$APP_DIR/build" -maxdepth 2 -type d -name "stable-*" | head -1)"
-	RES="$(find "$APP" -maxdepth 3 -type d -name Resources | head -1)"
-fi
-[ -n "$APP" ] && [ -n "$RES" ] || { echo "no app bundle produced under $APP_DIR/build" >&2; exit 1; }
-
-echo "==> injecting server runtime into $APP"
-rm -rf "$RES/server"
-cp -R "$RUNTIME/server" "$RES/server"
-chmod +x "$RES/server/node"
+# Linux produces a directory bundle instead of an .app.
+[ -n "$APP" ] || APP="$(find "$APP_DIR/build" -maxdepth 2 -type d -name "stable-*" | head -1)"
+[ -n "$APP" ] || { echo "no app bundle produced under $APP_DIR/build" >&2; exit 1; }
 
 if [ "$OS" = darwin ]; then
 	echo "==> ad-hoc signing"
