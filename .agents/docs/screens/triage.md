@@ -11,9 +11,12 @@ Apple Notes (serif centered empty states), elevenmusic.io (one accent, generous 
 - `?view=triage` shell (sidebar + list + preview + agent FAB)
 
 ## Layout
-- Main content is a rounded card on the shell surface (Linear/brioso); sidebar has
-  NO right border — the card carries the seam.
-- Icon-only sticky topbar INSIDE the card: sidebar toggle left; search input +
+- Two planes: level 0 = shell (sidebar + dock row beneath the card, same tone, no
+  sidebar border); level 1 = floating rounded content card.
+- Type: pyscriptc hierarchy — system sans for titles/narrative, system mono for
+  counts, metadata, eyebrows, kbd. No serif.
+- Resizable separators: line invisible, only the faint grip nudge remains.
+- Icon-only sticky topbar INSIDE the card: sidebar toggle left; minimal icon+"Search" input (grows on focus) +
   filter + settings right. No logotype (it lives in the sidebar header only).
 - Sidebar: wordmark header, Search row (⌘K), chip row — Collections / By site /
   By type / Add — single scrollable line with overflow peek. Chips switch the
@@ -21,7 +24,7 @@ Apple Notes (serif centered empty states), elevenmusic.io (one accent, generous 
 - List pane: serif collection title + count + active-filter chips, Mail-style
   rows (avatar tile, title, host · meta line). No state dots, no label chips.
 - Preview pane: resizable sibling, serif title, eyebrow sections.
-- Agent: icon+title "Agent" dock bottom-right of the card → dialog with chat +
+- Agent: minimal icon+title "Agent" button in the dock row (level 0) under the card → dialog with chat +
   quick-action chips above the composer. Desktop only (ACP bridge). Hidden on
   plain web.
 - Sidebar footer: empty (⌘K covers app actions).

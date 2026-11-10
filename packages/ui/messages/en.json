@@ -47,6 +47,7 @@
   "density_aria_label": "Density",
   "density_compact": "compact",
   "density_comfortable": "comfortable",
+  "search_title": "Search",
   "search_placeholder": "/ search titles & URLs",
   "search_aria": "Search links",
   "list_total_items": "{count} items",

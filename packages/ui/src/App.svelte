@@ -127,16 +127,19 @@
         <header class="topbar" data-testid="topbar">
           <Sidebar.Trigger aria-label={m.aria_open_collections()} data-testid="rail-toggle" />
           <span class="topbar-right">
-            <input
+            <label class="topbar-search-wrap">
+              <IconSearch />
+              <input
               bind:this={searchEl}
-              class="input search-input-pill topbar-search"
+              class="topbar-search"
               type="search"
-              placeholder={m.search_placeholder()}
+              placeholder={m.search_title()}
               aria-label={m.search_aria()}
               data-testid="search-input"
               bind:value={qInput}
               oninput={onSearchInput}
-            />
+              />
+            </label>
             <span class="filter-anchor">
               <button
                 type="button"
@@ -170,6 +173,21 @@
           <Triage {url} {setUrl} />
         {/if}
       </main>
+      <div class="dock-row" data-testid="dock-row">
+        {#if assistantAvailable}
+          <button
+            type="button"
+            class="agent-dock"
+            aria-label={m.assistant_title()}
+            aria-expanded={agentOpen}
+            onclick={() => (agentOpen = !agentOpen)}
+            data-testid="agent-fab"
+          >
+            <IconSparkles />
+            <span>Agent</span>
+          </button>
+        {/if}
+      </div>
     </Sidebar.Inset>
   </Sidebar.Provider>
 
@@ -193,17 +211,6 @@
         </div>
       </Dialog>
     {/if}
-    <button
-      type="button"
-      class="agent-dock"
-      aria-label={m.assistant_title()}
-      aria-expanded={agentOpen}
-      onclick={() => (agentOpen = !agentOpen)}
-      data-testid="agent-fab"
-    >
-      <IconSparkles />
-      <span>Agent</span>
-    </button>
   {/if}
 
   {#if !$sseConnected}
@@ -235,22 +242,39 @@
     height: 100dvh;
     overflow: hidden;
   }
+  /* Level 0: shell plane shared by the sidebar and the dock row. The content
+     card (level 1) floats above it. */
   :global([data-slot='sidebar-inset']) {
-    background: var(--color-surface);
+    background: var(--color-sidebar) !important;
+    min-width: 0;
+  }
+  :global([data-slot='sidebar-inner']) {
+    background: var(--color-sidebar);
+  }
+  :global([data-slot='sidebar-container']) {
+    border: 0 !important;
+  }
+  .dock-row {
+    flex: none;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 12px;
   }
   .app-main {
     flex: 1;
     min-height: 0;
     min-width: 0;
     height: auto;
-    margin: 4px 8px 8px 0;
+    margin: 8px 8px 0 0;
     overflow: hidden;
     display: flex;
     flex-direction: column;
     background: var(--color-surface-raised);
     border: 1px solid var(--color-line);
     border-radius: 14px;
-    box-shadow: 0 1px 2px rgb(22 24 29 / 0.04);
+    box-shadow: 0 1px 2px rgb(22 24 29 / 0.05), 0 8px 24px -12px rgb(22 24 29 / 0.10);
   }
   @media (max-width: 767px) {
     .app-main {
@@ -295,40 +319,31 @@
     display: flex;
     gap: 2px;
   }
-  /* Agent dock: icon+title pill pinned inside the content card's corner
-     (Linear reference) → opens the agent dialog. */
+  /* Agent CTA: minimal icon+title on the level-0 plane under the card. */
   .agent-dock {
-    position: fixed;
-    right: 20px;
-    bottom: 20px;
-    z-index: 65;
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 7px 13px;
-    border-radius: 999px;
-    background: var(--color-surface-raised);
-    border: 1px solid var(--color-line-strong);
-    color: var(--color-ink);
+    padding: 5px 10px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: var(--color-ink-soft);
     font-size: 12.5px;
     font-weight: 500;
-    box-shadow: var(--shadow-pop);
     cursor: pointer;
     transition:
-      transform 180ms var(--ease-out-expo),
-      background-color 140ms var(--ease-out-expo);
+      background-color 140ms var(--ease-out-expo),
+      color 140ms var(--ease-out-expo);
   }
-  .agent-dock:hover {
-    background: var(--color-surface-sunken);
-    transform: translateY(-1px);
+  .agent-dock :global(svg) {
+    width: 14px;
+    height: 14px;
   }
-  .agent-dock:active {
-    transform: scale(0.97);
-  }
+  .agent-dock:hover,
   .agent-dock[aria-expanded='true'] {
-    background: var(--color-ink);
-    border-color: var(--color-ink);
-    color: var(--color-surface);
+    background: var(--color-sidebar-accent);
+    color: var(--color-ink);
   }
   .agent-dialog {
     width: min(560px, calc(100vw - 48px));
@@ -338,9 +353,48 @@
     overflow: hidden;
     margin: -10px;
   }
+  /* Minimal search: glyph + title, no field chrome; grows on focus. */
+  .topbar-search-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 8px;
+    border-radius: 8px;
+    color: var(--color-ink-soft);
+    cursor: text;
+    transition: background-color 140ms var(--ease-out-expo);
+  }
+  .topbar-search-wrap:hover,
+  .topbar-search-wrap:focus-within {
+    background: var(--color-accent);
+    color: var(--color-ink);
+  }
+  .topbar-search-wrap :global(svg) {
+    width: 14px;
+    height: 14px;
+    flex: none;
+  }
   .topbar-search {
-    width: 220px;
+    width: 64px;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--color-ink);
+    font: inherit;
     font-size: 12.5px;
+    font-weight: 500;
+    transition: width 220ms var(--ease-out-expo);
+  }
+  .topbar-search::placeholder {
+    color: currentColor;
+  }
+  .topbar-search:focus,
+  .topbar-search:not(:placeholder-shown) {
+    width: 200px;
+  }
+  .topbar-search::-webkit-search-cancel-button {
+    display: none;
   }
   .filter-anchor {
     position: relative;

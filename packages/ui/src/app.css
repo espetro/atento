@@ -24,7 +24,11 @@
   --color-accent-blue: #5e6ad2;
   --color-accent-ink: #ffffff;
 
-  --font-display: ui-serif, 'New York', 'Source Serif 4', Georgia, serif;
+  /* Type hierarchy mirrors ../pyscriptc (apps/web DESIGN.md): system sans for
+     narrative + titles, system mono for metrics, metadata and diagnostics. */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  --font-display: var(--font-sans);
   --ease-out-expo: cubic-bezier(0.32, 0.72, 0, 1);
 
   /* shadcn-svelte semantic tokens, bridged to the app palette. `accent`
@@ -49,7 +53,7 @@
   --color-border: rgb(22 24 29 / 0.09);
   --color-input: rgb(22 24 29 / 0.12);
   --color-ring: #5e6ad2;
-  --color-sidebar: #f0f1f4;
+  --color-sidebar: #f1f2f4;
   --color-sidebar-foreground: #16181d;
   --color-sidebar-primary: #5e6ad2;
   --color-sidebar-primary-foreground: #ffffff;
@@ -126,6 +130,21 @@
   color-scheme: dark;
 }
 
+/* Resizable separators: line invisible, only the grip nudge remains
+   (faint at rest, full on hover/drag). */
+[data-slot='resizable-handle'] {
+  background: transparent !important;
+}
+[data-slot='resizable-handle'] > div {
+  opacity: 0.35;
+  transition: opacity 160ms var(--ease-out-expo);
+}
+[data-slot='resizable-handle']:hover > div,
+[data-slot='resizable-handle'][data-active] > div,
+[data-slot='resizable-handle']:focus-visible > div {
+  opacity: 1;
+}
+
 html,
 body {
   height: 100%;
@@ -134,13 +153,8 @@ body {
 body {
   background: var(--color-surface);
   color: var(--color-ink);
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+  font-family: var(--font-sans);
+  line-height: 1.5;
   font-weight: 400;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
@@ -154,18 +168,17 @@ h3,
   letter-spacing: -0.01em;
 }
 
-/* Editorial display face (Distill reference): serif for view titles and
-   empty states — New York on macOS, ui-serif elsewhere. */
+/* View titles / empty states: bold sans, tight tracking (pyscriptc hierarchy). */
 .display {
   font-family: var(--font-display);
-  font-weight: 600;
-  letter-spacing: -0.015em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .mono,
 code,
 kbd {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 /* ------------------------------------------------------------------ */
@@ -408,7 +421,7 @@ kbd {
     border-bottom-width: 2px;
     background: var(--color-surface);
     color: var(--color-ink-soft);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 10.5px;
     line-height: 1;
   }
@@ -541,6 +554,7 @@ kbd {
 
   /* Eyebrow section label (Distill reference): tiny caps above content. */
   .eyebrow {
+    font-family: var(--font-mono);
     font-size: 10.5px;
     font-weight: 650;
     letter-spacing: 0.09em;
@@ -555,7 +569,8 @@ kbd {
   }
   .meta-faint {
     color: var(--color-ink-faint);
-    font-size: 11.5px;
+    font-family: var(--font-mono);
+    font-size: 11px;
   }
   .truncate-2 {
     display: -webkit-box;
@@ -588,6 +603,7 @@ kbd {
     font-weight: 600;
   }
   .rail-row .count {
+    font-family: var(--font-mono);
     margin-left: auto;
     color: var(--color-ink-soft);
     font-size: 11.5px;
@@ -641,7 +657,7 @@ kbd {
   margin-block: 0.5em;
 }
 .markdown-body :where(code) {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
 }
 .markdown-body :where(:not(pre) > code) {

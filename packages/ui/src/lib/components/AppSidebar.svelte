@@ -140,7 +140,7 @@
           onclick={() => openCollection('enriched')}
         >
           <IconInbox />
-          <span class="display" style="font-size: 16px;">{m.app_name()}</span>
+          <span class="display" style="font-size: 15px;">{m.app_name()}</span>
         </Sidebar.MenuButton>
       </Sidebar.MenuItem>
     </Sidebar.Menu>
@@ -152,7 +152,7 @@
           data-testid="sidebar-search"
         >
           <IconSearch />
-          <span>{m.search_placeholder()}</span>
+          <span>{m.search_title()}</span>
         </Sidebar.MenuButton>
       </Sidebar.MenuItem>
     </Sidebar.Menu>
@@ -300,7 +300,49 @@
 <style>
   /* Generous group spacing (Linear-style section rhythm). */
   :global([data-slot='sidebar-group']) {
-    margin-bottom: 14px;
+    margin-bottom: 18px;
+    padding: 4px 8px;
+  }
+  /* Rows share the sidebar plane (no fill at rest). Hover: soft wash + 2px
+     slide with the icon nudging; active: slightly stronger wash. */
+  :global([data-slot='sidebar-menu']) {
+    gap: 3px;
+  }
+  :global([data-sidebar='menu-button']) {
+    height: 34px;
+    padding-inline: 10px;
+    gap: 10px;
+    border-radius: 8px;
+    background: transparent;
+    font-size: 13.5px;
+    transition:
+      background-color 160ms var(--ease-out-expo),
+      transform 200ms var(--ease-out-expo),
+      color 160ms var(--ease-out-expo);
+  }
+  /* shadcn's `data-active:` variant matches data-active="false" too; only the
+     real active row keeps a fill. */
+  :global([data-sidebar='menu-button']:not([data-active='true']):not(:hover)) {
+    background: transparent;
+    font-weight: 400;
+  }
+  :global([data-sidebar='menu-button']:hover) {
+    background: var(--color-sidebar-accent);
+    transform: translateX(3px);
+  }
+  :global([data-sidebar='menu-button'] svg) {
+    transition: transform 200ms var(--ease-out-expo);
+  }
+  :global([data-sidebar='menu-button']:hover svg) {
+    transform: scale(1.08);
+  }
+  :global([data-sidebar='menu-button'][data-active='true']) {
+    background: var(--color-sidebar-accent);
+    font-weight: 600;
+  }
+  :global([data-slot='sidebar-menu-badge']) {
+    font-family: var(--font-mono);
+    font-size: 11px;
   }
   /* Bottom-edge fade: signals more content below the fold (eval pass 2). */
   :global([data-slot='sidebar-content']) {
