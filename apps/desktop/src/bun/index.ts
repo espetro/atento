@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import { AcpClient, type AcpMcpServer } from "./acp";
+import { AcpClient, type AcpMcpServer, type AcpModel, type AcpSpawned } from "./acp";
 import {
 	ApplicationMenu,
 	BrowserWindow,
@@ -193,32 +193,76 @@ function whichBin(name: string): string | null {
 	}
 }
 
+interface AcpAgentConfig {
+	command?: string[];
+	disabled?: string[];
+	custom?: { id: string; label: string; command: string[] }[];
+	models?: Record<string, string>;
+}
+
+function readAcpConfig(): AcpAgentConfig {
+	try {
+		const cfg = JSON.parse(readFileSync(ACP_CONFIG_PATH, "utf8")) as AcpAgentConfig;
+		return typeof cfg === "object" && cfg !== null ? cfg : {};
+	} catch {
+		return {};
+	}
+}
+
+function writeAcpConfig(patch: (cfg: AcpAgentConfig) => void): void {
+	const cfg = readAcpConfig();
+	patch(cfg);
+	mkdirSync(dirname(ACP_CONFIG_PATH), { recursive: true });
+	writeFileSync(ACP_CONFIG_PATH, JSON.stringify(cfg, null, 2));
+}
+
 interface AcpAgentInfo {
 	id: string;
 	label: string;
 	command: string[];
-	path: string;
+	/** Resolved binary path, or null when not installed. */
+	path: string | null;
+	custom: boolean;
+	enabled: boolean;
+	model: string | null;
+}
+
+interface AcpProbe {
+	ok: boolean;
+	at: number;
+	ms: number;
+	error?: string;
+	agent?: { name?: string; version?: string };
+	protocolVersion?: number;
+	authMethods?: { id: string; name?: string }[];
+	models?: { current: string | null; available: AcpModel[] };
+	modes?: { current: string | null; available: { id: string; name?: string }[] };
+}
+const acpProbes = new Map<string, AcpProbe>();
+
+/** Every known and user-defined agent, installed or not. */
+function listAgents(): AcpAgentInfo[] {
+	const cfg = readAcpConfig();
+	const disabled = new Set(cfg.disabled ?? []);
+	const defs: { id: string; label: string; command: string[]; custom: boolean }[] = [
+		...ACP_AGENTS.map((a) => ({ ...a, command: [...a.command], custom: false })),
+		...(cfg.custom ?? []).map((c) => ({ ...c, custom: true })),
+	];
+	return defs.map((d) => ({
+		...d,
+		path: whichBin(d.command[0]!),
+		enabled: !disabled.has(d.id),
+		model: cfg.models?.[d.id] ?? null,
+	}));
 }
 
 function detectAgents(): AcpAgentInfo[] {
-	const out: AcpAgentInfo[] = [];
-	for (const a of ACP_AGENTS) {
-		const path = whichBin(a.command[0]);
-		if (path !== null) out.push({ ...a, command: [...a.command], path });
-	}
-	return out;
+	return listAgents().filter((a) => a.path !== null && a.enabled);
 }
 
 function acpCommand(): string[] | null {
-	try {
-		const raw = readFileSync(ACP_CONFIG_PATH, "utf8");
-		const cfg = JSON.parse(raw) as { command?: unknown };
-		if (Array.isArray(cfg.command) && cfg.command.length > 0) {
-			return cfg.command.map(String);
-		}
-	} catch {
-		// no config file
-	}
+	const cfgCommand = readAcpConfig().command;
+	if (Array.isArray(cfgCommand) && cfgCommand.length > 0) return cfgCommand.map(String);
 	const env = process.env["LINKINBOX_ACP_COMMAND"];
 	if (env !== undefined && env.trim() !== "") {
 		return env.trim().split(/\s+/);
@@ -227,9 +271,56 @@ function acpCommand(): string[] | null {
 	return found ? found.command : null;
 }
 
+function modelForCommand(cmd: string[]): string | undefined {
+	const agent = listAgents().find((a) => a.command.join(" ") === cmd.join(" "));
+	return agent?.model ?? undefined;
+}
+
+/** Spawns the agent, reads what it advertises, and tears it down again. */
+async function probeAgent(agent: AcpAgentInfo): Promise<AcpProbe> {
+	const started = Date.now();
+	const done = (p: Omit<AcpProbe, "at" | "ms">): AcpProbe => {
+		const probe = { ...p, at: Date.now(), ms: Date.now() - started };
+		acpProbes.set(agent.id, probe);
+		return probe;
+	};
+	if (agent.path === null) return done({ ok: false, error: `${agent.command[0]} not found on PATH` });
+	let spawned: AcpSpawned | null = null;
+	try {
+		spawned = await Promise.race([
+			AcpClient.spawn([agent.path, ...agent.command.slice(1)], { cwd: homedir(), mcpServers: [] }),
+			new Promise<never>((_, reject) =>
+				setTimeout(() => reject(new Error("timed out after 15s")), 15_000),
+			),
+		]);
+		const { init, session } = spawned;
+		return done({
+			ok: true,
+			agent: { name: init.agentInfo?.title ?? init.agentInfo?.name, version: init.agentInfo?.version },
+			protocolVersion: init.protocolVersion,
+			authMethods: init.authMethods?.map((m) => ({ id: m.id, name: m.name })),
+			models: {
+				current: session.models?.currentModelId ?? null,
+				available: session.models?.availableModels ?? [],
+			},
+			modes: {
+				current: session.modes?.currentModeId ?? null,
+				available: session.modes?.availableModes ?? [],
+			},
+		});
+	} catch (e) {
+		const message =
+			e instanceof Error ? e.message : typeof e === "object" && e !== null && "message" in e ? String((e as { message: unknown }).message) : String(e);
+		return done({ ok: false, error: message });
+	} finally {
+		spawned?.client.kill();
+	}
+}
+
 function saveAcpCommand(command: string[]) {
-	mkdirSync(dirname(ACP_CONFIG_PATH), { recursive: true });
-	writeFileSync(ACP_CONFIG_PATH, JSON.stringify({ command }, null, 2));
+	writeAcpConfig((cfg) => {
+		cfg.command = command;
+	});
 }
 
 interface AcpSession {
@@ -277,7 +368,7 @@ async function ensureAcp(): Promise<AcpSession> {
 	const { client, sessionId } = await AcpClient.spawn([resolved, ...cmd.slice(1)], {
 		cwd: homedir(),
 		mcpServers: acpMcpServers(),
-	});
+	}, { model: modelForCommand(cmd) });
 	client.onNotification = (method, params) => {
 		if (method === "session/update") forwardAcpEvent(params);
 	};
@@ -375,18 +466,68 @@ const shellBridge = Bun.serve({
 			);
 		}
 		if (path === "/acp/agents" && req.method === "GET") {
-			return Response.json(
-				{ configured: acpCommand(), available: detectAgents() },
-				{ headers: cors },
-			);
+			const cmd = acpCommand()?.join(" ") ?? null;
+			const agents = listAgents().map((a) => ({
+				...a,
+				active: cmd !== null && a.command.join(" ") === cmd,
+				probe: acpProbes.get(a.id) ?? null,
+			}));
+			return Response.json({ configured: acpCommand(), agents }, { headers: cors });
+		}
+		if (path === "/acp/test" && req.method === "POST") {
+			try {
+				const body = (await req.json()) as { id?: unknown };
+				const agent = listAgents().find((a) => a.id === body.id);
+				if (agent === undefined) return new Response("unknown agent", { status: 404, headers: cors });
+				return Response.json(await probeAgent(agent), { headers: cors });
+			} catch (e) {
+				return new Response(String(e), { status: 400, headers: cors });
+			}
 		}
 		if (path === "/acp/config" && req.method === "POST") {
 			try {
-				const body = (await req.json()) as { command?: unknown };
-				if (!Array.isArray(body.command) || body.command.length === 0) {
-					return new Response("bad command", { status: 400, headers: cors });
+				const body = (await req.json()) as {
+					command?: unknown;
+					id?: unknown;
+					enabled?: unknown;
+					model?: unknown;
+					custom?: { id?: unknown; label?: unknown; command?: unknown };
+					removeCustom?: unknown;
+				};
+				const id = typeof body.id === "string" ? body.id : null;
+				if (Array.isArray(body.command)) {
+					if (body.command.length === 0) return new Response("bad command", { status: 400, headers: cors });
+					saveAcpCommand(body.command.map(String));
 				}
-				saveAcpCommand(body.command.map(String));
+				if (id !== null && typeof body.enabled === "boolean") {
+					writeAcpConfig((cfg) => {
+						const off = new Set(cfg.disabled ?? []);
+						if (body.enabled) off.delete(id);
+						else off.add(id);
+						cfg.disabled = [...off];
+					});
+				}
+				if (id !== null && "model" in body) {
+					writeAcpConfig((cfg) => {
+						const models = { ...(cfg.models ?? {}) };
+						if (typeof body.model === "string" && body.model !== "") models[id] = body.model;
+						else delete models[id];
+						cfg.models = models;
+					});
+				}
+				if (body.custom !== undefined && Array.isArray(body.custom.command) && body.custom.command.length > 0) {
+					const command = body.custom.command.map(String);
+					const cid = String(body.custom.id ?? command.join("-").replace(/[^a-z0-9]+/gi, "-").toLowerCase());
+					const label = String(body.custom.label ?? command.join(" "));
+					writeAcpConfig((cfg) => {
+						cfg.custom = [...(cfg.custom ?? []).filter((c) => c.id !== cid), { id: cid, label, command }];
+					});
+				}
+				if (typeof body.removeCustom === "string") {
+					writeAcpConfig((cfg) => {
+						cfg.custom = (cfg.custom ?? []).filter((c) => c.id !== body.removeCustom);
+					});
+				}
 				dropAcp("");
 				return Response.json({ ok: true }, { headers: cors });
 			} catch (e) {

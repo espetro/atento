@@ -27,6 +27,32 @@ export interface AcpSessionInfo {
 
 type Json = Record<string, unknown>;
 
+export interface AcpInitResult {
+	protocolVersion?: number;
+	agentInfo?: { name?: string; title?: string; version?: string };
+	authMethods?: { id: string; name?: string; description?: string }[];
+	agentCapabilities?: Json;
+}
+export interface AcpModel {
+	modelId: string;
+	name?: string;
+	description?: string;
+}
+export interface AcpNewSessionResult {
+	sessionId: string;
+	models?: { currentModelId?: string; availableModels?: AcpModel[] };
+	modes?: {
+		currentModeId?: string;
+		availableModes?: { id: string; name?: string; description?: string }[];
+	};
+}
+export interface AcpSpawned {
+	client: AcpClient;
+	sessionId: string;
+	init: AcpInitResult;
+	session: AcpNewSessionResult;
+}
+
 interface Pending {
 	resolve: (v: unknown) => void;
 	reject: (e: unknown) => void;
@@ -51,8 +77,8 @@ export class AcpClient {
 	static async spawn(
 		cmd: string[],
 		session: AcpSessionInfo,
-		options?: { env?: Record<string, string> },
-	): Promise<{ client: AcpClient; sessionId: string }> {
+		options?: { env?: Record<string, string>; model?: string },
+	): Promise<AcpSpawned> {
 		const proc = Bun.spawn(cmd, {
 			stdin: "pipe",
 			stdout: "pipe",
@@ -60,19 +86,25 @@ export class AcpClient {
 			env: { ...process.env, ...options?.env },
 		});
 		const client = new AcpClient(proc);
-		await client.request("initialize", {
+		const init = (await client.request("initialize", {
 			protocolVersion: 1,
 			clientCapabilities: {
 				fs: { readTextFile: false, writeTextFile: false },
 				terminal: false,
 			},
 			clientInfo: { name: "linkinbox-desktop", version: "0.1.0" },
-		});
+		})) as AcpInitResult;
 		const res = (await client.request("session/new", {
 			cwd: session.cwd,
 			mcpServers: session.mcpServers,
-		})) as { sessionId: string };
-		return { client, sessionId: res.sessionId };
+		})) as AcpNewSessionResult;
+		if (options?.model !== undefined && options.model !== res.models?.currentModelId) {
+			// Unstable ACP method; agents without it just keep their default model.
+			await client
+				.request("session/set_model", { sessionId: res.sessionId, modelId: options.model })
+				.catch(() => {});
+		}
+		return { client, sessionId: res.sessionId, init, session: res };
 	}
 
 	private async pump() {
