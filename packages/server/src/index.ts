@@ -1465,7 +1465,10 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
 }
 
 function defaultUiDist(): string {
-  // packages/server/dist -> packages/ui/dist
+  // ATENTO_UI_DIST lets packaged installs point at their bundled ui; otherwise
+  // packages/server/dist -> packages/ui/dist.
+  const fromEnv = process.env['ATENTO_UI_DIST']
+  if (fromEnv && fromEnv.trim() !== '') return fromEnv
   return resolve(import.meta.dirname ?? '.', '../../ui/dist')
 }
 
