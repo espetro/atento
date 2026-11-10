@@ -109,7 +109,7 @@ export function runNotification(
 ): NotificationRequest {
   if (record.error !== undefined) {
     return {
-      title: 'linkinbox run failed',
+      title: 'atento run failed',
       body: record.error,
       ...(uiUrl !== undefined ? { url: uiUrl } : {}),
     }
@@ -118,7 +118,7 @@ export function runNotification(
   const needsLogin = record.summary.collections.collections['needs_login'] ?? 0
   const needsAction = record.summary.needsAction ? ' — action needed' : ''
   return {
-    title: 'linkinbox run finished',
+    title: 'atento run finished',
     body: `${enriched} enriched, ${needsLogin} need login${needsAction}`,
     ...(uiUrl !== undefined ? { url: uiUrl } : {}),
   }

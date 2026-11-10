@@ -6,9 +6,9 @@
  */
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
-import { createProgram } from '@linkinbox/cli'
-import { guardDepsFromStore, DEFAULT_LIMITS, type AppConfig } from '@linkinbox/core'
-import type { BrowseReader } from '@linkinbox/extractors'
+import { createProgram } from '@atento/cli'
+import { guardDepsFromStore, DEFAULT_LIMITS, type AppConfig } from '@atento/core'
+import type { BrowseReader } from '@atento/extractors'
 import { capture, tempDb, type TempDb } from './helpers.js'
 import { createContext, type CliContext } from '../src/context.js'
 import { browseDeps, renderBrowseResult } from '../src/commands/browse.js'
@@ -57,7 +57,7 @@ async function testCtx(share: string[], reader: BrowseReader): Promise<{
 }> {
   const db = await tempDb()
   const ctx = await createContext({
-    env: { LINKINBOX_DB: db.path },
+    env: { ATENTO_DB: db.path },
     store: db.store,
     quiet: true,
     logPath: join(db.dir, 'log.jsonl'),
@@ -95,7 +95,7 @@ describe('browse: the allowlist and the profile gate', () => {
     const result = await runBrowse('https://shared.example/a', deps)
     expect(result.ok).toBe(false)
     expect(result.reason).toBe('no_profile')
-    expect(result.detail).toContain('linkinbox login')
+    expect(result.detail).toContain('atento login')
     await db.cleanup()
   })
 

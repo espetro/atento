@@ -4,15 +4,15 @@
     "noEmit": true,
     "rootDir": "../..",
     "paths": {
-      "@linkinbox/app": ["../../packages/app/src/index.ts"],
-      "@linkinbox/core": ["../../packages/core/src/index.ts"],
-      "@linkinbox/db": ["../../packages/db/src/index.ts"],
-      "@linkinbox/mcp": ["../../packages/mcp/src/index.ts"],
-      "@linkinbox/server": ["../../packages/server/src/index.ts"],
-      "@linkinbox/enrich": ["../../packages/enrich/src/index.ts"],
-      "@linkinbox/extractors": ["../../packages/extractors/src/index.ts"],
-      "@linkinbox/importers": ["../../packages/importers/src/index.ts"],
-      "@linkinbox/media": ["../../packages/media/src/index.ts"]
+      "@atento/app": ["../../packages/app/src/index.ts"],
+      "@atento/core": ["../../packages/core/src/index.ts"],
+      "@atento/db": ["../../packages/db/src/index.ts"],
+      "@atento/mcp": ["../../packages/mcp/src/index.ts"],
+      "@atento/server": ["../../packages/server/src/index.ts"],
+      "@atento/enrich": ["../../packages/enrich/src/index.ts"],
+      "@atento/extractors": ["../../packages/extractors/src/index.ts"],
+      "@atento/importers": ["../../packages/importers/src/index.ts"],
+      "@atento/media": ["../../packages/media/src/index.ts"]
     }
   },
   "include": [

@@ -16,7 +16,7 @@ let dir: string
 let store: FakeStore
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'linkinbox-ingest-job-'))
+  dir = mkdtempSync(join(tmpdir(), 'atento-ingest-job-'))
   store = new FakeStore()
 })
 

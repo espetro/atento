@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { callJson, createHarness } from './helpers.js'
-import type { BrowseFn } from '@linkinbox/core'
+import type { BrowseFn } from '@atento/core'
 
 const fakeRead = (calls: string[] = []): BrowseFn =>
   async (url) => {

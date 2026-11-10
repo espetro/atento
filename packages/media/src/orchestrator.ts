@@ -5,8 +5,8 @@
  *
  * The stage never throws: every tier comes back as a result object.
  */
-import type { AsrFn, GuardDeps, MediaConfig, MediaTierName } from '@linkinbox/core'
-import { guardRun } from '@linkinbox/core'
+import type { AsrFn, GuardDeps, MediaConfig, MediaTierName } from '@atento/core'
+import { guardRun } from '@atento/core'
 import { captionTier, type CaptionInput } from './caption.js'
 import { cleanupMedia, downloadAudio, type DownloadOptions } from './download.js'
 import { framesTier } from './frames.js'

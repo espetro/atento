@@ -6,8 +6,8 @@
 import { mkdirSync } from 'node:fs'
 import { appendFile, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { configDir } from '@linkinbox/app'
-import type { RunResult } from '@linkinbox/app'
+import { configDir } from '@atento/app'
+import type { RunResult } from '@atento/app'
 
 export type RunTrigger = 'cron' | 'ingest' | 'manual'
 

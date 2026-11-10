@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadConfig } from '@linkinbox/app'
+import { loadConfig } from '@atento/app'
 import { DEFAULT_HARNESS_CONFIG } from '../src/config.js'
 import { harnessStatus, harnessPidPath } from '../src/lifecycle.js'
 import { startHarness, type HarnessRuntime } from '../src/serve.js'
@@ -17,14 +17,14 @@ afterEach(async () => {
 })
 
 function tempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'linkinbox-harness-serve-'))
+  const dir = mkdtempSync(join(tmpdir(), 'atento-harness-serve-'))
   dirs.push(dir)
   return dir
 }
 
 async function boot(webDir: string | null) {
   const home = tempDir()
-  const env = { LINKINBOX_HOME: home } as NodeJS.ProcessEnv
+  const env = { ATENTO_HOME: home } as NodeJS.ProcessEnv
   const config = loadConfig(env)
   const runtime = await startHarness({
     config,
@@ -106,7 +106,7 @@ describe('startHarness', () => {
     await new Promise<void>((res) => blocker.listen(port, '127.0.0.1', res))
     try {
       const home = tempDir()
-      const env = { LINKINBOX_HOME: home } as NodeJS.ProcessEnv
+      const env = { ATENTO_HOME: home } as NodeJS.ProcessEnv
       const config = loadConfig(env)
       await expect(
         startHarness({

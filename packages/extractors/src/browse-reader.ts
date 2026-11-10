@@ -3,7 +3,7 @@ import { createPatchrightExtractor, type PatchrightExtractorOptions } from "./pa
 import type { ExecLike, Extractor, ExtractResult } from "./types.js";
 
 /**
- * The read-only reader behind `linkinbox browse` and the MCP browse_read
+ * The read-only reader behind `atento browse` and the MCP browse_read
  * tool.
  *
  * It reuses the browser engines the pipeline already has and exposes
@@ -65,7 +65,7 @@ export interface BrowseReaderOptions {
   command?: string;
   /**
    * The environment the binary is resolved from. The env var
-   * LINKINBOX_AGENT_BROWSER wins over the default name, the same way the
+   * ATENTO_AGENT_BROWSER wins over the default name, the same way the
    * login command resolves it.
    */
   env?: Record<string, string | undefined>;
@@ -135,7 +135,7 @@ export function createBrowseReader(options: BrowseReaderOptions = {}): BrowseRea
   // The binary comes from the env var first, like the login command, so an
   // operator can point the read at another build without a rebuild.
   const command =
-    options.command ?? env["LINKINBOX_AGENT_BROWSER"] ?? options.browser?.command ?? "agent-browser";
+    options.command ?? env["ATENTO_AGENT_BROWSER"] ?? options.browser?.command ?? "agent-browser";
 
   const browserExtractor = createBrowserExtractor({
     command,
@@ -194,5 +194,5 @@ export function profileDirFor(
 
 function defaultProfilesDir(): string {
   const home = process.env["HOME"] ?? "";
-  return `${home}/.linkinbox/profiles`;
+  return `${home}/.atento/profiles`;
 }

@@ -6,7 +6,7 @@ import type { Command } from 'commander'
 import { createInterface } from 'node:readline/promises'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import type { PrunePlan, SweepPlan, TtlConfig } from '@linkinbox/app'
+import type { PrunePlan, SweepPlan, TtlConfig } from '@atento/app'
 import type { CliContext } from '../context.js'
 import { renderTable, shortDate } from '../render.js'
 
@@ -109,15 +109,15 @@ async function promptYesNo(message: string): Promise<string> {
 }
 
 export interface BackupOptions {
-  /** Destination file. Default: <config dir>/backups/linkinbox-<timestamp>.db */
+  /** Destination file. Default: <config dir>/backups/atento-<timestamp>.db */
   out?: string
   now?: Date
 }
 
-/** Default backup destination inside the config dir (honours LINKINBOX_HOME). */
+/** Default backup destination inside the config dir (honours ATENTO_HOME). */
 export function defaultBackupPath(ctx: CliContext, now: Date = new Date()): string {
   const stamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  return join(ctx.config.dir, 'backups', `linkinbox-${stamp}.db`)
+  return join(ctx.config.dir, 'backups', `atento-${stamp}.db`)
 }
 
 /**
@@ -171,7 +171,7 @@ export function registerMaintenanceCommands(
   program
     .command('backup')
     .description('write a consistent sqlite backup of the database')
-    .option('--out <path>', 'destination file (default <config dir>/backups/linkinbox-<timestamp>.db)')
+    .option('--out <path>', 'destination file (default <config dir>/backups/atento-<timestamp>.db)')
     .action(async (opts: { out?: string }) => {
       const ctx = await deps.ctx()
       try {

@@ -4,7 +4,7 @@
  * Everything is env-driven: the binary, the model family, the model path and
  * the backend come from the environment, never from a hardcoded value.
  */
-import type { AsrFn, AsrRequest, AsrResponse } from '@linkinbox/core'
+import type { AsrFn, AsrRequest, AsrResponse } from '@atento/core'
 
 export type { AsrFn, AsrRequest, AsrResponse }
 
@@ -19,10 +19,10 @@ export interface ExecLike {
 
 /** Env keys the adapter reads. */
 export const ASR_ENV_KEYS = {
-  bin: 'LINKINBOX_ASR_BIN',
-  family: 'LINKINBOX_ASR_FAMILY',
-  model: 'LINKINBOX_ASR_MODEL',
-  backend: 'LINKINBOX_ASR_BACKEND',
+  bin: 'ATENTO_ASR_BIN',
+  family: 'ATENTO_ASR_FAMILY',
+  model: 'ATENTO_ASR_MODEL',
+  backend: 'ATENTO_ASR_BACKEND',
 } as const
 
 /** Documented defaults. The model path has no default: it must be set. */
@@ -142,8 +142,8 @@ export function parseAudiocppOutput(stdout: string): {
 /**
  * Build an AsrFn backed by audiocpp_cli (audio.cpp), running fully local.
  *
- * The model identity comes from the environment: `LINKINBOX_ASR_BIN`,
- * `LINKINBOX_ASR_FAMILY`, `LINKINBOX_ASR_MODEL` and `LINKINBOX_ASR_BACKEND`.
+ * The model identity comes from the environment: `ATENTO_ASR_BIN`,
+ * `ATENTO_ASR_FAMILY`, `ATENTO_ASR_MODEL` and `ATENTO_ASR_BACKEND`.
  */
 export function createAudiocppAsr(options: AudioCppOptions = {}): AsrFn {
   const exec = options.exec ?? defaultExec

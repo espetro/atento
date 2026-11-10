@@ -1,12 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "linkinbox capture",
+  "name": "atento capture",
   "version": "0.1.0",
-  "description": "Capture the page you are looking at into linkinbox, from your own logged-in session.",
+  "description": "Capture the page you are looking at into atento, from your own logged-in session.",
   "permissions": ["activeTab", "scripting", "storage", "alarms", "contextMenus", "bookmarks"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "action": {
-    "default_title": "Save this page to linkinbox"
+    "default_title": "Save this page to atento"
   },
   "background": {
     "service_worker": "background.js",
@@ -19,7 +19,7 @@
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4OyiXRONtCQu8bobb9kPdsKPmbo3q+sD21HXgEWrOFyyEfEBVJtYPjyQ5XS0/9ulnc6bgmVMB9yGnkBs3XN7NMMyBJk7I3atIsRemIenDDm8PbWJc2yFigOHadkyPH7Yh8PxjN7tqzlerAtkYY2KH0YUiiJtTNwtPwOyjCBgPEKxNViYMojqBfFCtA2FI9zJ9CHc3TPMG8js2zRlXwJkWzWyEmcRnrNFmdzKK5YGx8yFtqksI7YTldVJHTJax2sYpP3bh5tih2SnNoINckbF+Gr+i4je0kPPRCV0D+b9Y0/lhgcIysbytbanEwoDjmDMUkHiSDpa0IyBBy2rOwnz2Qx2+ECQb0QIDAQAB",
   "browser_specific_settings": {
     "gecko": {
-      "id": "linkinbox@illo.fyi"
+      "id": "atento@illo.fyi"
     }
   }
 }

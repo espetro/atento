@@ -178,7 +178,7 @@
 
   $effect(() => {
     const off = onShortcut('/', () => {
-      window.dispatchEvent(new CustomEvent('linkinbox:focus-search'))
+      window.dispatchEvent(new CustomEvent('atento:focus-search'))
     })
     return off
   })

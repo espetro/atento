@@ -1,14 +1,14 @@
 /**
- * `linkinbox backup`: the online backup API produces a consistent sqlite
+ * `atento backup`: the online backup API produces a consistent sqlite
  * snapshot that opens standalone and contains the data. The default
- * destination derives from the config dir (LINKINBOX_CONFIG_DIR /
- * LINKINBOX_HOME aware).
+ * destination derives from the config dir (ATENTO_CONFIG_DIR /
+ * ATENTO_HOME aware).
  */
 import { describe, expect, it } from 'vitest'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { openStore } from '@linkinbox/db'
-import { normalizeUrl } from '@linkinbox/core'
+import { openStore } from '@atento/db'
+import { normalizeUrl } from '@atento/core'
 import { insertLink, tempDb } from './helpers.js'
 import { createContext } from '../src/context.js'
 import { defaultBackupPath, runBackup } from '../src/commands/maintenance.js'
@@ -21,7 +21,7 @@ describe('backup command', () => {
       await insertLink(db.store, url, { title: 'Backed up' })
 
       const ctx = await createContext({
-        env: { LINKINBOX_DB: db.path, LINKINBOX_CONFIG_DIR: db.dir },
+        env: { ATENTO_DB: db.path, ATENTO_CONFIG_DIR: db.dir },
         store: db.store,
         quiet: true,
         logPath: join(db.dir, 'log.jsonl'),
@@ -50,14 +50,14 @@ describe('backup command', () => {
     const db = await tempDb()
     try {
       const ctx = await createContext({
-        env: { LINKINBOX_DB: db.path, LINKINBOX_CONFIG_DIR: db.dir },
+        env: { ATENTO_DB: db.path, ATENTO_CONFIG_DIR: db.dir },
         store: db.store,
         quiet: true,
         logPath: join(db.dir, 'log.jsonl'),
       })
       const expected = defaultBackupPath(ctx, new Date('2026-11-07T12:34:56.789Z'))
       expect(expected).toBe(
-        join(db.dir, 'backups', 'linkinbox-2026-11-07T12-34-56.db'),
+        join(db.dir, 'backups', 'atento-2026-11-07T12-34-56.db'),
       )
       const written = await runBackup(ctx, { now: new Date('2026-11-07T12:34:56.789Z') })
       expect(written).toBe(expected)

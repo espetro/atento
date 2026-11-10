@@ -104,10 +104,10 @@
   }
 
   // ---- shell-native context menus (desktop only) ------------------------------
-  // The shell echoes the picked action back as a `linkinbox:menu-action`
+  // The shell echoes the picked action back as a `atento:menu-action`
   // CustomEvent; data carries { id, url } from the right-clicked row/pane.
   // Subscribed unconditionally: the native context menu and the web command
-  // palette both dispatch through `linkinbox:menu-action`.
+  // palette both dispatch through `atento:menu-action`.
   $effect(() => {
     return onShellMenuAction((a) =>
       handleShellMenuAction(a, {
@@ -120,7 +120,7 @@
 </script>
 
 <div class="triage-shell" class:layout-hidden={layout === 'hidden'} data-testid="triage-shell">
-  <Resizable.PaneGroup direction={layout === 'bottom' ? 'vertical' : 'horizontal'} autoSaveId="linkinbox:triage-split">
+  <Resizable.PaneGroup direction={layout === 'bottom' ? 'vertical' : 'horizontal'} autoSaveId="atento:triage-split">
     <Resizable.Pane defaultSize={30} minSize={15} maxSize={60} class="list-col" data-testid="list-col">
       {#if triageError}
         <div class="triage-error notice notice-bad" role="alert">

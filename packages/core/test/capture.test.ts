@@ -76,12 +76,12 @@ describe('tokensEqual', () => {
 
 describe('captureToken', () => {
   it('reads from the configured env var', () => {
-    expect(captureToken(DEFAULT_CAPTURE_CONFIG, { LINKINBOX_CAPTURE_TOKEN: 'x' })).toBe('x')
+    expect(captureToken(DEFAULT_CAPTURE_CONFIG, { ATENTO_CAPTURE_TOKEN: 'x' })).toBe('x')
   })
 
   it('returns null when unset or blank', () => {
     expect(captureToken(DEFAULT_CAPTURE_CONFIG, {})).toBeNull()
-    expect(captureToken(DEFAULT_CAPTURE_CONFIG, { LINKINBOX_CAPTURE_TOKEN: '  ' })).toBeNull()
+    expect(captureToken(DEFAULT_CAPTURE_CONFIG, { ATENTO_CAPTURE_TOKEN: '  ' })).toBeNull()
   })
 })
 

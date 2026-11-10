@@ -9,8 +9,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openStore, type SqliteStore } from '@linkinbox/db'
-import type { Enrichment, LinkInput } from '@linkinbox/core'
+import { openStore, type SqliteStore } from '@atento/db'
+import type { Enrichment, LinkInput } from '@atento/core'
 import { createApp } from '../src/index.js'
 
 let store: SqliteStore
@@ -42,7 +42,7 @@ async function seedEnriched(tag: string): Promise<void> {
 }
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'linkinbox-server-coll-'))
+  dir = mkdtempSync(join(tmpdir(), 'atento-server-coll-'))
   store = await openStore({ path: join(dir, 'test.db') })
 })
 
@@ -58,7 +58,7 @@ describe('GET /api/collections/:name', () => {
     const res = await createApp(store).request('/api/collections/enriched?format=jsonl&fields=id,url')
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('x-ndjson')
-    const cursor = res.headers.get('x-linkinbox-cursor')
+    const cursor = res.headers.get('x-atento-cursor')
     expect(cursor).toMatch(/^\d+$/)
     const lines = (await res.text()).trim().split('\n').filter(Boolean)
     expect(lines.length).toBeGreaterThanOrEqual(205)
@@ -74,7 +74,7 @@ describe('GET /api/collections/:name', () => {
     expect(res.headers.get('content-type')).toContain('markdown')
     const body = await res.text()
     expect(body).toContain('| id | url |')
-    expect(res.headers.get('x-linkinbox-cursor')).toMatch(/^\d+$/)
+    expect(res.headers.get('x-atento-cursor')).toMatch(/^\d+$/)
   })
 
   it('accepts cursor= as an alias for since=', async () => {
@@ -93,7 +93,7 @@ describe('GET /api/collections/:name', () => {
     const body = await res.text()
     const lines = body.trimEnd().split('\n')
     expect(lines.at(-1)).toMatch(/^# cursor: \d+$/)
-    expect(res.headers.get('x-linkinbox-cursor')).toBe(
+    expect(res.headers.get('x-atento-cursor')).toBe(
       lines.at(-1)!.replace('# cursor: ', ''),
     )
   })
@@ -102,7 +102,7 @@ describe('GET /api/collections/:name', () => {
 describe('POST /api/ingest multipart', () => {
   it('sanitizes a path-traversal filename to a basename', async () => {
     // Craft the part with a traversal name by building the body manually.
-    const boundary = '----linkinboxtest'
+    const boundary = '----atentotest'
     const payload =
       `--${boundary}\r\n` +
       `Content-Disposition: form-data; name="file"; filename="../../tmp/links.txt"\r\n` +

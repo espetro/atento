@@ -1,5 +1,5 @@
 /**
- * Custom golden-set eval runner for linkinbox enrichment (test set C) plus
+ * Custom golden-set eval runner for atento enrichment (test set C) plus
  * deterministic extraction checks (test set B metrics feeding eval part G).
  *
  * Metrics computed:
@@ -16,7 +16,7 @@
 import { readFile, writeFile, readdir, mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { EnrichmentSchema, type Enrichment } from '@linkinbox/core'
+import { EnrichmentSchema, type Enrichment } from '@atento/core'
 
 export interface EnrichmentFixture {
   slug: string

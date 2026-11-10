@@ -34,8 +34,8 @@
  *
  * Mechanism: a lightweight poll of the SQLite store (no LISTEN/NOTIFY).
  */
-import type { Store } from '@linkinbox/core'
-import type { IngestJob, LinkHistoryEntry, Run } from '@linkinbox/core'
+import type { Store } from '@atento/core'
+import type { IngestJob, LinkHistoryEntry, Run } from '@atento/core'
 
 const DEFAULT_POLL_MS = 500
 const KEEPALIVE_MS = 15_000

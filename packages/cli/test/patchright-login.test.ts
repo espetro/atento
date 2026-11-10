@@ -15,11 +15,11 @@ import { capture, insertLink, tempDb, type TempDb } from './helpers.js'
 import { createContext, type CliContext } from '../src/context.js'
 import { runLogin } from '../src/commands/login.js'
 import { loadConfig } from '../src/config.js'
-import { parseBrowserConfig } from '@linkinbox/core'
-import type { PatchrightContext, PatchrightPage } from '@linkinbox/extractors'
+import { parseBrowserConfig } from '@atento/core'
+import type { PatchrightContext, PatchrightPage } from '@atento/extractors'
 
 async function contextFor(db: TempDb, browser?: string): Promise<CliContext> {
-  const env = { LINKINBOX_DB: db.path }
+  const env = { ATENTO_DB: db.path }
   // The browser config must be in place when the app is built: the use
   // cases resolve it once at construction, so a post-hoc ctx.config
   // mutation would never reach them.

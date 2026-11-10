@@ -304,7 +304,7 @@
   }
  ],
  "libraries": [
-  "/Users/josocjoq/.worktrees/linkinbox/s1/spikes/s1/node_modules/@cutils/sqlite/build-local/libsqlite3-shim.a"
+  "/Users/josocjoq/.worktrees/atento/s1/spikes/s1/node_modules/@cutils/sqlite/build-local/libsqlite3-shim.a"
  ],
  "system_libraries": [
   "m"

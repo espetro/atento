@@ -7,8 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openStore, type SqliteStore } from '@linkinbox/db'
-import { normalizeUrl, LINK_STATES, type LinkStateName } from '@linkinbox/core'
+import { openStore, type SqliteStore } from '@atento/db'
+import { normalizeUrl, LINK_STATES, type LinkStateName } from '@atento/core'
 import { createApp } from '../src/index.js'
 
 let store: SqliteStore
@@ -36,7 +36,7 @@ async function seedState(
 }
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'linkinbox-server-pipeline-'))
+  dir = mkdtempSync(join(tmpdir(), 'atento-server-pipeline-'))
   store = await openStore({ path: join(dir, 'test.db') })
   await seedState('https://a.example/one', 'created', {}, 'One')
   await seedState('https://a.example/two', 'created', {}, 'Two')

@@ -5,7 +5,7 @@
  * pipeline injects the store-backed one from core (`createMediaBudget`), so
  * the cap survives restarts and is shared across processes.
  */
-import type { MediaBudget, MediaTierName } from '@linkinbox/core'
+import type { MediaBudget, MediaTierName } from '@atento/core'
 
 export type { MediaBudget }
 

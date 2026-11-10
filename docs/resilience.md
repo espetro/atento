@@ -162,7 +162,7 @@ Outcomes:
   `extractor: "patchright"`.
 - The retry still shows a login wall: the login-wall outcome is returned and
   the pipeline parks the link as before (`needs_browser`, reason
-  `login_wall`; run `linkinbox login <host>`).
+  `login_wall`; run `atento login <host>`).
 - The retry is still blocked (captcha, another challenge): the blocked
   outcome is returned, the circuit breaker opens and the host is flagged.
 - The stealth engine cannot run (patchright not installed, no browser, no
@@ -205,8 +205,8 @@ row with the `discarded` and `review_only` counts.
 
 ### The login walk
 
-`linkinbox login --all` walks the pending-login hosts one by one and is what
-a bare `linkinbox login` in a TTY offers too (answer `a` at the picker). For
+`atento login --all` walks the pending-login hosts one by one and is what
+a bare `atento login` in a TTY offers too (answer `a` at the picker). For
 each host it prints `n of m: <host> (<k> links)` in pending order (most
 parked links first; review-only and skip-listed hosts are excluded exactly as
 in the pending list), runs that host's engine login flow (agent-browser, or
@@ -219,7 +219,7 @@ tests, so the walk itself never touches a browser or the network.
 
 ### The parked requeue backfill
 
-`linkinbox requeue --parked [--host <host>]` is a backfill for parked links:
+`atento requeue --parked [--host <host>]` is a backfill for parked links:
 every `needs_browser` link (and every deferred link whose extract-stage
 backoff is still pending) moves back to the `created` queue through the
 existing RETRY event, so the next extract run's auto-escalation reprocesses
@@ -231,7 +231,7 @@ anything itself.
 
 ### The pending login list
 
-`linkinbox login` (and the MCP tool `login_pending`) lists the hosts that
+`atento login` (and the MCP tool `login_pending`) lists the hosts that
 still need a session. The list excludes the hosts the policy excludes on
 purpose: skip-listed hosts, review-only hosts and login-gated hosts the
 allow list does not cover. To make sure nothing is hidden, the report
@@ -278,7 +278,7 @@ defers the remaining links when the llm breaker is open.
 
 The browser extractor always runs headless and only with the saved profile
 for the host. On a login wall it opens the breaker and the CLI tells the user
-to run `linkinbox login <host>`. The browser engine per host (agent-browser
+to run `atento login <host>`. The browser engine per host (agent-browser
 or the patchright stealth engine) is chosen by the `[browser]` config; see
 `docs/stealth.md`.
 
@@ -288,11 +288,11 @@ Without fairness, `extract` takes the first 20 `created` links by id. One host w
 
 Batch selection is now round-robin across hosts (`batch-select.ts`): hosts are ordered by their oldest `created` link, links within a host are oldest first, and each host contributes at most 3 links per batch (when several hosts compete; a single-host queue still uses the full batch). Hosts whose persisted `host_state` says they cannot make progress are skipped cheaply, before any fetch: a daily cap hit in the current window, an upstream `rateLimitedUntil` in the future, or an open breaker drops the host from the batch entirely. A host inside a spacing wait only gets a slot when no other host has a pending link, so busy hosts do not crowd out fresh ones.
 
-`linkinbox extract --until-empty` repeats batches until no `created` link is eligible or an iteration makes no progress (every link deferred or skipped), stopping at 100 iterations. It prints one summary line per batch and a final per-state summary, and never sleeps more than the shortest retry-after seen; the CLI process itself never sleeps, so spacing waits are handled by re-running or by an external scheduler.
+`atento extract --until-empty` repeats batches until no `created` link is eligible or an iteration makes no progress (every link deferred or skipped), stopping at 100 iterations. It prints one summary line per batch and a final per-state summary, and never sleeps more than the shortest retry-after seen; the CLI process itself never sleeps, so spacing waits are handled by re-running or by an external scheduler.
 
 ## Config
 
-All values are overridable in `~/.linkinbox/config.toml`:
+All values are overridable in `~/.atento/config.toml`:
 
 ```toml
 [limits]
@@ -358,7 +358,7 @@ hours_end = 23
 
 | `[share]` key | Default | Meaning |
 |---|---|---|
-| `hosts` | `[]` | The hosts another agent may READ through a saved profile (`linkinbox browse`, the MCP `browse_read` tool). Empty means nothing is shared. Same pattern syntax as the skip list. The reads spend the host budget above, and nothing is written to the link store. |
+| `hosts` | `[]` | The hosts another agent may READ through a saved profile (`atento browse`, the MCP `browse_read` tool). Empty means nothing is shared. Same pattern syntax as the skip list. The reads spend the host budget above, and nothing is written to the link store. |
 
 | `[pacing]` key | Default | Meaning |
 |---|---|---|
@@ -380,13 +380,13 @@ hours_end = 23
   (`deferredCount`, `retryAfter`) instead of throwing.
 - The extract result also carries `reviewOnlyCount` (links parked for the
   owner to review) and `reconciledCount` (links the sweep moved).
-- `linkinbox status` lists per-host budget remaining, breaker state and
+- `atento status` lists per-host budget remaining, breaker state and
   reopen time; `--json` for machine consumption.
-- `linkinbox browse <url>` reads one page through the saved profile of its
+- `atento browse <url>` reads one page through the saved profile of its
   host, read-only, for the hosts in `[share] hosts`. MCP tools
   `browse_read` and `browse_hosts` expose the same surface. The reads go
   through the same guard, so they spend the same host budget.
-- `linkinbox breaker reset <host>` force-closes the breaker (CLI only).
+- `atento breaker reset <host>` force-closes the breaker (CLI only).
 - MCP read-only tool `limits_status` (spec name `limits.status`). Breaker
   reset stays CLI-only and is a documented parity exception.
 - Metrics rows per host and stage: `retries`, `throttled`, `deferred`,

@@ -8,8 +8,8 @@
  * is reached only through the injected launcher.
  */
 import { existsSync } from 'node:fs'
-import { isLoginWall as coreIsLoginWall } from '@linkinbox/core'
-import { browserProfileDir } from '@linkinbox/core'
+import { isLoginWall as coreIsLoginWall } from '@atento/core'
+import { browserProfileDir } from '@atento/core'
 import type {
   BrowserCaps,
   BrowserHealth,
@@ -20,7 +20,7 @@ import type {
   ProfileRef,
   SessionLoginPort,
   SessionLoginUi,
-} from '@linkinbox/core'
+} from '@atento/core'
 import {
   defaultPatchrightLaunch,
   htmlToMarkdown,
@@ -28,7 +28,7 @@ import {
   type PatchrightContext,
   type PatchrightLaunch,
   type PatchrightPage,
-} from '@linkinbox/extractors'
+} from '@atento/extractors'
 
 export interface PatchrightAdapterOptions {
   /** The adapter instance id (config key). */
@@ -236,5 +236,5 @@ function pageUrl(page: PatchrightPage): string {
 
 function defaultProfilesDir(): string {
   const home = process.env['HOME'] ?? ''
-  return `${home}/.linkinbox/profiles`
+  return `${home}/.atento/profiles`
 }

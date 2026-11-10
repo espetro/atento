@@ -11,27 +11,27 @@ import {
 	type ApplicationMenuItemConfig,
 } from "electrobun/main";
 
-// linkinbox desktop shell (Workstream B1).
+// atento desktop shell (Workstream B1).
 //
-// Dev: the window loads LINKINBOX_URL — `linkinbox serve` on :4173 serves
+// Dev: the window loads ATENTO_URL — `atento serve` on :4173 serves
 // the built packages/ui/dist plus the API (vite dev server :5173 while
 // iterating on the UI).
 //
-// Packaged: LINKINBOX_URL is unset and Resources/server exists, so the
+// Packaged: ATENTO_URL is unset and Resources/server exists, so the
 // shell spawns the bundled sidecar server (node binary + pnpm-deployed
 // workspace + ui-dist) and loads it on 127.0.0.1. The sidecar exists
 // because better-sqlite3 cannot run under this process's Bun runtime.
 // resourcesDir() doubles as the packaged-mode check — in dev the exec
 // path has no Resources/server sibling, so this stays inert.
 //
-// LINKINBOX_SELFTEST=partition-set | partition-check runs the D0 cookie
+// ATENTO_SELFTEST=partition-set | partition-check runs the D0 cookie
 // persistence probe: main-process BrowserViews (same code path as
 // <electrobun-webview>) load cookie set/check pages that beacon
 // document.cookie back to a tiny collector. See README.md →
 // "Verifying partition persistence".
 
-const SELFTEST = process.env.LINKINBOX_SELFTEST ?? "";
-const SELFTEST_PORT = Number(process.env.LINKINBOX_SELFTEST_PORT ?? "4799");
+const SELFTEST = process.env.ATENTO_SELFTEST ?? "";
+const SELFTEST_PORT = Number(process.env.ATENTO_SELFTEST_PORT ?? "4799");
 
 interface SidecarServer {
 	url: string;
@@ -74,9 +74,9 @@ async function startSidecar(): Promise<SidecarServer | null> {
 					cwd: dir,
 					env: {
 						...process.env,
-						LINKINBOX_PORT: String(port),
-						LINKINBOX_UI_DIST: join(dir, "ui-dist"),
-						LINKINBOX_PARENT_PID: String(process.pid),
+						ATENTO_PORT: String(port),
+						ATENTO_UI_DIST: join(dir, "ui-dist"),
+						ATENTO_PARENT_PID: String(process.pid),
 					},
 					stdout: "inherit",
 					stderr: "inherit",
@@ -97,15 +97,15 @@ async function startSidecar(): Promise<SidecarServer | null> {
 }
 
 const sidecar =
-	process.env.LINKINBOX_URL === undefined ? await startSidecar() : null;
-if (process.env.LINKINBOX_URL === undefined && sidecar === null) {
-	console.error("[desktop] no LINKINBOX_URL and no sidecar server available");
+	process.env.ATENTO_URL === undefined ? await startSidecar() : null;
+if (process.env.ATENTO_URL === undefined && sidecar === null) {
+	console.error("[desktop] no ATENTO_URL and no sidecar server available");
 }
 
-const UI_URL = process.env.LINKINBOX_URL ?? sidecar?.url ?? "http://localhost:4173";
+const UI_URL = process.env.ATENTO_URL ?? sidecar?.url ?? "http://localhost:4173";
 
 const mainWindow = new BrowserWindow({
-	title: "linkinbox",
+	title: "atento",
 	url: UI_URL,
 	frame: savedWindowFrame(),
 });
@@ -123,12 +123,12 @@ process.on("exit", () => {
 // stdio ui-layout shim), and relays session traffic between the agent and
 // the page over the localhost bridge — no new IPC mechanism.
 //
-// Agent selection is user config, never hardcoded: ~/.linkinbox/acp-agent.json
-// ({ "command": ["claude-code-acp", ...] }) or LINKINBOX_ACP_COMMAND.
+// Agent selection is user config, never hardcoded: ~/.atento/acp-agent.json
+// ({ "command": ["claude-code-acp", ...] }) or ATENTO_ACP_COMMAND.
 // ---------------------------------------------------------------------------
 
-const ACP_CONFIG_PATH = join(homedir(), ".linkinbox", "acp-agent.json");
-const WINDOW_BOUNDS_PATH = join(homedir(), ".linkinbox", "window.json");
+const ACP_CONFIG_PATH = join(homedir(), ".atento", "acp-agent.json");
+const WINDOW_BOUNDS_PATH = join(homedir(), ".atento", "window.json");
 
 type Frame = { x: number; y: number; width: number; height: number };
 
@@ -263,7 +263,7 @@ function detectAgents(): AcpAgentInfo[] {
 function acpCommand(): string[] | null {
 	const cfgCommand = readAcpConfig().command;
 	if (Array.isArray(cfgCommand) && cfgCommand.length > 0) return cfgCommand.map(String);
-	const env = process.env["LINKINBOX_ACP_COMMAND"];
+	const env = process.env["ATENTO_ACP_COMMAND"];
 	if (env !== undefined && env.trim() !== "") {
 		return env.trim().split(/\s+/);
 	}
@@ -334,14 +334,14 @@ let permissionSeq = 0;
 
 function forwardAcpEvent(payload: unknown) {
 	evalInPage(
-		`window.dispatchEvent(new CustomEvent("linkinbox:acp-event",{detail:${JSON.stringify(payload)}}))`,
+		`window.dispatchEvent(new CustomEvent("atento:acp-event",{detail:${JSON.stringify(payload)}}))`,
 	);
 }
 
 function acpMcpServers(): AcpMcpServer[] {
 	const servers: AcpMcpServer[] = [
 		// The app's own link tools — streamable HTTP on the sidecar.
-		{ name: "linkinbox", url: `${UI_URL}/mcp` },
+		{ name: "atento", url: `${UI_URL}/mcp` },
 	];
 	// ui-layout: stdio shim that relays GenUI tools to the page via /layout/tool.
 	const dir = resourcesDir();
@@ -354,7 +354,7 @@ function acpMcpServers(): AcpMcpServer[] {
 		name: "ui-layout",
 		command: nodeBin,
 		args: [shim],
-		env: { LINKINBOX_BRIDGE: SHELL_BRIDGE_URL },
+		env: { ATENTO_BRIDGE: SHELL_BRIDGE_URL },
 	});
 	return servers;
 }
@@ -377,7 +377,7 @@ async function ensureAcp(): Promise<AcpSession> {
 			const reqId = `perm-${++permissionSeq}`;
 			permissionWaiters.set(reqId, respond);
 			evalInPage(
-				`window.dispatchEvent(new CustomEvent("linkinbox:acp-permission",{detail:${JSON.stringify({ requestId: reqId, params })}}))`,
+				`window.dispatchEvent(new CustomEvent("atento:acp-permission",{detail:${JSON.stringify({ requestId: reqId, params })}}))`,
 			);
 			return;
 		}
@@ -412,7 +412,7 @@ async function layoutTool(tool: string, args: unknown): Promise<unknown> {
 		layoutWaiters.set(requestId, { resolve, timer });
 	});
 	evalInPage(
-		`window.dispatchEvent(new CustomEvent("linkinbox:layout-request",{detail:${JSON.stringify({ requestId, tool, args })}}))`,
+		`window.dispatchEvent(new CustomEvent("atento:layout-request",{detail:${JSON.stringify({ requestId, tool, args })}}))`,
 	);
 	return promise;
 }
@@ -427,7 +427,7 @@ async function layoutTool(tool: string, args: unknown): Promise<unknown> {
 // The hosted page is remote, so Electrobun's preload exposes no RPC global to
 // it. Right-click menus therefore go through a tiny localhost bridge: the page
 // POSTs the menu spec, we showContextMenu() at the pointer, and the chosen
-// action is forwarded back into the page as a `linkinbox:menu-action`
+// action is forwarded back into the page as a `atento:menu-action`
 // CustomEvent via executeJavascript.
 // ---------------------------------------------------------------------------
 
@@ -542,7 +542,7 @@ const shellBridge = Bun.serve({
 					return new Response("empty prompt", { status: 400, headers: cors });
 				}
 				const session = await ensureAcp();
-				// Prompt is async: updates stream back via linkinbox:acp-event.
+				// Prompt is async: updates stream back via atento:acp-event.
 				void session.client
 					.request("session/prompt", {
 						sessionId: session.sessionId,
@@ -622,14 +622,14 @@ function evalInPage(js: string) {
 // dom-ready is the fallback if the early eval has no document yet.
 for (const evt of ["did-commit-navigation", "dom-ready"] as const) {
 	mainWindow.webview.on(evt, () => {
-		evalInPage(`window.__linkinboxBridge=${JSON.stringify(SHELL_BRIDGE_URL)};`);
+		evalInPage(`window.__atentoBridge=${JSON.stringify(SHELL_BRIDGE_URL)};`);
 	});
 }
 
 function forwardMenuAction(action: string, data: unknown) {
 	const detail = JSON.stringify({ action, data: data ?? null });
 	evalInPage(
-		`window.dispatchEvent(new CustomEvent("linkinbox:menu-action",{detail:${detail}}))`,
+		`window.dispatchEvent(new CustomEvent("atento:menu-action",{detail:${detail}}))`,
 	);
 }
 
@@ -652,7 +652,7 @@ ApplicationMenu.setApplicationMenu([
 	{
 		// First unlabeled submenu becomes the macOS app menu.
 		submenu: [
-			{ label: "About linkinbox", role: "about" },
+			{ label: "About atento", role: "about" },
 			{ type: "separator" },
 			{
 				label: "Settings…",
@@ -660,12 +660,12 @@ ApplicationMenu.setApplicationMenu([
 				accelerator: "CommandOrControl+,",
 			},
 			{ type: "separator" },
-			{ label: "Hide linkinbox", role: "hide" },
+			{ label: "Hide atento", role: "hide" },
 			{ label: "Hide Others", role: "hideOthers" },
 			{ label: "Show All", role: "showAll" },
 			{ type: "separator" },
 			{
-				label: "Quit linkinbox",
+				label: "Quit atento",
 				role: "quit",
 				accelerator: "CommandOrControl+Q",
 			},
@@ -713,7 +713,7 @@ ApplicationMenu.setApplicationMenu([
 		label: "Help",
 		submenu: [
 			{
-				label: "linkinbox Help",
+				label: "atento Help",
 				action: "app.help",
 				accelerator: "CommandOrControl+/",
 			},
@@ -748,8 +748,8 @@ const BASE = `http://localhost:${SELFTEST_PORT}`;
 
 // [label, partition passed to BrowserView (null = no partition attr)]
 const PROBES: Array<[string, string | null]> = [
-	["persist", "persist:linkinbox-d0test"],
-	["eph", "linkinbox-d0ephemeral"],
+	["persist", "persist:atento-d0test"],
+	["eph", "atento-d0ephemeral"],
 	["default", null],
 ];
 
@@ -927,7 +927,7 @@ function runDomProbe() {
 	});
 	// Optional pool check: switch the selection to a second link (different
 	// host) mid-run, then keep probing — expect 2 pooled webview elements.
-	const select2 = process.env.LINKINBOX_PROBE_SELECT2;
+	const select2 = process.env.ATENTO_PROBE_SELECT2;
 	if (select2) {
 		mainWindow.webview.on("did-navigate", () => {
 			setTimeout(() => {
@@ -952,5 +952,5 @@ if (SELFTEST === "partition-set") {
 } else if (SELFTEST === "dom-probe") {
 	runDomProbe();
 } else if (SELFTEST !== "") {
-	console.warn(`[desktop] unknown LINKINBOX_SELFTEST value: ${SELFTEST}`);
+	console.warn(`[desktop] unknown ATENTO_SELFTEST value: ${SELFTEST}`);
 }

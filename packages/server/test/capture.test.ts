@@ -6,8 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openStore, type SqliteStore } from '@linkinbox/db'
-import { DEFAULT_CAPTURE_CONFIG, normalizeUrl } from '@linkinbox/core'
+import { openStore, type SqliteStore } from '@atento/db'
+import { DEFAULT_CAPTURE_CONFIG, normalizeUrl } from '@atento/core'
 import { createApp } from '../src/index.js'
 
 let store: SqliteStore
@@ -18,7 +18,7 @@ const captureConfig = {
   ...DEFAULT_CAPTURE_CONFIG,
   allowedOrigins: ['chrome-extension://abcdef'],
 }
-const env = { LINKINBOX_CAPTURE_TOKEN: TOKEN }
+const env = { ATENTO_CAPTURE_TOKEN: TOKEN }
 
 function post(body: string | unknown, headers: Record<string, string> = {}) {
   const raw = typeof body === 'string' ? body : JSON.stringify(body)
@@ -42,7 +42,7 @@ function capture(overrides: Record<string, unknown> = {}) {
 }
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'linkinbox-capture-'))
+  dir = mkdtempSync(join(tmpdir(), 'atento-capture-'))
   store = await openStore({ path: join(dir, 'test.db') })
 })
 

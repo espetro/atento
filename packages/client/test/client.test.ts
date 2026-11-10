@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createLinkinboxClient } from '../src/index.js'
+import { createAtentoClient } from '../src/index.js'
 
 interface RecordedCall {
   url: string
@@ -27,10 +27,10 @@ function stubFetch(body: unknown, status = 200) {
   return { calls, fetchImpl }
 }
 
-describe('createLinkinboxClient', () => {
+describe('createAtentoClient', () => {
   it('issues typed GET requests against the configured base url', async () => {
     const { calls, fetchImpl } = stubFetch({ links: [], nextCursor: null })
-    const client = createLinkinboxClient({
+    const client = createAtentoClient({
       baseUrl: 'http://127.0.0.1:4173',
       fetch: fetchImpl,
     })
@@ -44,7 +44,7 @@ describe('createLinkinboxClient', () => {
 
   it('sends the bearer token when configured', async () => {
     const { calls, fetchImpl } = stubFetch({ ok: true })
-    const client = createLinkinboxClient({
+    const client = createAtentoClient({
       baseUrl: 'http://example.internal:4173',
       token: 'sekret',
       fetch: fetchImpl,
@@ -55,7 +55,7 @@ describe('createLinkinboxClient', () => {
 
   it('exposes the M3 endpoints with typed params and bodies', async () => {
     const { calls, fetchImpl } = stubFetch({ id: 7, status: 'done' })
-    const client = createLinkinboxClient({ baseUrl: 'http://x', fetch: fetchImpl })
+    const client = createAtentoClient({ baseUrl: 'http://x', fetch: fetchImpl })
     await client.POST('/api/run', { body: { stage: 'all' } })
     expect(calls[0]!.url).toBe('http://x/api/run')
     expect(calls[0]!.method).toBe('POST')

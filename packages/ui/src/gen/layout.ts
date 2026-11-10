@@ -7,7 +7,7 @@ import { parseLayout, type UIElement } from './catalog'
  * view. `viewLayout` is reactive: setLayout/resetLayout re-render consumers.
  */
 
-const KEY_PREFIX = 'linkinbox:layout:'
+const KEY_PREFIX = 'atento:layout:'
 
 const overrides = writable<Record<string, UIElement[]>>({})
 

@@ -31,10 +31,10 @@ const stderrConsole: Console = {
   trace: (...args: unknown[]) => console.error(...args),
 } as Console
 
-export const DEFAULT_LOG_PATH = join(homedir(), '.linkinbox', 'log.jsonl')
+export const DEFAULT_LOG_PATH = join(homedir(), '.atento', 'log.jsonl')
 
 export interface LoggingOptions {
-  /** Path of the JSON-lines log file. Defaults to ~/.linkinbox/log.jsonl. */
+  /** Path of the JSON-lines log file. Defaults to ~/.atento/log.jsonl. */
   path?: string
   /** Lowest level for the console sink. Defaults to 'info'. */
   consoleLevel?: LogLevel
@@ -54,11 +54,11 @@ export interface LoggingSetup {
 let current: LoggingSetup | null = null
 
 /**
- * Resolve the log file path: explicit option, then `LINKINBOX_LOG_FILE`, then
+ * Resolve the log file path: explicit option, then `ATENTO_LOG_FILE`, then
  * the default location.
  */
 export function resolveLogPath(env: NodeJS.ProcessEnv = process.env): string {
-  const fromEnv = env['LINKINBOX_LOG_FILE']
+  const fromEnv = env['ATENTO_LOG_FILE']
   if (fromEnv && fromEnv.trim() !== '') return fromEnv
   return DEFAULT_LOG_PATH
 }
@@ -97,7 +97,7 @@ export function setupLogging(options: LoggingOptions = {}): LoggingSetup {
         lowestLevel: 'error',
       },
       {
-        category: 'linkinbox',
+        category: 'atento',
         sinks: sinkIds as never,
         lowestLevel: fileLevel,
       },
@@ -105,7 +105,7 @@ export function setupLogging(options: LoggingOptions = {}): LoggingSetup {
   })
 
   const setup: LoggingSetup = {
-    logger: getLogger(['linkinbox']),
+    logger: getLogger(['atento']),
     path,
     dispose() {
       disposeSync()
@@ -137,6 +137,6 @@ export function toPipelineLogger(logger: Logger): PipelineLogger {
 
 /** A pipeline logger that writes to a LogTape category. */
 export function pipelineLogger(category: string): PipelineLogger {
-  const logger = getLogger(['linkinbox', category])
+  const logger = getLogger(['atento', category])
   return toPipelineLogger(logger)
 }

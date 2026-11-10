@@ -1,6 +1,6 @@
 /**
- * stdio entry point: `linkinbox-mcp`. Wiring goes through the app layer:
- * `createLinkinbox` resolves the config, opens the SQLite store and builds
+ * stdio entry point: `atento-mcp`. Wiring goes through the app layer:
+ * `createAtento` resolves the config, opens the SQLite store and builds
  * the extract/enrich/browse adapters — the same composition root the CLI
  * uses.
  *
@@ -15,14 +15,14 @@
  */
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import {
-  createLinkinbox,
+  createAtento,
   loadConfig,
   pipelineLogger,
-} from '@linkinbox/app'
+} from '@atento/app'
 import { createMcpServer } from './server.js'
 import { TOOL_NAME_MAP, createMcpDeps, type McpDeps } from './deps.js'
 
-const app = await createLinkinbox(loadConfig(), { logger: pipelineLogger('mcp') })
+const app = await createAtento(loadConfig(), { logger: pipelineLogger('mcp') })
 const logger = pipelineLogger('mcp')
 
 const deps: McpDeps = {
@@ -43,6 +43,6 @@ process.on('SIGTERM', async () => {
   process.exit(0)
 })
 
-logger.info('linkinbox mcp server listening on stdio with tools {tools}', {
+logger.info('atento mcp server listening on stdio with tools {tools}', {
   tools: Object.keys(TOOL_NAME_MAP),
 })

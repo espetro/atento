@@ -45,14 +45,14 @@ describe('site cache render', () => {
 describe('extract wrapper keeps the last render', () => {
   it('saves html from a good extraction and serves it by link id', async () => {
     const { mkdtempSync, rmSync } = await import('node:fs')
-    const { createLinkinboxOps, loadConfig } = await import('../src/index.js')
-    const { openStore } = await import('@linkinbox/db')
-    const home = mkdtempSync(join(tmpdir(), 'linkinbox-render-'))
+    const { createAtentoOps, loadConfig } = await import('../src/index.js')
+    const { openStore } = await import('@atento/db')
+    const home = mkdtempSync(join(tmpdir(), 'atento-render-'))
     const store = await openStore({ path: join(home, 'links.db') })
     try {
-      const config = loadConfig({ LINKINBOX_HOME: home } as NodeJS.ProcessEnv)
+      const config = loadConfig({ ATENTO_HOME: home } as NodeJS.ProcessEnv)
       const url = 'https://example.com/post'
-      const ops = createLinkinboxOps(config as never, {
+      const ops = createAtentoOps(config as never, {
         store,
         env: {},
         spoolDir: join(home, 'spool'),

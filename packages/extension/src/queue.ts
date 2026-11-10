@@ -129,7 +129,7 @@ export function parseRetryAfter(header: string | null, now: number): number | un
 export interface OutboxOptions {
   /** chrome.storage.local (or a test double). */
   storage: KeyValueStorage
-  /** Storage key holding the item array. Default 'linkinbox:outbox'. */
+  /** Storage key holding the item array. Default 'atento:outbox'. */
   storageKey?: string
   /** Injected fetch. Defaults to the global one; tests inject a fake. */
   fetch?: FetchLike
@@ -185,7 +185,7 @@ function asItem(value: unknown): OutboxItem | null {
 }
 
 export function createOutbox(options: OutboxOptions) {
-  const storageKey = options.storageKey ?? 'linkinbox:outbox'
+  const storageKey = options.storageKey ?? 'atento:outbox'
   const fetchImpl = options.fetch ?? ((url, init) => fetch(url, init))
   const clock = { now: options.now ?? (() => Date.now()) }
   const random = options.random ?? Math.random

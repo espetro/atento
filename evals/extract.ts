@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createDefuddleExtractor } from '@linkinbox/extractors'
+import { createDefuddleExtractor } from '@atento/extractors'
 
 const dir = path.dirname(fileURLToPath(import.meta.url))
 // Works from src (evals/../fixtures) and from dist (evals/dist/../../fixtures).

@@ -198,7 +198,7 @@ export function guardReset(deps: GuardDeps, key: string): Promise<HostState> {
   return breakerReset(breakerDepsOf(deps), key)
 }
 
-/** Per-key status row for `linkinbox status` and the limits_status tool. */
+/** Per-key status row for `atento status` and the limits_status tool. */
 export interface GuardStatus {
   key: string
   breakerState: HostState['breakerState']

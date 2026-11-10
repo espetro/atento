@@ -4,7 +4,7 @@ Some hosts refuse a plain automated browser: the fingerprint of an ordinary
 Chromium under automation (`navigator.webdriver`, CDP artifacts, the
 `--enable-automation` flag) is enough for a challenge page. The stealth
 engine is [Patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright), a
-patched Playwright fork that removes exactly those artifacts, and linkinbox
+patched Playwright fork that removes exactly those artifacts, and atento
 uses it for the hosts that need it. It is a risk reduction, not a bypass: it
 does not beat captchas, account-level bans or rate limits, and it changes
 nothing about the pacing rules (`docs/resilience.md`), which still apply in
@@ -12,7 +12,7 @@ full.
 
 ## Install
 
-Patchright is an optional peer dependency of `@linkinbox/extractors`. With
+Patchright is an optional peer dependency of `@atento/extractors`. With
 pnpm (the package manager this repo uses):
 
 ```sh
@@ -96,14 +96,14 @@ Routing rules, in the order the pipeline applies them:
   "patchright"` never sends open hosts through a browser.
 - A missing profile on a patchright route is terminal, exactly like on the
   agent-browser route: the link parks in `needs_browser` and the CLI
-  suggests `linkinbox login <host>`.
+  suggests `atento login <host>`.
 
 ## Login flow
 
-`linkinbox login <host>` uses the engine the host extracts with:
+`atento login <host>` uses the engine the host extracts with:
 
 - Patchright hosts: a headed persistent context is launched at
-  `<profilesDir>/<host>/patchright` (default `~/.linkinbox/profiles/<host>/
+  `<profilesDir>/<host>/patchright` (default `~/.atento/profiles/<host>/
   patchright`), the page navigates to `https://<host>/`, and the CLI waits
   for Enter after you log in in the browser window. Closing the context
   cleanly is what flushes the cookies and local storage into the profile
@@ -115,18 +115,18 @@ Routing rules, in the order the pipeline applies them:
 
 After either flow the profile row is saved in the `profiles` table and the
 host's parked `needs_browser` links are requeued for the next extract run.
-linkinbox never reads, logs or stores passwords, cookies or tokens: only
+atento never reads, logs or stores passwords, cookies or tokens: only
 the profile directory path is recorded.
 
 ## Profile locations
 
 | Engine | Directory |
 |---|---|
-| agent-browser | `~/.linkinbox/profiles/<host>` |
-| patchright | `~/.linkinbox/profiles/<host>/patchright` |
+| agent-browser | `~/.atento/profiles/<host>` |
+| patchright | `~/.atento/profiles/<host>/patchright` |
 
-`linkinbox login list` shows the saved rows, `linkinbox login clear <host>`
-deletes the row and its directory, and `linkinbox login requeue <host>`
+`atento login list` shows the saved rows, `atento login clear <host>`
+deletes the row and its directory, and `atento login requeue <host>`
 requeues a host's parked links again. The patchright subdirectory keeps the
 two engines' sessions from colliding when a host is switched between
 engines.

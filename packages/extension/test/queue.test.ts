@@ -389,7 +389,7 @@ describe('createOutbox', () => {
     const outbox = makeOutbox({ storage, fetch: async () => new Response('', { status: 200 }), now: () => 0 })
     await enqueueCapture(outbox)
     await outbox.drain()
-    const stored = storage.data.get('linkinbox:outbox') as unknown[]
+    const stored = storage.data.get('atento:outbox') as unknown[]
     expect(stored).toHaveLength(0)
   })
 })

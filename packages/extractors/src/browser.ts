@@ -101,14 +101,14 @@ function defaultExec(
   });
 }
 
-/** Profile dir for a host on an adapter: ~/.linkinbox/profiles/<host>/<adapterId> */
+/** Profile dir for a host on an adapter: ~/.atento/profiles/<host>/<adapterId> */
 export function profileDirForHost(
   url: string,
   profilesDir?: string,
   adapterId = "headless",
 ): string {
   const host = new URL(url).hostname;
-  const base = profilesDir ?? join(homedir(), ".linkinbox", "profiles");
+  const base = profilesDir ?? join(homedir(), ".atento", "profiles");
   return join(base, host, adapterId);
 }
 

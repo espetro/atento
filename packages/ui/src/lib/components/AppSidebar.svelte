@@ -48,10 +48,10 @@
   interface CustomCollection { name: string; host?: string; category?: string; collection?: string }
   let customs = $state<CustomCollection[]>(loadCustoms())
   function loadCustoms(): CustomCollection[] {
-    try { return JSON.parse(localStorage.getItem('linkinbox:collections') ?? '[]') } catch { return [] }
+    try { return JSON.parse(localStorage.getItem('atento:collections') ?? '[]') } catch { return [] }
   }
   function saveCustoms() {
-    try { localStorage.setItem('linkinbox:collections', JSON.stringify(customs)) } catch { /* private */ }
+    try { localStorage.setItem('atento:collections', JSON.stringify(customs)) } catch { /* private */ }
   }
   let addOpen = $state(false)
   let addName = $state('')

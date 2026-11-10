@@ -112,9 +112,9 @@
     }
     window.addEventListener('keydown', onAgentEsc)
     const onPaletteEvt = () => (paletteOpen = true)
-    window.addEventListener('linkinbox:palette', onPaletteEvt)
+    window.addEventListener('atento:palette', onPaletteEvt)
     const onFocusSearch = () => { searchEl?.focus(); searchEl?.select() }
-    window.addEventListener('linkinbox:focus-search', onFocusSearch)
+    window.addEventListener('atento:focus-search', onFocusSearch)
     // ⌘J toggles the agent panel (desktop shell only).
     const onAssistantKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
@@ -132,8 +132,8 @@
       window.removeEventListener('keydown', onAssistantKey)
       window.removeEventListener('keydown', onSettingsEsc)
       window.removeEventListener('keydown', onAgentEsc)
-      window.removeEventListener('linkinbox:palette', onPaletteEvt)
-      window.removeEventListener('linkinbox:focus-search', onFocusSearch)
+      window.removeEventListener('atento:palette', onPaletteEvt)
+      window.removeEventListener('atento:focus-search', onFocusSearch)
       offTheme()
       offLayoutServer()
       window.removeEventListener('popstate', onPop)

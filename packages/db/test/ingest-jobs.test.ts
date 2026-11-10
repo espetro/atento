@@ -11,14 +11,14 @@ import {
   ingest,
   INGEST_JOB_INPUT,
   type RawLink,
-} from '@linkinbox/core'
+} from '@atento/core'
 
 let dir: string
 let store: SqliteStore
 let spool: string
 
 beforeEach(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'linkinbox-ingest-jobs-'))
+  dir = mkdtempSync(join(tmpdir(), 'atento-ingest-jobs-'))
   spool = join(dir, 'spool')
   store = await openStore({ path: join(dir, 'links.db') })
 })

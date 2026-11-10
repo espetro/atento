@@ -1,4 +1,4 @@
-import type { RawLink } from '@linkinbox/core'
+import type { RawLink } from '@atento/core'
 import { readTextFile } from './fs-utils.js'
 import type { ImportResult } from './types.js'
 

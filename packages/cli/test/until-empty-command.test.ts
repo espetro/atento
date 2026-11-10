@@ -4,17 +4,17 @@
  * Offline: a temp SQLite store and a fake extract fn, no network.
  */
 import { describe, expect, it } from 'vitest'
-import type { ExtractFn, RawLink } from '@linkinbox/core'
-import { ingest } from '@linkinbox/core'
+import type { ExtractFn, RawLink } from '@atento/core'
+import { ingest } from '@atento/core'
 import { capture, tempDb, unlimitedLimits, type TempDb } from './helpers.js'
 import { createContext, type CliContext } from '../src/context.js'
 import { runExtract } from '../src/commands/pipeline.js'
 import { loadConfig } from '../src/config.js'
 
 async function contextFor(db: TempDb): Promise<CliContext> {
-  const base = loadConfig({ LINKINBOX_DB: db.path })
+  const base = loadConfig({ ATENTO_DB: db.path })
   return createContext({
-    env: { LINKINBOX_DB: db.path },
+    env: { ATENTO_DB: db.path },
     store: db.store,
     quiet: true,
     logPath: join(db.dir, 'log.jsonl'),

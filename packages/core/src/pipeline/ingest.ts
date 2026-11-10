@@ -24,7 +24,7 @@ export interface IngestOptions extends StageOptions {
    * `<spoolDir>/<jobId>/input.jsonl` and committed in chunks through an
    * `ingest_jobs` row, so a crash resumes exactly from the cursor. The
    * caller provides the spool root (the CLI passes `<config dir>/spool`,
-   * i.e. ~/.linkinbox/spool honouring LINKINBOX_HOME). Without it the
+   * i.e. ~/.atento/spool honouring ATENTO_HOME). Without it the
    * in-memory single-shot path runs, still under the journal lock.
    */
   spoolDir?: string

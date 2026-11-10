@@ -10,8 +10,8 @@ import {
   planPrune,
   ttlFromToml,
   ttlDaysForCategory,
-} from '@linkinbox/core'
-import { importFile } from '@linkinbox/importers'
+} from '@atento/core'
+import { importFile } from '@atento/importers'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fixtures = join(here, '..', '..', '..', 'fixtures', 'importers')
@@ -22,7 +22,7 @@ const NOW = new Date('2026-10-29T12:00:00.000Z')
 let dir: string
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'linkinbox-e2e-'))
+  dir = mkdtempSync(join(tmpdir(), 'atento-e2e-'))
 })
 
 afterEach(() => {
@@ -85,7 +85,7 @@ describe('test set A: import then store', () => {
     await ingest(join(fixtures, 'safari-bookmarks.plist'))
     const store = await openStore({ path: join(dir, 'links.db') })
     const links = await store.listLinks()
-    expect(links).toHaveLength(5)
+    expect(links).toHaveLength(6)
     const tracked = links.find((l) => l.url.includes('tracked'))
     expect(tracked?.url).toBe('https://example.com/rl/tracked')
     expect(tracked?.source).toBe('safari-reading-list')

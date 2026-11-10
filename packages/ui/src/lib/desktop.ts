@@ -14,7 +14,7 @@ import type { LinkAction } from './types'
  * of this code runs — the reader/snapshot fallback in PreviewPane is used.
  *
  * Partition semantics (verified against Electrobun 2.0.6 sources, see
- * /tmp/linkinbox-desktop-partitions.md):
+ * /tmp/atento-desktop-partitions.md):
  *   - `partition="persist:<key>"` → persistent per-partition data store
  *     (WKWebsiteDataStore dataStoreForIdentifier on macOS 14+, CEF cached
  *     request context on Linux/Windows).
@@ -60,8 +60,8 @@ export function isDesktopShell(): boolean {
 //
 // The desktop shell's hosted page has no Electrobun RPC global, so native
 // menus go through a localhost endpoint the shell injects as
-// window.__linkinboxBridge on dom-ready. Right-click posts the menu spec;
-// the chosen action comes back as a `linkinbox:menu-action` CustomEvent.
+// window.__atentoBridge on dom-ready. Right-click posts the menu spec;
+// the chosen action comes back as a `atento:menu-action` CustomEvent.
 
 export interface ShellMenuItem {
 	label?: string
@@ -80,8 +80,8 @@ export interface ShellMenuAction {
 }
 
 function shellBridgeUrl(): string | null {
-	const w = window as unknown as { __linkinboxBridge?: string }
-	return typeof w.__linkinboxBridge === 'string' ? w.__linkinboxBridge : null
+	const w = window as unknown as { __atentoBridge?: string }
+	return typeof w.__atentoBridge === 'string' ? w.__atentoBridge : null
 }
 
 /** True when the shell injected its menu bridge (new enough binary). */
@@ -125,20 +125,20 @@ export async function showShellContextMenu(items: ShellMenuItem[]): Promise<void
 }
 
 /**
- * Dispatch a menu action on the same `linkinbox:menu-action` bus the shell
+ * Dispatch a menu action on the same `atento:menu-action` bus the shell
  * uses — lets web-side surfaces (command palette) reuse the views' handlers.
  */
 export function dispatchMenuAction(a: ShellMenuAction): void {
 	if (typeof window === 'undefined') return
-	window.dispatchEvent(new CustomEvent<ShellMenuAction>('linkinbox:menu-action', { detail: a }))
+	window.dispatchEvent(new CustomEvent<ShellMenuAction>('atento:menu-action', { detail: a }))
 }
 
 /** Subscribe to actions picked in a shell-native menu. Returns unsubscribe. */
 export function onShellMenuAction(handler: (a: ShellMenuAction) => void): () => void {
 	if (typeof window === 'undefined') return () => {}
 	const listener = (e: Event) => handler((e as CustomEvent<ShellMenuAction>).detail)
-	window.addEventListener('linkinbox:menu-action', listener)
-	return () => window.removeEventListener('linkinbox:menu-action', listener)
+	window.addEventListener('atento:menu-action', listener)
+	return () => window.removeEventListener('atento:menu-action', listener)
 }
 
 /**
@@ -205,7 +205,7 @@ export function hostKeyForUrl(url: string): string {
 /** Sanitize a host key for use inside a `persist:` partition string. */
 export function partitionForHost(host: string): string {
 	const safe = host.replace(/[^a-z0-9.-]+/gi, '_')
-	return `persist:linkinbox-${safe}`
+	return `persist:atento-${safe}`
 }
 
 const POOL_MAX = 8

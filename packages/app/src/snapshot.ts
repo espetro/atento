@@ -33,7 +33,7 @@ function run(file: string, args: string[]): Promise<void> {
 
 function chromePath(): string | null {
   const candidates = [
-    process.env.LINKINBOX_CHROME,
+    process.env.ATENTO_CHROME,
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/Applications/Chromium.app/Contents/MacOS/Chromium',
     '/usr/bin/google-chrome',
@@ -54,7 +54,7 @@ function singleFileEntry(): string | null {
 
 function monolithPath(): string | null {
   const bundled = join(dirname(process.execPath), 'monolith')
-  const candidates = [process.env.LINKINBOX_MONOLITH, bundled]
+  const candidates = [process.env.ATENTO_MONOLITH, bundled]
   return candidates.find((p): p is string => !!p && existsSync(p)) ?? null
 }
 

@@ -1,7 +1,7 @@
 /**
  * Test set G: metrics/evals integration.
  *
- * Runs the full `linkinbox run` over the fixture corpus with mock extract and
+ * Runs the full `atento run` over the fixture corpus with mock extract and
  * enrich functions, then checks:
  *  - a runs row per stage with the correct counts and durations
  *  - metrics rows present per stage
@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { EnrichFn, ExtractFn } from '@linkinbox/core'
+import type { EnrichFn, ExtractFn } from '@atento/core'
 import { capture, tempDb, unlimitedLimits, type TempDb } from './helpers.js'
 import { createContext, type CliContext } from '../src/context.js'
 import { runAll } from '../src/commands/pipeline.js'
@@ -51,9 +51,9 @@ const mockEnrich: EnrichFn = async (link) => ({
 })
 
 async function contextFor(db: TempDb, logPath: string): Promise<CliContext> {
-  const base = loadConfig({ LINKINBOX_DB: db.path })
+  const base = loadConfig({ ATENTO_DB: db.path })
   return createContext({
-    env: { LINKINBOX_DB: db.path },
+    env: { ATENTO_DB: db.path },
     store: db.store,
     quiet: true,
     logPath,
@@ -174,7 +174,7 @@ describe('test set G: full run over the fixture corpus', () => {
       // every line is valid json with the expected shape
       for (const p of parsed) {
         expect(typeof p.message).toBe('string')
-        expect(p.logger.startsWith('linkinbox.')).toBe(true)
+        expect(p.logger.startsWith('atento.')).toBe(true)
       }
     } finally {
       await db.cleanup()

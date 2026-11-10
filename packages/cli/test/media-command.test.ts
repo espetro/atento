@@ -6,8 +6,8 @@ import { describe, expect, it } from 'vitest'
 import { capture, insertLink, tempDb, unlimitedLimits, type TempDb } from './helpers.js'
 import { createProgram } from '../src/program.js'
 import { parseTiers, renderMediaTable, resolveLink } from '../src/commands/media.js'
-import { normalizeUrl, type MediaConfig } from '@linkinbox/core'
-import type { MediaReport } from '@linkinbox/media'
+import { normalizeUrl, type MediaConfig } from '@atento/core'
+import type { MediaReport } from '@atento/media'
 
 describe('parseTiers', () => {
   it('parses a comma-separated list', () => {
@@ -84,7 +84,7 @@ describe('media command', () => {
         mediaFn: async () => ({ report, markdown: '' }),
       })
       const out = await capture(() =>
-        program.parseAsync(['node', 'linkinbox', 'media', '1', '--tiers', 'caption,transcript,frames']),
+        program.parseAsync(['node', 'atento', 'media', '1', '--tiers', 'caption,transcript,frames']),
       )
       expect(out.stderr).toBe('')
       expect(out.stdout).toContain('caption')
@@ -133,7 +133,7 @@ describe('media command', () => {
         }),
       })
       const out = await capture(() =>
-        program.parseAsync(['node', 'linkinbox', 'media', url, '--json']),
+        program.parseAsync(['node', 'atento', 'media', url, '--json']),
       )
       const parsed = JSON.parse(out.stdout) as MediaReport
       expect(parsed.url).toBe(url)
@@ -154,7 +154,7 @@ describe('media command', () => {
         quiet: true,
       })
       const out = await capture(() =>
-        program.parseAsync(['node', 'linkinbox', 'media', '999']),
+        program.parseAsync(['node', 'atento', 'media', '999']),
       )
       expect(out.stderr).toContain('no link found')
       expect(process.exitCode).toBe(1)

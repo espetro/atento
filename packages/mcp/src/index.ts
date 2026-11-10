@@ -1,6 +1,6 @@
 /**
- * linkinbox MCP server. Thin wrapper: every tool calls the same app-layer
- * use cases (LinkinboxOps) the CLI and the HTTP server drive — nothing here
+ * atento MCP server. Thin wrapper: every tool calls the same app-layer
+ * use cases (AtentoOps) the CLI and the HTTP server drive — nothing here
  * formats rows or builds queries, and handlers never reach into
  * store/pipeline internals beyond what the ops object exposes.
  *

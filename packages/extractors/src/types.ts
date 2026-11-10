@@ -1,5 +1,5 @@
 /**
- * Extractor interface for linkinbox. Self-contained: no dependency on other
+ * Extractor interface for atento. Self-contained: no dependency on other
  * workspace packages.
  */
 

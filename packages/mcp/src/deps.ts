@@ -10,7 +10,7 @@ import type {
   ExtractFn,
   EnrichFn,
   LimitsConfig,
-  Linkinbox,
+  Atento,
   LoginConfig,
   MetricsSummary,
   PipelineLogger,
@@ -20,7 +20,7 @@ import type {
   SweepPlan,
   TriageResult,
   TtlConfig,
-} from '@linkinbox/app'
+} from '@atento/app'
 
 export interface McpContext {
   store: Store
@@ -102,12 +102,12 @@ export type MetricsResult = MetricsSummary
 export type TriageResultShape = TriageResult
 
 /**
- * Build production McpDeps from a live `Linkinbox` app — the same wiring
- * the stdio bin uses, shared so `linkinbox serve` mounts identical tools
+ * Build production McpDeps from a live `Atento` app — the same wiring
+ * the stdio bin uses, shared so `atento serve` mounts identical tools
  * over streamable HTTP. The browse tools reuse the app's saved-profile
  * read path and `[share]` allowlist; nothing is written to the store.
  */
-export function createMcpDeps(app: Linkinbox, logger: PipelineLogger): McpDeps {
+export function createMcpDeps(app: Atento, logger: PipelineLogger): McpDeps {
   const config = app.config as AppConfig
   const context: McpContext = {
     store: app.store,

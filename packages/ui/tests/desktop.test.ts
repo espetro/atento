@@ -20,10 +20,10 @@ describe('hostKeyForUrl', () => {
 
 describe('partitionForHost', () => {
   it('produces a persist: partition keyed by host', () => {
-    expect(partitionForHost('github.com')).toBe('persist:linkinbox-github.com')
+    expect(partitionForHost('github.com')).toBe('persist:atento-github.com')
   })
 
   it('sanitizes unsafe characters', () => {
-    expect(partitionForHost('exa mple.com')).toBe('persist:linkinbox-exa_mple.com')
+    expect(partitionForHost('exa mple.com')).toBe('persist:atento-exa_mple.com')
   })
 })

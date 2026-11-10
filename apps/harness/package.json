@@ -1,11 +1,11 @@
 {
-  "name": "@linkinbox/harness",
+  "name": "@atento/harness",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "linkinbox service harness: lifecycle CLI, recurrence scheduler, native notifications and static web serving",
+  "description": "atento service harness: lifecycle CLI, recurrence scheduler, native notifications and static web serving",
   "bin": {
-    "linkinbox-harness": "./dist/bin.js"
+    "atento-harness": "./dist/bin.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -25,11 +25,11 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.14.0",
-    "@linkinbox/app": "workspace:*",
-    "@linkinbox/core": "workspace:*",
-    "@linkinbox/db": "workspace:*",
-    "@linkinbox/mcp": "workspace:*",
-    "@linkinbox/server": "workspace:*",
+    "@atento/app": "workspace:*",
+    "@atento/core": "workspace:*",
+    "@atento/db": "workspace:*",
+    "@atento/mcp": "workspace:*",
+    "@atento/server": "workspace:*",
     "commander": "^15.0.0",
     "croner": "^11.0.0",
     "hono": "^4.9.0",

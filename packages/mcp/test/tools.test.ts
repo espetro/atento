@@ -184,7 +184,7 @@ describe('mcp tools', () => {
       const { writeFileSync } = await import('node:fs')
       const { tmpdir } = await import('node:os')
       const { join } = await import('node:path')
-      const dir = mkdtempSync(join(tmpdir(), 'linkinbox-mcp-import-'))
+      const dir = mkdtempSync(join(tmpdir(), 'atento-mcp-import-'))
       const file = join(dir, 'links.md')
       writeFileSync(file, '- [Example](https://example.com/imported)\n')
 

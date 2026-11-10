@@ -11,12 +11,12 @@
  */
 
 export interface ServerConfig {
-  /** Env var that holds the bearer token. Default LINKINBOX_SERVER_TOKEN. */
+  /** Env var that holds the bearer token. Default ATENTO_SERVER_TOKEN. */
   tokenEnv: string
 }
 
 export const DEFAULT_SERVER_CONFIG: ServerConfig = {
-  tokenEnv: 'LINKINBOX_SERVER_TOKEN',
+  tokenEnv: 'ATENTO_SERVER_TOKEN',
 }
 
 function tomlTable(value: unknown): Record<string, unknown> {
@@ -29,7 +29,7 @@ function tomlTable(value: unknown): Record<string, unknown> {
  * Parse the `[server]` table:
  *
  *   [server]
- *   token_env = "LINKINBOX_SERVER_TOKEN"
+ *   token_env = "ATENTO_SERVER_TOKEN"
  */
 export function serverFromToml(toml: Record<string, unknown>): ServerConfig {
   const out: ServerConfig = { tokenEnv: DEFAULT_SERVER_CONFIG.tokenEnv }

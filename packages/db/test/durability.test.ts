@@ -10,13 +10,13 @@ import {
   ingest,
   normalizeUrl,
   type Enrichment,
-} from '@linkinbox/core'
+} from '@atento/core'
 
 let dir: string
 let store: SqliteStore
 
 beforeEach(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'linkinbox-durability-'))
+  dir = mkdtempSync(join(tmpdir(), 'atento-durability-'))
   store = await openStore({ path: join(dir, 'links.db') })
 })
 

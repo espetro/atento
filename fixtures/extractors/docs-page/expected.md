@@ -1,6 +1,6 @@
 ## Configuration
 
-LinkInbox reads a single TOML file at `~/.linkinbox/config.toml`. Every value has a working default, so the file is optional until you want to change behaviour.
+LinkInbox reads a single TOML file at `~/.atento/config.toml`. Every value has a working default, so the file is optional until you want to change behaviour.
 
 ## TTL section
 

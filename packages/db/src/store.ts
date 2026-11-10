@@ -40,7 +40,7 @@ import type {
   LinkHistoryEntry,
   HostState,
   MediaReport,
-} from '@linkinbox/core'
+} from '@atento/core'
 import {
   transition,
   parseLinkState,
@@ -59,7 +59,7 @@ import {
   type IngestChunkCommit,
   type IngestItemResult,
   type LinkPatch,
-} from '@linkinbox/core'
+} from '@atento/core'
 
 export interface SqliteStoreOptions {
   /** Path to the sqlite file, or ':memory:'. */

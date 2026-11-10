@@ -6,7 +6,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { EnrichFn, ExtractFn } from '@linkinbox/core'
+import type { EnrichFn, ExtractFn } from '@atento/core'
 import { capture, tempDb, unlimitedLimits, type TempDb } from './helpers.js'
 import { createContext, type CliContext } from '../src/context.js'
 import { runAll } from '../src/commands/pipeline.js'
@@ -37,9 +37,9 @@ const okEnrich: EnrichFn = async () => ({
 const dbs: TempDb[] = []
 
 async function contextFor(db: TempDb): Promise<CliContext> {
-  const base = loadConfig({ LINKINBOX_DB: db.path })
+  const base = loadConfig({ ATENTO_DB: db.path })
   return createContext({
-    env: { LINKINBOX_DB: db.path },
+    env: { ATENTO_DB: db.path },
     store: db.store,
     quiet: true,
     logPath: join(db.dir, 'log.jsonl'),

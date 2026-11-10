@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
-import type { EnrichFn, ExtractFn } from '@linkinbox/core'
+import type { EnrichFn, ExtractFn } from '@atento/core'
 import { capture, insertLink, tempDb, unlimitedLimits, type TempDb } from './helpers.js'
 import { createProgram } from '../src/program.js'
 import { runServe } from '../src/commands/metrics.js'
@@ -77,9 +77,9 @@ async function runProgram(
   db: TempDb,
   args: string[],
 ): Promise<{ stdout: string; stderr: string }> {
-  const base = loadConfig({ LINKINBOX_DB: db.path })
+  const base = loadConfig({ ATENTO_DB: db.path })
   const program = createProgram({
-    env: { LINKINBOX_DB: db.path },
+    env: { ATENTO_DB: db.path },
     store: db.store,
     quiet: true,
     logPath: join(db.dir, 'log.jsonl'),
@@ -91,7 +91,7 @@ async function runProgram(
     throw err
   })
   return capture(async () => {
-    await program.parseAsync(['node', 'linkinbox', ...args])
+    await program.parseAsync(['node', 'atento', ...args])
   })
 }
 
@@ -166,7 +166,7 @@ describe('program: run then list then triage', () => {
     }
   })
 
-  it('serve hands over to @linkinbox/server and serves the api', async () => {
+  it('serve hands over to @atento/server and serves the api', async () => {
     const db = await tempDb()
     try {
       const out = await capture(async () => {

@@ -18,7 +18,7 @@ import { registerIngestCommands } from './commands/ingest.js'
 import { registerCollectionsCommands } from './commands/collections.js'
 import { registerBrowsersCommand } from './commands/browsers.js'
 import { loadConfig } from './config.js'
-import type { EnrichFn, ExtractFn, TtlConfig } from '@linkinbox/app'
+import type { EnrichFn, ExtractFn, TtlConfig } from '@atento/app'
 import type { MediaFn } from './media-fn.js'
 
 export interface ProgramOptions extends ContextOptions {
@@ -28,7 +28,7 @@ export interface ProgramOptions extends ContextOptions {
 
 export function createProgram(options: ProgramOptions = {}): Command {  const program = new Command()
   program
-    .name('linkinbox')
+    .name('atento')
     .description('CLI/MCP-first link triage pipeline')
     .version('0.1.0')
 

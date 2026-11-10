@@ -32,8 +32,8 @@
  * mint codes at all.
  */
 import { randomInt } from 'node:crypto'
-import type { CaptureConfig } from '@linkinbox/core'
-import { captureToken, type ServerConfig, serverToken } from '@linkinbox/core'
+import type { CaptureConfig } from '@atento/core'
+import { captureToken, type ServerConfig, serverToken } from '@atento/core'
 
 /** Default pairing-code lifetime. */
 export const DEFAULT_PAIR_CODE_TTL_MS = 5 * 60 * 1000

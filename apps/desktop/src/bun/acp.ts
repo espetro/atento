@@ -92,7 +92,7 @@ export class AcpClient {
 				fs: { readTextFile: false, writeTextFile: false },
 				terminal: false,
 			},
-			clientInfo: { name: "linkinbox-desktop", version: "0.1.0" },
+			clientInfo: { name: "atento-desktop", version: "0.1.0" },
 		})) as AcpInitResult;
 		const res = (await client.request("session/new", {
 			cwd: session.cwd,

@@ -6,7 +6,7 @@ import { z } from 'zod/mini'
 import {
   COLLECTION_NAMES,
   type CollectionName,
-} from '@linkinbox/app'
+} from '@atento/app'
 import { json, type ToolDef, type ToolResult } from './types.js'
 
 const COLLECTION_FIELD_NAMES = [
@@ -71,7 +71,7 @@ export const collectionTools: ToolDef[] = [
         // The cursor rides a trailing `# cursor: <n>` line — the same
         // convention the CLI and HTTP surfaces use — so delta reads work
         // in this format too.
-        const { tsvWithCursor } = await import('@linkinbox/app')
+        const { tsvWithCursor } = await import('@atento/app')
         const fields = args.fields ?? ['id', 'url', 'title', 'category', 'priority', 'summary']
         return {
           content: [
@@ -90,8 +90,8 @@ export const collectionTools: ToolDef[] = [
     name: 'collection_export',
     description:
       'Export one collection to a file (spec name collections.export): ' +
-      'writes ~/.linkinbox/exports/<name>-<cursor>.<ext> and returns ' +
-      '{ path, uri, count, bytes } where uri is a linkinbox:// resource ' +
+      'writes ~/.atento/exports/<name>-<cursor>.<ext> and returns ' +
+      '{ path, uri, count, bytes } where uri is a atento:// resource ' +
       'link to read lazily. Use it instead of collection_read for large ' +
       'result sets.',
     inputSchema: z.object({

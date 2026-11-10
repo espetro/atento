@@ -9,9 +9,9 @@ import { createProgram } from '../src/program.js'
 import { loadConfig } from '../src/config.js'
 
 async function contextFor(db: TempDb): Promise<CliContext> {
-  const base = loadConfig({ LINKINBOX_DB: db.path })
+  const base = loadConfig({ ATENTO_DB: db.path })
   return createContext({
-    env: { LINKINBOX_DB: db.path },
+    env: { ATENTO_DB: db.path },
     store: db.store,
     quiet: true,
     logPath: join(db.dir, 'log.jsonl'),
@@ -24,9 +24,9 @@ async function runProgram(
   db: TempDb,
   args: string[],
 ): Promise<{ stdout: string; stderr: string }> {
-  const base = loadConfig({ LINKINBOX_DB: db.path })
+  const base = loadConfig({ ATENTO_DB: db.path })
   const program = createProgram({
-    env: { LINKINBOX_DB: db.path },
+    env: { ATENTO_DB: db.path },
     store: db.store,
     quiet: true,
     logPath: join(db.dir, 'log.jsonl'),
@@ -36,7 +36,7 @@ async function runProgram(
     throw err
   })
   return capture(async () => {
-    await program.parseAsync(['node', 'linkinbox', ...args])
+    await program.parseAsync(['node', 'atento', ...args])
   })
 }
 

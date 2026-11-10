@@ -46,7 +46,7 @@ export const ingestTools: ToolDef[] = [
       'Bulk-ingest links from a local file (spec name ingest.file): markdown, ' +
       'json, url list (.txt), Safari reading list (.plist) or html bookmarks. ' +
       'Costs zero tokens for the payload — the preferred ingest when the ' +
-      'agent runs on the same machine as the linkinbox store. Returns only ' +
+      'agent runs on the same machine as the atento store. Returns only ' +
       'the job summary { jobId, accepted, duplicates, rejected, status }, ' +
       'never the links themselves.',
     inputSchema: z.object({

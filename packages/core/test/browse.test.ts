@@ -115,7 +115,7 @@ describe('browse: the profile gate', () => {
     })
     expect(result.ok).toBe(false)
     expect(result.reason).toBe('no_profile')
-    expect(result.detail).toContain('linkinbox login')
+    expect(result.detail).toContain('atento login')
     expect(calls).toHaveLength(0)
   })
 })

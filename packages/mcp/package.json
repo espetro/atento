@@ -1,11 +1,11 @@
 {
-  "name": "@linkinbox/mcp",
+  "name": "@atento/mcp",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "linkinbox MCP server: thin wrapper over the core ops and pipeline functions, exposed over stdio or any MCP transport",
+  "description": "atento MCP server: thin wrapper over the core ops and pipeline functions, exposed over stdio or any MCP transport",
   "bin": {
-    "linkinbox-mcp": "./dist/bin.js"
+    "atento-mcp": "./dist/bin.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -24,14 +24,14 @@
     "typecheck": "tsc -p tsconfig.test.json"
   },
   "dependencies": {
-    "@linkinbox/app": "workspace:*",
+    "@atento/app": "workspace:*",
     "@modelcontextprotocol/hono": "2.0.2",
     "@modelcontextprotocol/server": "2.4.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@linkinbox/core": "workspace:*",
-    "@linkinbox/db": "workspace:*",
+    "@atento/core": "workspace:*",
+    "@atento/db": "workspace:*",
     "@modelcontextprotocol/client": "2.4.0",
     "@types/node": "^24.19.2",
     "typescript": "^5.9.3",

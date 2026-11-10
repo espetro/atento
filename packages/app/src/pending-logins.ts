@@ -15,7 +15,7 @@ import {
   listHostsNeedingLogin,
   type LimitsConfig,
   type Store,
-} from '@linkinbox/core'
+} from '@atento/core'
 
 /** One host that still needs a login. */
 export interface PendingLogin {

@@ -8,10 +8,10 @@ import {
   pidAlive,
   type RunJournalEntry,
   type RunJournalStatus,
-} from '@linkinbox/core'
+} from '@atento/core'
 import { enrichLink, enrichPending, createModelFromEnv, type EnrichModel } from '../src/run.js'
 import { buildPrompt } from '../src/prompt.js'
-import type { Link, Store, Enrichment } from '@linkinbox/core'
+import type { Link, Store, Enrichment } from '@atento/core'
 
 const modelId = 'mock-enricher'
 
@@ -432,7 +432,7 @@ describe('createModelFromEnv', () => {
     const model = createModelFromEnv({
       OPENAI_COMPAT_BASE_URL: 'https://gw.example.com/v1',
       OPENAI_COMPAT_API_KEY: 'sk-test',
-      LINKINBOX_MODEL: 'some-model',
+      ATENTO_MODEL: 'some-model',
     })
     expect(model.modelId).toBe('some-model')
   })

@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { RunResult, Store } from '@linkinbox/app'
-import type { IngestJob, IngestJobStatus } from '@linkinbox/core'
+import type { RunResult, Store } from '@atento/app'
+import type { IngestJob, IngestJobStatus } from '@atento/core'
 import { DEFAULT_HARNESS_CONFIG, type HarnessConfig } from '../src/config.js'
 import { createRecordingNotifier } from '../src/notify.js'
 import { createMemoryRunStore, createJsonlRunStore, type HarnessRunRecord } from '../src/runs.js'
@@ -422,7 +422,7 @@ describe('HarnessScheduler.stop', () => {
 
 describe('jsonl run store', () => {
   it('appends and lists records newest-first', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'linkinbox-harness-runs-'))
+    const dir = mkdtempSync(join(tmpdir(), 'atento-harness-runs-'))
     dirs.push(dir)
     const path = join(dir, 'harness_runs.jsonl')
     const store = createJsonlRunStore(path)

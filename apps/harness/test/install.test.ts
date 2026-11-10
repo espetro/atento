@@ -19,7 +19,7 @@ import type { HarnessRunRecord } from '../src/runs.js'
 
 const dirs: string[] = []
 function tempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'linkinbox-harness-test-'))
+  const dir = mkdtempSync(join(tmpdir(), 'atento-harness-test-'))
   dirs.push(dir)
   return dir
 }
@@ -33,7 +33,7 @@ describe('renderLaunchdPlist', () => {
       logPath: '/tmp/lb/harness.log',
       nodePath: '/usr/local/bin/node',
       binPath: '/repo/apps/harness/dist/bin.js',
-      env: { LINKINBOX_HOME: '/tmp/lbhome' },
+      env: { ATENTO_HOME: '/tmp/lbhome' },
     })
     expect(xml).toContain('<key>Label</key>')
     expect(xml).toContain(`<string>${LAUNCHD_LABEL}</string>`)
@@ -43,7 +43,7 @@ describe('renderLaunchdPlist', () => {
     expect(xml).toContain('<string>/repo/apps/harness/dist/bin.js</string>')
     expect(xml).toContain('<string>start</string>')
     expect(xml).toContain('<string>/tmp/lb/harness.log</string>')
-    expect(xml).toContain('<key>LINKINBOX_HOME</key>')
+    expect(xml).toContain('<key>ATENTO_HOME</key>')
     expect(xml).toContain('<string>/tmp/lbhome</string>')
     // XML-escapes env values
     const tricky = renderLaunchdPlist({ logPath: '/tmp/x', env: { A: 'a&b<c' } })
@@ -69,24 +69,24 @@ describe('renderSystemdUnit', () => {
   it('escapes env values with single quotes', () => {
     const unit = renderSystemdUnit({
       logPath: '/tmp/l',
-      env: { LINKINBOX_HOME: "/tmp/it's" },
+      env: { ATENTO_HOME: "/tmp/it's" },
     })
-    expect(unit).toContain(`Environment=LINKINBOX_HOME="/tmp/it's"`)
+    expect(unit).toContain(`Environment=ATENTO_HOME="/tmp/it's"`)
   })
 })
 
 describe('serviceEnv', () => {
-  it('passes LINKINBOX_* vars and guarantees standard bin dirs in PATH', () => {
+  it('passes ATENTO_* vars and guarantees standard bin dirs in PATH', () => {
     const env = serviceEnv({
-      LINKINBOX_HOME: '/tmp/lb',
+      ATENTO_HOME: '/tmp/lb',
       PATH: '/custom/bin',
     } as NodeJS.ProcessEnv)
-    expect(env['LINKINBOX_HOME']).toBe('/tmp/lb')
+    expect(env['ATENTO_HOME']).toBe('/tmp/lb')
     expect(env['PATH']).toContain('/opt/homebrew/bin')
     expect(env['PATH']).toContain('/usr/local/bin')
     expect(env['PATH']).toContain('/custom/bin')
     // No PATH in env → still a usable default.
-    const bare = serviceEnv({ LINKINBOX_HOME: '/x' } as NodeJS.ProcessEnv)
+    const bare = serviceEnv({ ATENTO_HOME: '/x' } as NodeJS.ProcessEnv)
     expect(bare['PATH']).toContain('/usr/bin')
   })
 })
@@ -105,11 +105,11 @@ describe('harnessBinPath', () => {
 describe('installPaths', () => {
   it('picks launchd on darwin, systemd elsewhere', () => {
     const home = tempDir()
-    const darwin = installPaths({ LINKINBOX_HOME: tempDir() }, 'darwin', home)
+    const darwin = installPaths({ ATENTO_HOME: tempDir() }, 'darwin', home)
     expect(darwin.unitPath).toBe(join(home, 'Library', 'LaunchAgents', `${LAUNCHD_LABEL}.plist`))
-    const linux = installPaths({ LINKINBOX_HOME: tempDir() }, 'linux', home)
+    const linux = installPaths({ ATENTO_HOME: tempDir() }, 'linux', home)
     expect(linux.unitPath).toBe(join(home, '.config', 'systemd', 'user', SYSTEMD_UNIT))
-    expect(linux.logPath).toContain('.linkinbox')
+    expect(linux.logPath).toContain('.atento')
   })
 })
 
@@ -120,7 +120,7 @@ describe('installHarness / uninstallHarness', () => {
 
   it('writes a launchd plist idempotently without registering', async () => {
     const home = tempDir()
-    const env = { LINKINBOX_HOME: tempDir() } as NodeJS.ProcessEnv
+    const env = { ATENTO_HOME: tempDir() } as NodeJS.ProcessEnv
     const first = await installHarness({ env, platform: 'darwin', homeDir: home, register: false, exec: neverExec })
     expect(first.registered).toBe(false)
     expect(first.unitPath).toBe(join(home, 'Library', 'LaunchAgents', `${LAUNCHD_LABEL}.plist`))
@@ -134,7 +134,7 @@ describe('installHarness / uninstallHarness', () => {
 
   it('writes a systemd unit and reports registration via exec', async () => {
     const home = tempDir()
-    const env = { LINKINBOX_HOME: tempDir() } as NodeJS.ProcessEnv
+    const env = { ATENTO_HOME: tempDir() } as NodeJS.ProcessEnv
     const calls: string[] = []
     const exec = async (file: string, args: string[]) => {
       calls.push(`${file} ${args.join(' ')}`)
@@ -144,12 +144,12 @@ describe('installHarness / uninstallHarness', () => {
     expect(existsSync(result.unitPath)).toBe(true)
     expect(readFileSync(result.unitPath, 'utf8')).toContain('Restart=always')
     expect(calls.some((c) => c.startsWith('systemctl --user daemon-reload'))).toBe(true)
-    expect(calls.some((c) => c.includes('enable --now linkinbox-harness'))).toBe(true)
+    expect(calls.some((c) => c.includes('enable --now atento-harness'))).toBe(true)
   })
 
   it('survives supervisor registration failure', async () => {
     const home = tempDir()
-    const env = { LINKINBOX_HOME: tempDir() } as NodeJS.ProcessEnv
+    const env = { ATENTO_HOME: tempDir() } as NodeJS.ProcessEnv
     const exec = async () => {
       throw new Error('systemctl missing')
     }
@@ -161,7 +161,7 @@ describe('installHarness / uninstallHarness', () => {
 
   it('uninstall removes the unit file', async () => {
     const home = tempDir()
-    const env = { LINKINBOX_HOME: tempDir() } as NodeJS.ProcessEnv
+    const env = { ATENTO_HOME: tempDir() } as NodeJS.ProcessEnv
     await installHarness({ env, platform: 'linux', homeDir: home, register: false, exec: neverExec })
     const unitPath = join(home, '.config', 'systemd', 'user', SYSTEMD_UNIT)
     expect(existsSync(unitPath)).toBe(true)
@@ -175,7 +175,7 @@ describe('installHarness / uninstallHarness', () => {
 
   it('uninstall reloads systemd only after the unit file is gone', async () => {
     const home = tempDir()
-    const env = { LINKINBOX_HOME: tempDir() } as NodeJS.ProcessEnv
+    const env = { ATENTO_HOME: tempDir() } as NodeJS.ProcessEnv
     await installHarness({ env, platform: 'linux', homeDir: home, register: false, exec: neverExec })
     const unitPath = join(home, '.config', 'systemd', 'user', SYSTEMD_UNIT)
     const filePresentAtReload: boolean[] = []
@@ -218,14 +218,14 @@ describe('runNotification', () => {
 
   it('formats "N enriched, M need login" with the ui url', () => {
     const n = runNotification(record(), 'http://127.0.0.1:4173')
-    expect(n.title).toBe('linkinbox run finished')
+    expect(n.title).toBe('atento run finished')
     expect(n.body).toBe('23 enriched, 4 need login — action needed')
     expect(n.url).toBe('http://127.0.0.1:4173')
   })
 
   it('formats failures', () => {
     const n = runNotification(record({ error: 'boom' }))
-    expect(n.title).toBe('linkinbox run failed')
+    expect(n.title).toBe('atento run failed')
     expect(n.body).toBe('boom')
   })
 })

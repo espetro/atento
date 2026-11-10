@@ -1,7 +1,7 @@
 /**
  * harness.toml — the harness's own optional config, kept separate from
- * config.toml (which the app layer owns). Lives in the linkinbox config
- * dir next to config.toml, so LINKINBOX_HOME / LINKINBOX_CONFIG_DIR apply.
+ * config.toml (which the app layer owns). Lives in the atento config
+ * dir next to config.toml, so ATENTO_HOME / ATENTO_CONFIG_DIR apply.
  *
  *   schedule = "0 6 * * *"     # cron expression; each tick calls app.run
  *   on_ingest = true           # debounced run after ingest jobs complete
@@ -15,7 +15,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse as parseToml } from 'smol-toml'
-import { configDir, expandHome, type AppConfig } from '@linkinbox/app'
+import { configDir, expandHome, type AppConfig } from '@atento/app'
 
 export const DEFAULT_INGEST_POLL_MS = 1000
 export const DEFAULT_INGEST_DEBOUNCE_MS = 2000

@@ -1,9 +1,9 @@
 {
-  "name": "@linkinbox/extension",
+  "name": "@atento/extension",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "linkinbox browser extension: capture links and page content from the user's own logged-in session",
+  "description": "atento browser extension: capture links and page content from the user's own logged-in session",
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "vitest run",

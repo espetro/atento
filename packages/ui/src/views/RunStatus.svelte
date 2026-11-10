@@ -101,7 +101,7 @@
     // Bridge banner: Attention shows "last run finished — N links need you"
     // when arriving from the run view.
     try {
-      sessionStorage.setItem('linkinbox:attention-from-run', '1')
+      sessionStorage.setItem('atento:attention-from-run', '1')
     } catch {
       /* storage unavailable — banner simply won't show */
     }
@@ -276,8 +276,8 @@
               <span class="meta">{count === 1 ? m.count_links_one({ count }) : m.count_links_other({ count })}</span>
               {#if c === 'needs_login'}
                 {#each loginHosts.slice(0, 3) as h (h.host)}
-                  <code class="mono meta">linkinbox login {h.host}</code>
-                  <CopyButton text={`linkinbox login ${h.host}`} label={m.action_copy()} />
+                  <code class="mono meta">atento login {h.host}</code>
+                  <CopyButton text={`atento login ${h.host}`} label={m.action_copy()} />
                 {/each}
               {/if}
               <button type="button" class="btn btn-sm btn-ghost" onclick={() => attentionLink(c)}>

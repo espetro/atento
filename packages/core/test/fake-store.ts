@@ -41,7 +41,7 @@ import {
 
 /**
  * In-memory Store used by the core tests. The core package cannot depend on
- * @linkinbox/db (the dependency points the other way), so the pipeline tests
+ * @atento/db (the dependency points the other way), so the pipeline tests
  * run against this fake. The db package proves the same behaviour against
  * real SQLite.
  */

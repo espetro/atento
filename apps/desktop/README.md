@@ -1,9 +1,9 @@
-# @linkinbox/desktop
+# @atento/desktop
 
-Electrobun desktop shell for linkinbox (Workstream B1 of
+Electrobun desktop shell for atento (Workstream B1 of
 `.agents/plans/2026-11-07-ui-rework-design.md`).
 
-The window loads the running linkinbox server — `linkinbox serve` on
+The window loads the running atento server — `atento serve` on
 `:4173` serves the built `packages/ui/dist` plus the API — and the UI
 detects the shell to render real native preview webviews
 (`<electrobun-webview>`, WKWebView on macOS) in the preview slot instead of
@@ -13,8 +13,8 @@ the reader/snapshot fallback.
 
 ```bash
 # 1. serve the UI + API (from the repo root)
-pnpm --filter @linkinbox/ui build
-pnpm --filter @linkinbox/harness build
+pnpm --filter @atento/ui build
+pnpm --filter @atento/harness build
 node apps/harness/dist/bin.js start   # binds :4173 by default
 
 # 2. launch the shell
@@ -27,13 +27,13 @@ hutch run build       # stable build -> build/
 
 Env vars (read by `src/bun/index.ts`):
 
-- `LINKINBOX_URL` — page to load. Default `http://localhost:4173`.
+- `ATENTO_URL` — page to load. Default `http://localhost:4173`.
   Point it at the vite dev server (`http://localhost:5173`) while
   iterating on `packages/ui`.
-- `LINKINBOX_SELFTEST` — `partition-set` | `partition-check` | `dom-probe`:
+- `ATENTO_SELFTEST` — `partition-set` | `partition-check` | `dom-probe`:
   cookie persistence and DOM/pool probes (below). Leave unset for normal use.
-- `LINKINBOX_SELFTEST_PORT` — collector port for the probe (default 4799).
-- `LINKINBOX_PROBE_SELECT2` — with `dom-probe`, switches the selection to a
+- `ATENTO_SELFTEST_PORT` — collector port for the probe (default 4799).
+- `ATENTO_PROBE_SELECT2` — with `dom-probe`, switches the selection to a
   second link id mid-run to verify the pool keeps one webview per host.
 
 This package is a pnpm workspace member but is intentionally **not** part
@@ -51,7 +51,7 @@ managed by `hutch install` (bun-style `hutch.lock`), not pnpm scripts.
   fallback exactly as before.
 - `showNativePreview(container, url)` keeps a `Map<host, element>` pool
   (LRU cap 8). Each `<electrobun-webview>` gets
-  `sandbox` + `partition="persist:linkinbox-<host>"` **before** being
+  `sandbox` + `partition="persist:atento-<host>"` **before** being
   appended (both are creation-only attributes).
 - All pool entries stay mounted inside the preview slot's container,
   stacked; only the selected host's view is visible (`toggleHidden`).
@@ -70,18 +70,18 @@ managed by `hutch install` (bun-style `hutch.lock`), not pnpm scripts.
 
 ```bash
 cd apps/desktop
-LINKINBOX_SELFTEST=partition-set hutch run dev     # sets ckP/ckE/ckD, quits
-LINKINBOX_SELFTEST=partition-check hutch run dev   # after restart: reads them
+ATENTO_SELFTEST=partition-set hutch run dev     # sets ckP/ckE/ckD, quits
+ATENTO_SELFTEST=partition-check hutch run dev   # after restart: reads them
 ```
 
 Expected: `persist:` and default partitions keep their cookies; the
 ephemeral partition shows `(none)`. Full write-up:
-`/tmp/linkinbox-desktop-partitions.md` (session artifact; key facts are
+`/tmp/atento-desktop-partitions.md` (session artifact; key facts are
 also in `src/bun/index.ts` comments and `packages/ui/src/lib/desktop.ts`).
 
 `dom-probe` beacons the live `<electrobun-webview>` elements (count,
 partition, sandbox, src, rect) to the collector; with
-`LINKINBOX_PROBE_SELECT2=<id>` it also switches selection mid-run and
+`ATENTO_PROBE_SELECT2=<id>` it also switches selection mid-run and
 expects `dom-probe-count: 2` with one element per host.
 
 ## Known limitations
@@ -101,12 +101,12 @@ expects `dom-probe-count: 2` with one element per host.
 - App icons live in `icon.iconset/` (macOS) and `icon.png` (Linux/Windows),
   declared in `electrobun.config.ts`. They were generated from the UI logo;
   replace them when a real brand icon exists.
-- No bundled-API mode in dev: the window loads `LINKINBOX_URL`. The
+- No bundled-API mode in dev: the window loads `ATENTO_URL`. The
   **packaged** app is self-contained — `scripts/package.sh` builds a
   sidecar server (`Contents/Resources/server`: a Node 26 binary, a
-  `pnpm deploy --prod` of `@linkinbox/cli`, `server-entry.mjs` and the
+  `pnpm deploy --prod` of `@atento/cli`, `server-entry.mjs` and the
   built UI) which the shell spawns on 127.0.0.1 (ports 4173–4175) when
-  `LINKINBOX_URL` is unset. The sidecar exists because better-sqlite3
+  `ATENTO_URL` is unset. The sidecar exists because better-sqlite3
   cannot run under the Bun runtime hosting the main process.
 - Killing the app ungracefully can lose recently-set cookies (normal
   WKWebView flush behavior).

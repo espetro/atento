@@ -13,14 +13,14 @@ import {
   StreamableHTTPClientTransport,
 } from '@modelcontextprotocol/client'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
-import { openStore } from '@linkinbox/db'
+import { openStore } from '@atento/db'
 import { createMcpHttpHandler, createMcpServer } from '../src/index.js'
 import { createTestDeps, insertLink, callJson } from './helpers.js'
 
 const MCP_URL = 'http://localhost/mcp'
 
 async function createHttpHarness() {
-  const dir = mkdtempSync(join(tmpdir(), 'linkinbox-mcp-http-'))
+  const dir = mkdtempSync(join(tmpdir(), 'atento-mcp-http-'))
   const store = await openStore({ path: join(dir, 'links.db') })
   const { deps } = createTestDeps(store)
   const handler = createMcpHttpHandler(deps)
@@ -97,7 +97,7 @@ describe('mcp streamable http', () => {
 
 describe('mcp stdio (serveStdio)', () => {
   it('lists tools and runs links_get through the real stdio entry path', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'linkinbox-mcp-stdio-'))
+    const dir = mkdtempSync(join(tmpdir(), 'atento-mcp-stdio-'))
     const store = await openStore({ path: join(dir, 'links.db') })
     const { deps } = createTestDeps(store)
     // serveStdio owns the transport; hand it one end of an in-memory pair

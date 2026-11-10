@@ -2,15 +2,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openStore, type SqliteStore } from '@linkinbox/db'
-import { DEFAULT_SERVER_CONFIG } from '@linkinbox/core'
+import { openStore, type SqliteStore } from '@atento/db'
+import { DEFAULT_SERVER_CONFIG } from '@atento/core'
 import { createApp } from '../src/index.js'
 
 let store: SqliteStore
 let dir: string
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'linkinbox-auth-'))
+  dir = mkdtempSync(join(tmpdir(), 'atento-auth-'))
   store = await openStore({ path: join(dir, 'test.db') })
 })
 
@@ -19,7 +19,7 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-const TOKEN_ENV = { LINKINBOX_SERVER_TOKEN: 'sekret-token' }
+const TOKEN_ENV = { ATENTO_SERVER_TOKEN: 'sekret-token' }
 
 function nonLoopbackApp(env: NodeJS.ProcessEnv = TOKEN_ENV) {
   return createApp(store, {
@@ -87,8 +87,8 @@ describe('auth: non-loopback bind', () => {
   it('honours a custom [server] token_env name', async () => {
     const app = createApp(store, {
       hostname: '0.0.0.0',
-      env: { MY_LINKINBOX_TOKEN: 'custom' },
-      server: { tokenEnv: 'MY_LINKINBOX_TOKEN' },
+      env: { MY_ATENTO_TOKEN: 'custom' },
+      server: { tokenEnv: 'MY_ATENTO_TOKEN' },
     })
     expect((await app.request('/api/links')).status).toBe(401)
     const res = await app.request('/api/links', {

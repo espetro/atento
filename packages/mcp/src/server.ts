@@ -72,7 +72,7 @@ function registerTool(server: McpServer, deps: McpDeps, tool: ToolDef): void {
 
 export function createMcpServer(deps: McpDeps): McpServer {
   const server = new McpServer(
-    { name: 'linkinbox', version: '0.1.0' },
+    { name: 'atento', version: '0.1.0' },
     { capabilities: { tools: {} } },
   )
   registerToolDefs(server, deps)

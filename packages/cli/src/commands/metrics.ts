@@ -5,7 +5,7 @@ import type { Command } from 'commander'
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import type { MetricsSummary } from '@linkinbox/app'
+import type { MetricsSummary } from '@atento/app'
 import type { CliContext } from '../context.js'
 import { formatNumber, formatUsd, renderTable } from '../render.js'
 
@@ -141,16 +141,16 @@ async function loadEvalModule(runnerPath?: string): Promise<EvalModule> {
 
 export interface ServeOptions {
   /**
-   * Bind hostname. Default `LINKINBOX_HOST` from the env, then 127.0.0.1.
+   * Bind hostname. Default `ATENTO_HOST` from the env, then 127.0.0.1.
    * Loopback binds serve the api/ui without auth; any other bind requires
    * the `[server] token_env` bearer token on /api/*, /mcp and /openapi.json.
    */
   hostname?: string
-  /** Env for LINKINBOX_HOST/PORT and the server token lookup. Default process.env. */
+  /** Env for ATENTO_HOST/PORT and the server token lookup. Default process.env. */
   env?: NodeJS.ProcessEnv
 }
 
-/** serve: hands over to @linkinbox/server, which serves api, mcp and ui on one port. */
+/** serve: hands over to @atento/server, which serves api, mcp and ui on one port. */
 export async function runServe(
   ctx: CliContext,
   port?: number,
@@ -160,27 +160,27 @@ export async function runServe(
 ): Promise<boolean> {
   let mod: { startServer?: (opts: unknown) => Promise<unknown> } | null = null
   try {
-    // Indirected so @linkinbox/server stays optional at build time.
-    const specifier = '@linkinbox/server'
+    // Indirected so @atento/server stays optional at build time.
+    const specifier = '@atento/server'
     mod = (await import(specifier)) as { startServer?: (opts: unknown) => Promise<unknown> }
   } catch {
     mod = null
   }
   if (!mod || typeof mod.startServer !== 'function') {
-    console.log('server not available: @linkinbox/server is not installed')
+    console.log('server not available: @atento/server is not installed')
     return false
   }
   const env = options.env ?? process.env
-  const envPort = Number(env['LINKINBOX_PORT'] ?? '')
+  const envPort = Number(env['ATENTO_PORT'] ?? '')
   const effective = port ?? (Number.isFinite(envPort) && envPort > 0 ? envPort : 4173)
-  const hostname = options.hostname ?? env['LINKINBOX_HOST'] ?? '127.0.0.1'
+  const hostname = options.hostname ?? env['ATENTO_HOST'] ?? '127.0.0.1'
 
-  // Mount /mcp (streamable HTTP) when @linkinbox/mcp is installed and the
+  // Mount /mcp (streamable HTTP) when @atento/mcp is installed and the
   // context carries a live app — the extract/enrich/browse adapters the
   // tools call. Optional like the server package itself.
   let mcpFetch: ((request: Request) => Promise<Response>) | undefined
   try {
-    const mcp = await import('@linkinbox/mcp')
+    const mcp = await import('@atento/mcp')
     const app = ctx.app as CliContext['app'] | undefined
     if (
       app !== undefined &&
@@ -191,7 +191,7 @@ export async function runServe(
       mcpFetch = (request) => handler.fetch(request)
     }
   } catch {
-    // @linkinbox/mcp not installed: serve the api/ui without /mcp.
+    // @atento/mcp not installed: serve the api/ui without /mcp.
   }
 
   console.log(`serving on http://${hostname}:${effective}`)
@@ -243,7 +243,7 @@ export function registerReportingCommands(
 
   program
     .command('serve')
-    .description('serve the web ui (requires @linkinbox/server)')
+    .description('serve the web ui (requires @atento/server)')
     .option('--port <port>', 'port to listen on', Number)
     .action(async (opts: { port?: number }) => {
       const ctx = await deps.ctx()

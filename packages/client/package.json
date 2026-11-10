@@ -1,9 +1,9 @@
 {
-  "name": "@linkinbox/client",
+  "name": "@atento/client",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "typed fetch client generated from the linkinbox OpenAPI document (packages/server /openapi.json)",
+  "description": "typed fetch client generated from the atento OpenAPI document (packages/server /openapi.json)",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -25,8 +25,8 @@
     "openapi-fetch": "0.17.0"
   },
   "devDependencies": {
-    "@linkinbox/db": "workspace:*",
-    "@linkinbox/server": "workspace:*",
+    "@atento/db": "workspace:*",
+    "@atento/server": "workspace:*",
     "@types/node": "^24.19.2",
     "openapi-typescript": "7.13.0",
     "typescript": "^5.9.3",

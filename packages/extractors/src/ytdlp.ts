@@ -87,7 +87,7 @@ export function createYtdlpExtractor(options: YtdlpExtractorOptions = {}): Extra
     name: "ytdlp",
     async extract(url: string): Promise<ExtractResult> {
       const workDir =
-        options.workDir ?? (await mkdtemp(join(tmpdir(), "linkinbox-ytdlp-")));
+        options.workDir ?? (await mkdtemp(join(tmpdir(), "atento-ytdlp-")));
       const args = [
         "--write-auto-sub",
         "--write-sub",

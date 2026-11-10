@@ -32,20 +32,20 @@ import {
   type LoginConfig,
   type PacingConfig,
   type Store,
-} from '@linkinbox/core'
+} from '@atento/core'
 import {
   browserAdapterReaders,
   createBrowserRegistry,
   type BrowserRegistry,
-} from '@linkinbox/browser'
+} from '@atento/browser'
 import {
   createBrowserExtractor,
   createRouter,
   type Extractor,
   type ExtractResult,
   type RouterOptions,
-} from '@linkinbox/extractors'
-import type { ExtractFn } from '@linkinbox/core'
+} from '@atento/extractors'
+import type { ExtractFn } from '@atento/core'
 
 export interface RouterExtractOptions extends RouterOptions {
   /** Directory holding browser login profiles. */

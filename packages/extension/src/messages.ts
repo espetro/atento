@@ -6,4 +6,4 @@
  */
 
 /** The message the content script sends after extracting the page. */
-export const EXTRACT_MESSAGE = 'linkinbox:extracted'
+export const EXTRACT_MESSAGE = 'atento:extracted'

@@ -1,4 +1,4 @@
-import type { Enrichment } from '@linkinbox/core'
+import type { Enrichment } from '@atento/core'
 import type { EnrichFn } from './run.js'
 
 /**

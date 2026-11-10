@@ -17,19 +17,19 @@ import {
   type BrowserAdapterConfig,
   type BrowserConfig,
   type BrowserRole,
-} from '@linkinbox/core'
+} from '@atento/core'
 import type {
   BrowserCaps,
   BrowserHealth,
   PageReaderPort,
   SessionLoginPort,
-} from '@linkinbox/core'
+} from '@atento/core'
 import { createAgentBrowserAdapter, type AgentBrowserAdapterOptions } from './agent-browser.js'
 import { createPatchrightAdapter, type PatchrightAdapterOptions } from './patchright.js'
 import { createCdpAttachAdapter, type CdpAttachAdapterOptions } from './cdp-attach.js'
 import { createExternalAdapter, type ExternalAdapterOptions } from './external.js'
-import type { ExecLike } from '@linkinbox/extractors'
-import type { PatchrightLaunch } from '@linkinbox/extractors'
+import type { ExecLike } from '@atento/extractors'
+import type { PatchrightLaunch } from '@atento/extractors'
 import type { CdpConnect } from './cdp-attach.js'
 
 /** One built adapter instance. */
@@ -44,7 +44,7 @@ export interface BrowserAdapterInstance {
   health?(): Promise<BrowserHealth>
 }
 
-/** What `linkinbox browsers` prints per adapter. */
+/** What `atento browsers` prints per adapter. */
 export interface BrowserAdapterListing {
   id: string
   kind: BrowserAdapterConfig['kind']
@@ -269,7 +269,7 @@ export function createBrowserRegistry(
 
 function defaultProfilesDir(): string {
   const home = process.env['HOME'] ?? ''
-  return `${home}/.linkinbox/profiles`
+  return `${home}/.atento/profiles`
 }
 
 // Re-exported so callers can type adapter options without deep imports.

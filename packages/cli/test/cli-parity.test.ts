@@ -10,7 +10,7 @@
  *   prune  - hard delete with an interactive confirmation; stays CLI-only
  */
 import { describe, expect, it } from 'vitest'
-import { TOOL_NAME_MAP } from '@linkinbox/mcp'
+import { TOOL_NAME_MAP } from '@atento/mcp'
 import { createProgram } from '../src/index.js'
 
 /** CLI commands with no MCP tool, and why. */

@@ -1,6 +1,6 @@
 /**
  * Serve-path integration tests: `runServe` is the real composition root the
- * `linkinbox serve` command uses. These drive the started server over a real
+ * `atento serve` command uses. These drive the started server over a real
  * socket — /mcp must answer streamable-HTTP tools/list, and a custom
  * `[server] token_env` must be enforced when the bind is non-loopback.
  */
@@ -14,7 +14,7 @@ import { createContext, type CliContext } from '../src/context.js'
 import { runServe } from '../src/commands/metrics.js'
 import { loadConfig } from '../src/config.js'
 import { tempDb, unlimitedLimits, type TempDb } from './helpers.js'
-import type { EnrichFn, ExtractFn } from '@linkinbox/core'
+import type { EnrichFn, ExtractFn } from '@atento/core'
 
 const mockExtract: ExtractFn = async (url) => ({
   markdown: `# ${url}\n\nbody text`,
@@ -43,12 +43,12 @@ interface Started {
   close(): Promise<void>
 }
 
-/** Build a real CLI context (live Linkinbox app) on a temp database. */
+/** Build a real CLI context (live Atento app) on a temp database. */
 async function serveCtx(
   db: TempDb,
-  tokenEnv = 'LINKINBOX_SERVER_TOKEN',
+  tokenEnv = 'ATENTO_SERVER_TOKEN',
 ): Promise<CliContext> {
-  const base = loadConfig({ LINKINBOX_DB: db.path })
+  const base = loadConfig({ ATENTO_DB: db.path })
   const config = {
     ...base,
     limits: unlimitedLimits(),
@@ -106,12 +106,12 @@ describe('runServe: real serve path', () => {
 
   it('enforces a custom [server] token_env on a non-loopback bind', async () => {
     const db = await tempDb()
-    const ctx = await serveCtx(db, 'LINKINBOX_TEST_TOKEN')
+    const ctx = await serveCtx(db, 'ATENTO_TEST_TOKEN')
     let started: Started | undefined
     try {
       started = await startServer(ctx, {
         hostname: '0.0.0.0',
-        env: { LINKINBOX_TEST_TOKEN: 'tok-serve-1' },
+        env: { ATENTO_TEST_TOKEN: 'tok-serve-1' },
       })
       const base = `http://127.0.0.1:${started.port}`
 

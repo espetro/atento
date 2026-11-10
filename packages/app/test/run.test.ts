@@ -8,19 +8,19 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  createLinkinboxOps,
+  createAtentoOps,
   loadConfig,
   type AppConfig,
   type EnrichFn,
   type ExtractFn,
 } from '../src/index.js'
-import { openStore, type SqliteStore } from '@linkinbox/db'
+import { openStore, type SqliteStore } from '@atento/db'
 
 const dirs: string[] = []
 const stores: SqliteStore[] = []
 
 function tempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'linkinbox-run-'))
+  const dir = mkdtempSync(join(tmpdir(), 'atento-run-'))
   dirs.push(dir)
   return dir
 }
@@ -28,8 +28,8 @@ function tempDir(): string {
 async function opsFor(dir: string, sources: string[] = []) {
   const store = await openStore({ path: join(dir, 'links.db') })
   stores.push(store)
-  const config = loadConfig({ LINKINBOX_HOME: dir } as NodeJS.ProcessEnv) as AppConfig
-  const ops = createLinkinboxOps({ ...config, sources }, {
+  const config = loadConfig({ ATENTO_HOME: dir } as NodeJS.ProcessEnv) as AppConfig
+  const ops = createAtentoOps({ ...config, sources }, {
     store,
     env: {},
     spoolDir: join(dir, 'spool'),

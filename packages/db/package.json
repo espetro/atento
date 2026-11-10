@@ -1,5 +1,5 @@
 {
-  "name": "@linkinbox/db",
+  "name": "@atento/db",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,10 +17,10 @@
     "typecheck": "tsc -p tsconfig.test.json"
   },
   "dependencies": {
-    "@linkinbox/core": "workspace:*",
+    "@atento/core": "workspace:*",
     "better-sqlite3": "^12.4.1",
     "drizzle-orm": "^0.45.1",
-    "@linkinbox/importers": "workspace:*"
+    "@atento/importers": "workspace:*"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

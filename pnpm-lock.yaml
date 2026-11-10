@@ -184,19 +184,19 @@ importers:
       '@hono/node-server':
         specifier: ^1.14.0
         version: 1.19.17(hono@4.13.14)
-      '@linkinbox/app':
+      '@atento/app':
         specifier: workspace:*
         version: link:../../packages/app
-      '@linkinbox/core':
+      '@atento/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@linkinbox/db':
+      '@atento/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@linkinbox/mcp':
+      '@atento/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
-      '@linkinbox/server':
+      '@atento/server':
         specifier: workspace:*
         version: link:../../packages/server
       commander:
@@ -224,13 +224,13 @@ importers:
 
   evals:
     dependencies:
-      '@linkinbox/core':
+      '@atento/core':
         specifier: workspace:*
         version: link:../packages/core
-      '@linkinbox/enrich':
+      '@atento/enrich':
         specifier: workspace:*
         version: link:../packages/enrich
-      '@linkinbox/extractors':
+      '@atento/extractors':
         specifier: workspace:*
         version: link:../packages/extractors
     devDependencies:
@@ -246,25 +246,25 @@ importers:
 
   packages/app:
     dependencies:
-      '@linkinbox/browser':
+      '@atento/browser':
         specifier: workspace:*
         version: link:../browser
-      '@linkinbox/core':
+      '@atento/core':
         specifier: workspace:*
         version: link:../core
-      '@linkinbox/db':
+      '@atento/db':
         specifier: workspace:*
         version: link:../db
-      '@linkinbox/enrich':
+      '@atento/enrich':
         specifier: workspace:*
         version: link:../enrich
-      '@linkinbox/extractors':
+      '@atento/extractors':
         specifier: workspace:*
         version: link:../extractors
-      '@linkinbox/importers':
+      '@atento/importers':
         specifier: workspace:*
         version: link:../importers
-      '@linkinbox/media':
+      '@atento/media':
         specifier: workspace:*
         version: link:../media
       http-cache-semantics:
@@ -292,10 +292,10 @@ importers:
 
   packages/browser:
     dependencies:
-      '@linkinbox/core':
+      '@atento/core':
         specifier: workspace:*
         version: link:../core
-      '@linkinbox/extractors':
+      '@atento/extractors':
         specifier: workspace:*
         version: link:../extractors
       patchright:
@@ -314,28 +314,28 @@ importers:
 
   packages/cli:
     dependencies:
-      '@linkinbox/app':
+      '@atento/app':
         specifier: workspace:*
         version: link:../app
-      '@linkinbox/browser':
+      '@atento/browser':
         specifier: workspace:*
         version: link:../browser
-      '@linkinbox/core':
+      '@atento/core':
         specifier: workspace:*
         version: link:../core
-      '@linkinbox/db':
+      '@atento/db':
         specifier: workspace:*
         version: link:../db
-      '@linkinbox/extractors':
+      '@atento/extractors':
         specifier: workspace:*
         version: link:../extractors
-      '@linkinbox/mcp':
+      '@atento/mcp':
         specifier: workspace:*
         version: link:../mcp
-      '@linkinbox/media':
+      '@atento/media':
         specifier: workspace:*
         version: link:../media
-      '@linkinbox/server':
+      '@atento/server':
         specifier: workspace:*
         version: link:../server
       commander:
@@ -361,10 +361,10 @@ importers:
         specifier: 0.17.0
         version: 0.17.0
     devDependencies:
-      '@linkinbox/db':
+      '@atento/db':
         specifier: workspace:*
         version: link:../db
-      '@linkinbox/server':
+      '@atento/server':
         specifier: workspace:*
         version: link:../server
       '@types/node':
@@ -407,10 +407,10 @@ importers:
 
   packages/db:
     dependencies:
-      '@linkinbox/core':
+      '@atento/core':
         specifier: workspace:*
         version: link:../core
-      '@linkinbox/importers':
+      '@atento/importers':
         specifier: workspace:*
         version: link:../importers
       better-sqlite3:
@@ -444,7 +444,7 @@ importers:
       '@ai-sdk/provider':
         specifier: 3.0.19
         version: 3.0.19
-      '@linkinbox/core':
+      '@atento/core':
         specifier: workspace:*
         version: link:../core
       ai:
@@ -515,7 +515,7 @@ importers:
 
   packages/importers:
     dependencies:
-      '@linkinbox/core':
+      '@atento/core':
         specifier: workspace:*
         version: link:../core
       plist:
@@ -534,7 +534,7 @@ importers:
 
   packages/mcp:
     dependencies:
-      '@linkinbox/app':
+      '@atento/app':
         specifier: workspace:*
         version: link:../app
       '@modelcontextprotocol/hono':
@@ -547,10 +547,10 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
-      '@linkinbox/core':
+      '@atento/core':
         specifier: workspace:*
         version: link:../core
-      '@linkinbox/db':
+      '@atento/db':
         specifier: workspace:*
         version: link:../db
       '@modelcontextprotocol/client':
@@ -568,7 +568,7 @@ importers:
 
   packages/media:
     dependencies:
-      '@linkinbox/core':
+      '@atento/core':
         specifier: workspace:*
         version: link:../core
       zod:
@@ -590,10 +590,10 @@ importers:
       '@hono/node-server':
         specifier: ^1.14.0
         version: 1.19.17(hono@4.13.14)
-      '@linkinbox/app':
+      '@atento/app':
         specifier: workspace:*
         version: link:../app
-      '@linkinbox/core':
+      '@atento/core':
         specifier: workspace:*
         version: link:../core
       hono:
@@ -606,7 +606,7 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
-      '@linkinbox/db':
+      '@atento/db':
         specifier: workspace:*
         version: link:../db
       '@types/node':

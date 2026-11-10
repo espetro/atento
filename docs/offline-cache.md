@@ -4,7 +4,7 @@ Goal: favicons and the last render of every link keep showing with no network.
 
 ## Decision: filesystem blobs, metadata stays in SQLite
 
-Stored under the config dir (`~/.linkinbox`), next to `links.db`:
+Stored under the config dir (`~/.atento`), next to `links.db`:
 
 - `favicons/<host>.bin` + `<host>.json` (content type, fetchedAt), `<host>.none` negative cache.
 - `pages/<sha1(url)>.html`: last good render, scripts/handlers/iframes stripped, `<base>` pinned to the final URL.
@@ -33,7 +33,7 @@ An object store only pays off with multi-device sync or a remote/headless deploy
 
 Opening a link while online calls `POST /api/links/:id/snapshot`. The server queues one capture at a time and skips links with a snapshot younger than 7 days.
 
-Order: single-file-cli driving the installed Chrome (`LINKINBOX_CHROME` overrides the path), then monolith (`LINKINBOX_MONOLITH`, or next to the node binary), then the sanitized extract HTML saved at extract time.
+Order: single-file-cli driving the installed Chrome (`ATENTO_CHROME` overrides the path), then monolith (`ATENTO_MONOLITH`, or next to the node binary), then the sanitized extract HTML saved at extract time.
 
 The result is `pages/<sha1(url)>.snap.html`, one file with CSS, images and fonts inlined. Scripts are removed, so animations that need JS and interactivity are not preserved. Pages that need a login are captured as logged out. The render route serves it under a strict CSP with `sandbox`.
 

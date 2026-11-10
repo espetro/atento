@@ -19,9 +19,9 @@ let dirs: string[] = []
 let children: ChildProcess[] = []
 
 function tempEnv(): { env: NodeJS.ProcessEnv; dir: string } {
-  const dir = mkdtempSync(join(tmpdir(), 'linkinbox-harness-life-'))
+  const dir = mkdtempSync(join(tmpdir(), 'atento-harness-life-'))
   dirs.push(dir)
-  return { env: { LINKINBOX_HOME: dir } as NodeJS.ProcessEnv, dir }
+  return { env: { ATENTO_HOME: dir } as NodeJS.ProcessEnv, dir }
 }
 
 function pidPathFor(env: NodeJS.ProcessEnv): string {
@@ -30,7 +30,7 @@ function pidPathFor(env: NodeJS.ProcessEnv): string {
 
 /** ps exec that always reports a harness-looking command line. */
 const harnessPs: PsExecFn = async () => ({
-  stdout: 'node /repo/linkinbox/apps/harness/dist/bin.js start\n',
+  stdout: 'node /repo/atento/apps/harness/dist/bin.js start\n',
 })
 
 /** ps exec that reports a foreign process. */
@@ -63,22 +63,22 @@ describe('pidfile', () => {
     expect(harnessStatus(env)).toEqual({ running: false })
   })
 
-  it('writes and reads a pidfile under LINKINBOX_HOME', () => {
+  it('writes and reads a pidfile under ATENTO_HOME', () => {
     const { env, dir } = tempEnv()
     const path = pidPathFor(env)
-    expect(path).toBe(join(dir, '.linkinbox', 'harness.pid'))
+    expect(path).toBe(join(dir, '.atento', 'harness.pid'))
     writePidFile(path, {
       pid: process.pid,
       startedAt: '2026-01-01T00:00:00Z',
       port: 4173,
       url: 'http://127.0.0.1:4173',
-      command: '/repo/linkinbox/apps/harness/dist/bin.js start',
+      command: '/repo/atento/apps/harness/dist/bin.js start',
     })
     const info = readPidFile(path)
     expect(info?.pid).toBe(process.pid)
     expect(info?.port).toBe(4173)
     expect(info?.url).toBe('http://127.0.0.1:4173')
-    expect(info?.command).toBe('/repo/linkinbox/apps/harness/dist/bin.js start')
+    expect(info?.command).toBe('/repo/atento/apps/harness/dist/bin.js start')
     expect(existsSync(path)).toBe(true)
   })
 
@@ -121,9 +121,9 @@ describe('isPidAlive', () => {
 
 describe('isHarnessCommand', () => {
   it('matches the workspace bin path and the installed bin name', () => {
-    expect(isHarnessCommand('node /repo/linkinbox/apps/harness/dist/bin.js start')).toBe(true)
-    expect(isHarnessCommand('/opt/homebrew/bin/linkinbox-harness start')).toBe(true)
-    expect(isHarnessCommand('node /x/node_modules/@linkinbox/harness/dist/bin.js start')).toBe(true)
+    expect(isHarnessCommand('node /repo/atento/apps/harness/dist/bin.js start')).toBe(true)
+    expect(isHarnessCommand('/opt/homebrew/bin/atento-harness start')).toBe(true)
+    expect(isHarnessCommand('node /x/node_modules/@atento/harness/dist/bin.js start')).toBe(true)
   })
 
   it('rejects foreign commands', () => {
@@ -139,7 +139,7 @@ describe('verifyHarnessPid', () => {
     const child = spawnSleeper()
     const pid = child.pid!
     const ok = await verifyHarnessPid(
-      { pid, command: '/repo/linkinbox/apps/harness/dist/bin.js start' },
+      { pid, command: '/repo/atento/apps/harness/dist/bin.js start' },
       harnessPs,
     )
     expect(ok).toBe(true)
@@ -212,7 +212,7 @@ describe('stopHarness', () => {
     writePidFile(path, {
       pid,
       startedAt: '2026-01-01T00:00:00Z',
-      command: '/repo/linkinbox/apps/harness/dist/bin.js start',
+      command: '/repo/atento/apps/harness/dist/bin.js start',
     })
 
     const exited = new Promise<number | null>((resolve) =>

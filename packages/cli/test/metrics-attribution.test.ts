@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ExtractFn } from '@linkinbox/core'
+import type { ExtractFn } from '@atento/core'
 import { capture, tempDb, unlimitedLimits, type TempDb } from './helpers.js'
 import { createContext, type CliContext } from '../src/context.js'
 import { runExtract, runImport } from '../src/commands/pipeline.js'
@@ -17,9 +17,9 @@ const here = dirname(fileURLToPath(import.meta.url))
 const fixtures = join(here, '..', '..', '..', 'fixtures', 'importers')
 
 async function contextFor(db: TempDb): Promise<CliContext> {
-  const base = loadConfig({ LINKINBOX_DB: db.path })
+  const base = loadConfig({ ATENTO_DB: db.path })
   return createContext({
-    env: { LINKINBOX_DB: db.path },
+    env: { ATENTO_DB: db.path },
     store: db.store,
     quiet: true,
     logPath: join(db.dir, 'log.jsonl'),

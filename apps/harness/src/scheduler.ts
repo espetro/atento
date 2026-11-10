@@ -36,8 +36,8 @@
  * that is going away anyway.
  */
 import { Cron } from 'croner'
-import type { IngestJob, RunResult, Store } from '@linkinbox/app'
-import type { IngestJobStatus } from '@linkinbox/core'
+import type { IngestJob, RunResult, Store } from '@atento/app'
+import type { IngestJobStatus } from '@atento/core'
 import type { HarnessConfig } from './config.js'
 import { runNotification, type Notifier } from './notify.js'
 import type { HarnessRunRecord, RunStore, RunTrigger } from './runs.js'
@@ -158,7 +158,7 @@ export class HarnessScheduler {
     }
     if (this.tickInFlight) {
       this.deps.warn?.(
-        `linkinbox-harness: stop timed out after ${timeoutMs}ms with a run still in flight`,
+        `atento-harness: stop timed out after ${timeoutMs}ms with a run still in flight`,
       )
     }
   }

@@ -1,9 +1,9 @@
 {
-  "name": "@linkinbox/extractors",
+  "name": "@atento/extractors",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Content extraction for linkinbox: defuddle primary, readability fallback, browser/ytdlp/pdf subprocess extractors, rule-based router",
+  "description": "Content extraction for atento: defuddle primary, readability fallback, browser/ytdlp/pdf subprocess extractors, rule-based router",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {

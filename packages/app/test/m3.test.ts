@@ -7,20 +7,20 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  createLinkinboxOps,
+  createAtentoOps,
   loadConfig,
   type AppConfig,
   type EnrichFn,
   type ExtractFn,
 } from '../src/index.js'
-import { openStore, type SqliteStore } from '@linkinbox/db'
-import type { Enrichment } from '@linkinbox/core'
+import { openStore, type SqliteStore } from '@atento/db'
+import type { Enrichment } from '@atento/core'
 
 const dirs: string[] = []
 const stores: SqliteStore[] = []
 
 function tempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'linkinbox-m3-'))
+  const dir = mkdtempSync(join(tmpdir(), 'atento-m3-'))
   dirs.push(dir)
   return dir
 }
@@ -28,8 +28,8 @@ function tempDir(): string {
 async function opsFor(dir: string, deps: { extractFn?: ExtractFn; enrichFn?: EnrichFn } = {}) {
   const store = await openStore({ path: join(dir, 'links.db') })
   stores.push(store)
-  const config = loadConfig({ LINKINBOX_HOME: dir } as NodeJS.ProcessEnv) as AppConfig
-  const ops = createLinkinboxOps(config, {
+  const config = loadConfig({ ATENTO_HOME: dir } as NodeJS.ProcessEnv) as AppConfig
+  const ops = createAtentoOps(config, {
     store,
     env: {},
     spoolDir: join(dir, 'spool'),
@@ -107,7 +107,7 @@ describe('readArtifact', () => {
   it('serves files under <artifactsDir>/<linkId>/ and refuses traversal', async () => {
     const dir = tempDir()
     const { ops } = await opsFor(dir)
-    const artifactDir = join(dir, '.linkinbox', 'artifacts', '7')
+    const artifactDir = join(dir, '.atento', 'artifacts', '7')
     mkdirSync(artifactDir, { recursive: true })
     writeFileSync(join(artifactDir, 'shot.png'), Buffer.from([1, 2, 3]))
     const hit = await ops.readArtifact(7, 'shot.png')

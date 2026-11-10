@@ -4,14 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openStore } from '../src/index.js'
 import { SqliteStore } from '../src/store.js'
-import type { LinkInput, Enrichment } from '@linkinbox/core'
+import type { LinkInput, Enrichment } from '@atento/core'
 const DAY = 24 * 60 * 60 * 1000
 const NOW = new Date('2026-10-29T12:00:00.000Z')
 
 let dir: string
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'linkinbox-db-'))
+  dir = mkdtempSync(join(tmpdir(), 'atento-db-'))
 })
 
 afterEach(() => {
@@ -244,7 +244,7 @@ describe('SqliteStore', () => {
   })
 
   it('host trial state survives a reopen (restart persistence)', async () => {
-    const { emptyHostState, markFlagged } = await import('@linkinbox/core')
+    const { emptyHostState, markFlagged } = await import('@atento/core')
     const dbPath = join(dir, 'trial.db')
     const store = await openStore({ path: dbPath })
     const now = Date.parse('2026-01-01T00:00:00Z')

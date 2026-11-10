@@ -9,7 +9,7 @@
  *      `since=<cursor>` returns only links changed after it.
  *   3. `collectionExport` — the same data written to
  *      `<exportsDir>/<name>-<cursor>.<ext>`; returns a path plus a
- *      `linkinbox://exports/...` resource_link uri clients read lazily.
+ *      `atento://exports/...` resource_link uri clients read lazily.
  *
  * The cursor is the `link_events.id` high-water mark: monotonic, already
  * written by every FSM transition (and by the INGESTED marker rows the
@@ -27,7 +27,7 @@ import {
   type CollectionName,
   type Link,
   type Store,
-} from '@linkinbox/core'
+} from '@atento/core'
 
 /** Fields a collection row can project. `summary` is derived: the
  * enrichment's why_it_matters truncated to 200 chars. */
@@ -79,7 +79,7 @@ export type CollectionExportFormat = 'jsonl' | 'md' | 'tsv'
 export interface CollectionsSummary {
   total: number
   collections: Record<CollectionName, number>
-  /** One entry per host parked on a login wall, for `linkinbox login`. */
+  /** One entry per host parked on a login wall, for `atento login`. */
   needsLoginHosts: { host: string; count: number }[]
 }
 
@@ -98,7 +98,7 @@ export interface CollectionReadResult {
 export interface CollectionExportResult {
   collection: CollectionName
   path: string
-  /** MCP resource_link uri: linkinbox://exports/<file>. */
+  /** MCP resource_link uri: atento://exports/<file>. */
   uri: string
   count: number
   bytes: number
@@ -375,7 +375,7 @@ export async function collectionExport(
   return {
     collection: name,
     path,
-    uri: `linkinbox://exports/${file}`,
+    uri: `atento://exports/${file}`,
     count: rows.length,
     bytes,
     cursor,

@@ -1,4 +1,4 @@
-// Domain types for the linkinbox pipeline. Pure, no IO.
+// Domain types for the atento pipeline. Pure, no IO.
 
 import type { MediaReport } from './media.js'
 

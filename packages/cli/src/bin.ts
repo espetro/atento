@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * linkinbox CLI entry point. The command bodies live in program.ts; this
+ * atento CLI entry point. The command bodies live in program.ts; this
  * file only wires the process to it.
  */
 import { createProgram } from './program.js'

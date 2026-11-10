@@ -6,7 +6,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core'
-import type { MediaReport } from '@linkinbox/core'
+import type { MediaReport } from '@atento/core'
 
 /**
  * Links table. `urlHash` is the dedupe key (sha256 of the normalized URL)

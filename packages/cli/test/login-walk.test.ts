@@ -1,7 +1,7 @@
 /**
- * Tests for the login walk (`linkinbox login --all`, and the interactive
+ * Tests for the login walk (`atento login --all`, and the interactive
  * bare `login` walk) and the parked requeue backfill
- * (`linkinbox requeue --parked [--host <h>]`).
+ * (`atento requeue --parked [--host <h>]`).
  *
  * Everything is offline: an injected launcher plays the browser login and an
  * injected prompt answers the walk prompts. No network, no real browser.
@@ -18,7 +18,7 @@ import {
 
 async function contextFor(db: TempDb): Promise<CliContext> {
   return createContext({
-    env: { LINKINBOX_DB: db.path },
+    env: { ATENTO_DB: db.path },
     store: db.store,
     quiet: true,
     logPath: join(db.dir, 'log.jsonl'),

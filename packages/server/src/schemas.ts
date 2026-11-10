@@ -7,8 +7,8 @@
  */
 import { z } from 'zod/mini'
 import { resolver, type ResolverReturnType } from 'hono-openapi'
-import { COLLECTION_NAMES } from '@linkinbox/app'
-import { LINK_STATES } from '@linkinbox/core'
+import { COLLECTION_NAMES } from '@atento/app'
+import { LINK_STATES } from '@atento/core'
 
 export const ErrorBody = z.object({
   error: z.string(),

@@ -8,8 +8,8 @@
 import { describe, expect, it } from 'vitest'
 import { createExtractFn } from '../src/extract-fn.js'
 import { unlimitedLimits } from './helpers.js'
-import { parseBrowserConfig } from '@linkinbox/core'
-import type { Extractor, ExtractResult } from '@linkinbox/extractors'
+import { parseBrowserConfig } from '@atento/core'
+import type { Extractor, ExtractResult } from '@atento/extractors'
 
 const ok: ExtractResult = { markdown: 'x'.repeat(500) }
 

@@ -38,15 +38,15 @@ import {
 const EXTRACT_TIMEOUT_MS = 5000
 
 /** The alarm that drains the outbox while the browser is open. */
-const DRAIN_ALARM = 'linkinbox-outbox-drain'
+const DRAIN_ALARM = 'atento-outbox-drain'
 /** chrome.alarms minimum period is 30s; use exactly that. */
 const DRAIN_PERIOD_MINUTES = 0.5
 
 /** Context-menu ids for the bulk scopes. */
-const MENU_ALL_TABS = 'linkinbox-bulk-all-tabs'
-const MENU_WINDOW_TABS = 'linkinbox-bulk-window-tabs'
-const MENU_HIGHLIGHTED = 'linkinbox-bulk-highlighted'
-const MENU_BOOKMARKS = 'linkinbox-bulk-bookmarks'
+const MENU_ALL_TABS = 'atento-bulk-all-tabs'
+const MENU_WINDOW_TABS = 'atento-bulk-window-tabs'
+const MENU_HIGHLIGHTED = 'atento-bulk-highlighted'
+const MENU_BOOKMARKS = 'atento-bulk-bookmarks'
 
 let settings: ServerSettings | undefined
 
@@ -230,22 +230,22 @@ function installMenus(): void {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: MENU_ALL_TABS,
-      title: 'Save all tabs to linkinbox',
+      title: 'Save all tabs to atento',
       contexts: ['action'],
     })
     chrome.contextMenus.create({
       id: MENU_WINDOW_TABS,
-      title: "Save this window's tabs to linkinbox",
+      title: "Save this window's tabs to atento",
       contexts: ['action'],
     })
     chrome.contextMenus.create({
       id: MENU_HIGHLIGHTED,
-      title: 'Save highlighted tabs to linkinbox',
+      title: 'Save highlighted tabs to atento',
       contexts: ['action'],
     })
     chrome.contextMenus.create({
       id: MENU_BOOKMARKS,
-      title: 'Save all bookmarks to linkinbox',
+      title: 'Save all bookmarks to atento',
       contexts: ['action'],
     })
   })
@@ -292,20 +292,20 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 })
 
 // A message API for a future popup/options bulk trigger, outbox control
-// and status. The options page must NOT write 'linkinbox:outbox' directly:
+// and status. The options page must NOT write 'atento:outbox' directly:
 // this worker's outbox holds the items in memory and would resurrect them
 // on the next persist — every mutation goes through the outbox itself.
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const msg = message as { type?: string; scope?: BulkScope }
-  if (msg?.type === 'linkinbox:bulk' && msg.scope !== undefined) {
+  if (msg?.type === 'atento:bulk' && msg.scope !== undefined) {
     void handleBulk(msg.scope).then(sendResponse)
     return true
   }
-  if (msg?.type === 'linkinbox:outbox-clear-dead') {
+  if (msg?.type === 'atento:outbox-clear-dead') {
     void outbox.clearDead().then((dropped) => sendResponse({ dropped }))
     return true
   }
-  if (msg?.type === 'linkinbox:outbox-stats') {
+  if (msg?.type === 'atento:outbox-stats') {
     void outbox.ready.then(() =>
       sendResponse({
         pending: outbox.items().length,

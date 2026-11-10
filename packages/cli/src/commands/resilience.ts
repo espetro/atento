@@ -3,7 +3,7 @@
  * reopen time) and `breaker reset <host>`.
  */
 import type { Command } from 'commander'
-import { LLM_KEY } from '@linkinbox/app'
+import { LLM_KEY } from '@atento/app'
 import type { CliContext } from '../context.js'
 
 /** Hosts to report: every tracked host_state key plus the llm key. */

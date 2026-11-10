@@ -1,6 +1,6 @@
 /**
  * hono API + static ui server. Every route is a thin wrapper over the app
- * layer's use cases (@linkinbox/app): no business logic lives here. The REST
+ * layer's use cases (@atento/app): no business logic lives here. The REST
  * contract mirrors the UI's types and mock layer exactly
  * (packages/ui/src/lib/types.ts, packages/ui/src/mock).
  *
@@ -24,7 +24,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, extname, join, resolve, sep } from 'node:path'
 import {
-  createLinkinboxOps,
+  createAtentoOps,
   isCollectionName,
   serializeCollection,
   tsvWithCursor,
@@ -32,8 +32,8 @@ import {
   DEFAULT_COLLECTION_FIELDS,
   type CollectionExportFormat,
   type CollectionName,
-  type LinkinboxOps,
-} from '@linkinbox/app'
+  type AtentoOps,
+} from '@atento/app'
 import {
   shapeForUi,
   toPipelineRow,
@@ -50,7 +50,7 @@ import {
   LINK_STATES,
   type CaptureConfig,
   type ServerConfig,
-} from '@linkinbox/core'
+} from '@atento/core'
 import type {
   Store,
   Status,
@@ -60,7 +60,7 @@ import type {
   LinkProjection,
   LinkField,
   LinkPatch,
-} from '@linkinbox/core'
+} from '@atento/core'
 import { createEventsResponse } from './events.js'
 import { createPairingService } from './pairing.js'
 import {
@@ -103,26 +103,26 @@ export interface ServerOptions {
   /**
    * The app-layer use cases to drive. When absent they are built from the
    * store plus the ttl below — the same ops the composition root exposes.
-   * `linkinbox serve` passes its createLinkinbox instance here.
+   * `atento serve` passes its createAtento instance here.
    */
-  ops?: LinkinboxOps
+  ops?: AtentoOps
   /** Directory containing the built ui (index.html). Default the repo's ui/dist. */
   uiDist?: string
   port?: number
   ttl?: TtlConfig
   hostname?: string
-  /** Capture endpoint config. Default: token from LINKINBOX_CAPTURE_TOKEN. */
+  /** Capture endpoint config. Default: token from ATENTO_CAPTURE_TOKEN. */
   capture?: CaptureConfig
   /**
    * `[server]` config: names the env var holding the bearer token for
-   * non-loopback binds. Default LINKINBOX_SERVER_TOKEN.
+   * non-loopback binds. Default ATENTO_SERVER_TOKEN.
    */
   server?: ServerConfig
   /** Env the capture/server tokens are read from. Default process.env. */
   env?: NodeJS.ProcessEnv
   /**
    * MCP streamable-HTTP handler mounted at /mcp (fetch-shaped, e.g. from
-   * `createMcpHttpHandler` in @linkinbox/mcp). Absent = no /mcp route.
+   * `createMcpHttpHandler` in @atento/mcp). Absent = no /mcp route.
    */
   mcpFetch?: (request: Request) => Promise<Response>
   /** SSE poll interval for /api/events. Default 500ms. */
@@ -230,7 +230,7 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
   const serverCfg = opts.server ?? DEFAULT_SERVER_CONFIG
   const env = opts.env ?? process.env
   const ops =
-    opts.ops ?? createLinkinboxOps({ ttl }, { store, env })
+    opts.ops ?? createAtentoOps({ ttl }, { store, env })
   const pairing = createPairingService({ capture, server: serverCfg, env })
   const app = new Hono()
 
@@ -467,7 +467,7 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
           if (!(file instanceof File)) {
             return c.json({ error: 'multipart body must carry a "file" part' }, 400)
           }
-          const dir = await mkdtemp(join(tmpdir(), 'linkinbox-ingest-'))
+          const dir = await mkdtemp(join(tmpdir(), 'atento-ingest-'))
           try {
             const name = file.name === '' ? 'upload' : basename(file.name)
             // A crafted multipart filename must never escape the temp dir.
@@ -599,7 +599,7 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
       summary:
         'Read one collection: json (default), tsv, or streaming jsonl/md. ' +
         '`since`/`cursor` resume a delta; the cursor comes back in the body ' +
-        'or the x-linkinbox-cursor header.',
+        'or the x-atento-cursor header.',
       parameters: [
         {
           name: 'name',
@@ -662,7 +662,7 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
         return new Response(body, {
           headers: {
             'content-type': format === 'jsonl' ? 'application/x-ndjson; charset=utf-8' : 'text/markdown; charset=utf-8',
-            'x-linkinbox-cursor': String(scan.cursor),
+            'x-atento-cursor': String(scan.cursor),
           },
         })
       }
@@ -686,7 +686,7 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
         return new Response(body, {
           headers: {
             'content-type': 'text/tab-separated-values; charset=utf-8',
-            'x-linkinbox-cursor': String(result.cursor),
+            'x-atento-cursor': String(result.cursor),
           },
         })
       }
@@ -1234,7 +1234,7 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
       tags: ['config'],
       summary:
         'Configured browser adapters with capabilities and health — the ' +
-        'same dataset `linkinbox browsers` prints.',
+        'same dataset `atento browsers` prints.',
       responses: okJson('Browser adapters', BrowserAdaptersBody),
     }),
     async (c) => {
@@ -1402,7 +1402,7 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
   // ---- MCP (streamable HTTP) -------------------------------------------------
   //
   // Mounted only when the caller supplies the fetch-shaped handler (the
-  // composition root builds it from @linkinbox/mcp's createMcpHttpHandler).
+  // composition root builds it from @atento/mcp's createMcpHttpHandler).
   // Auth above already covers /mcp on non-loopback binds.
 
   if (opts.mcpFetch) {
@@ -1443,7 +1443,7 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
               description:
                 'Bearer token. Required on non-loopback binds: the token ' +
                 'comes from `[server] token_env` (default ' +
-                'LINKINBOX_SERVER_TOKEN); /capture uses the capture token env.',
+                'ATENTO_SERVER_TOKEN); /capture uses the capture token env.',
             },
           },
         },
@@ -1523,7 +1523,7 @@ export function createFullApp(opts: ServerOptions): Hono {
         {
           error:
             `ui dist not found at ${dist}. Build it with ` +
-            `'pnpm --filter @linkinbox/ui build' or point uiDist at the built directory.`,
+            `'pnpm --filter @atento/ui build' or point uiDist at the built directory.`,
         },
         404,
       ),
@@ -1560,7 +1560,7 @@ export interface StartedServer {
 /** Start the http server (api + static). Resolves once listening. */
 export async function startServer(opts: ServerOptions): Promise<StartedServer> {
   const app = createFullApp(opts)
-  const envPort = Number(process.env['LINKINBOX_PORT'] ?? '')
+  const envPort = Number(process.env['ATENTO_PORT'] ?? '')
   const port = opts.port ?? (Number.isFinite(envPort) && envPort > 0 ? envPort : DEFAULT_PORT)
   const server: ServerType = serve({
     fetch: app.fetch,

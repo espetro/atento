@@ -1,9 +1,9 @@
 {
-  "name": "@linkinbox/enrich",
+  "name": "@atento/enrich",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Structured-output enrichment for linkinbox: one model call per link",
+  "description": "Structured-output enrichment for atento: one model call per link",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -24,7 +24,7 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.88",
     "@ai-sdk/provider": "3.0.19",
-    "@linkinbox/core": "workspace:*",
+    "@atento/core": "workspace:*",
     "ai": "^6.0.318",
     "zod": "^4.1.13"
   },

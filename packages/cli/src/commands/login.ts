@@ -2,17 +2,17 @@
  * login command: interactive browser login via agent-browser, with profile
  * bookkeeping in the profiles table.
  *
- *   linkinbox login              show the remaining logins (interactive pick)
- *   linkinbox login --all        log in to every pending host in turn
- *   linkinbox login <host>       spawn agent-browser --headed with a profile
- *   linkinbox login --json       print the pending list as JSON (agent mode)
- *   linkinbox login list         show saved profiles
- *   linkinbox login clear <host> delete one profile
+ *   atento login              show the remaining logins (interactive pick)
+ *   atento login --all        log in to every pending host in turn
+ *   atento login <host>       spawn agent-browser --headed with a profile
+ *   atento login --json       print the pending list as JSON (agent mode)
+ *   atento login list         show saved profiles
+ *   atento login clear <host> delete one profile
  *
- * `linkinbox login` with no argument lists the hosts that still need a
+ * `atento login` with no argument lists the hosts that still need a
  * login: links parked in needs_browser, plus flagged hosts without a saved
  * profile. In a TTY it offers a picker; with --json (or no TTY) it prints
- * machine-readable JSON and never opens a browser. linkinbox never reads,
+ * machine-readable JSON and never opens a browser. atento never reads,
  * logs or stores passwords, cookies or tokens: only the profile directory
  * path is recorded.
  */
@@ -20,8 +20,8 @@ import { existsSync, rmSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import type { Command } from 'commander'
 import type { CliContext } from '../context.js'
-import { hostPolicy, type PatchrightLaunch } from '@linkinbox/app'
-import { browserProfileDir } from '@linkinbox/core'
+import { hostPolicy, type PatchrightLaunch } from '@atento/app'
+import { browserProfileDir } from '@atento/core'
 import { renderTable } from '../render.js'
 import {
   buildLoginReport,
@@ -33,7 +33,7 @@ import {
   type PendingLoginPolicy,
 } from '../pending-logins.js'
 
-const AGENT_BROWSER = process.env['LINKINBOX_AGENT_BROWSER'] ?? 'agent-browser'
+const AGENT_BROWSER = process.env['ATENTO_AGENT_BROWSER'] ?? 'agent-browser'
 
 /** Profile directory for a host on an adapter: <profilesDir>/<host>/<adapterId>. */
 export function profileDirFor(profilesDir: string, host: string, adapterId = 'headless'): string {
@@ -322,7 +322,7 @@ export async function runParkedRequeue(
 export async function runLoginList(ctx: CliContext): Promise<void> {
   const profiles = await ctx.store.listProfiles()
   if (profiles.length === 0) {
-    console.log('no saved profiles; run `linkinbox login` to see the remaining logins')
+    console.log('no saved profiles; run `atento login` to see the remaining logins')
     return
   }
   console.log(
@@ -560,7 +560,7 @@ export function registerLoginCommand(
   const login = program
     .command('login')
     .description(
-      'browser login via agent-browser. linkinbox never sees your password, ' +
+      'browser login via agent-browser. atento never sees your password, ' +
         'cookies or tokens: only the profile directory path is recorded',
     )
 
@@ -642,7 +642,7 @@ export function registerLoginCommand(
       try {
         const normalized = host.toLowerCase()
         if ((await ctx.store.getProfile(normalized)) === null) {
-          console.error(`no saved profile for ${normalized}; run: linkinbox login ${normalized}`)
+          console.error(`no saved profile for ${normalized}; run: atento login ${normalized}`)
           process.exitCode = 1
           return
         }
@@ -656,7 +656,7 @@ export function registerLoginCommand(
 
 /**
  * The `requeue` command. Today only the parked backfill:
- *   linkinbox requeue --parked [--host <h>]
+ *   atento requeue --parked [--host <h>]
  * moves needs_browser links (and pending deferred ones) back to created via
  * the RETRY path, skipping review-only and skip-listed hosts.
  */
@@ -671,7 +671,7 @@ export function registerRequeueCommand(
     .option('--host <host>', 'restrict the backfill to one host')
     .action(async (opts: { parked?: boolean; host?: string }) => {
       if (opts.parked !== true) {
-        console.error('nothing to do: pass --parked (e.g. `linkinbox requeue --parked`)')
+        console.error('nothing to do: pass --parked (e.g. `atento requeue --parked`)')
         process.exitCode = 1
         return
       }

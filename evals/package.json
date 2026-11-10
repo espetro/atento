@@ -1,9 +1,9 @@
 {
-  "name": "@linkinbox/evals",
+  "name": "@atento/evals",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Golden-set eval runner for linkinbox (enrichment + extraction checks)",
+  "description": "Golden-set eval runner for atento (enrichment + extraction checks)",
   "main": "./dist/run.js",
   "types": "./dist/run.d.ts",
   "exports": {
@@ -21,7 +21,7 @@
     }
   },
   "bin": {
-    "linkinbox-eval": "./dist/bin.js"
+    "atento-eval": "./dist/bin.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -31,9 +31,9 @@
     "eval": "node dist/bin.js"
   },
   "dependencies": {
-    "@linkinbox/core": "workspace:*",
-    "@linkinbox/enrich": "workspace:*",
-    "@linkinbox/extractors": "workspace:*"
+    "@atento/core": "workspace:*",
+    "@atento/enrich": "workspace:*",
+    "@atento/extractors": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

@@ -2,14 +2,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openStore, type SqliteStore } from '@linkinbox/db'
+import { openStore, type SqliteStore } from '@atento/db'
 import { createApp } from '../src/index.js'
 
 let store: SqliteStore
 let dir: string
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'linkinbox-openapi-'))
+  dir = mkdtempSync(join(tmpdir(), 'atento-openapi-'))
   store = await openStore({ path: join(dir, 'test.db') })
 })
 

@@ -108,8 +108,8 @@ function asItems(raw: unknown): OutboxItem[] {
 }
 
 async function refreshOutbox(): Promise<void> {
-  const stored = await chrome.storage.local.get(['linkinbox:outbox'])
-  const items = asItems(stored['linkinbox:outbox'])
+  const stored = await chrome.storage.local.get(['atento:outbox'])
+  const items = asItems(stored['atento:outbox'])
   const live = items.filter((i) => i.dead !== true)
   const dead = items.filter((i) => i.dead === true)
   outboxStatsEl.textContent =
@@ -137,12 +137,12 @@ clearDeadEl?.addEventListener('click', () => {
   // list in memory and would resurrect a direct storage write on the next
   // persist. clearDead drops the dead items and persists once.
   void chrome.runtime
-    .sendMessage({ type: 'linkinbox:outbox-clear-dead' })
+    .sendMessage({ type: 'atento:outbox-clear-dead' })
     .then(() => refreshOutbox())
     .catch(() => flash('Could not reach the background worker; try again.'))
 })
 
 void refreshOutbox()
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && 'linkinbox:outbox' in changes) void refreshOutbox()
+  if (area === 'local' && 'atento:outbox' in changes) void refreshOutbox()
 })

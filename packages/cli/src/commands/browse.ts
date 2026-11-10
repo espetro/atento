@@ -2,19 +2,19 @@
  * browse command: read one page through the saved profile of its host and
  * print it as markdown.
  *
- *   linkinbox browse <url>          read the page as markdown
- *   linkinbox browse <url> --json   machine-readable result
- *   linkinbox browse hosts          which hosts are shareable, and why not
+ *   atento browse <url>          read the page as markdown
+ *   atento browse <url> --json   machine-readable result
+ *   atento browse hosts          which hosts are shareable, and why not
  *
  * READ-ONLY: there is no click, no type, no form here. Only the hosts in
  * the `[share] hosts` config list may be read (it ships empty, so nothing
  * is shared until the owner opts in), and only through a saved profile
- * from `linkinbox login`. The read spends the same per-host budget as the
+ * from `atento login`. The read spends the same per-host budget as the
  * extraction stage: human pacing, the daily cap, the working-hours window
  * and the circuit breaker. Nothing is written to the link store.
  */
 import type { Command } from 'commander'
-import { guardDepsFromStore, type BrowseResult } from '@linkinbox/app'
+import { guardDepsFromStore, type BrowseResult } from '@atento/app'
 import type { CliContext } from '../context.js'
 import { runBrowse, runBrowseHosts, type BrowseDeps } from '../browse-fn.js'
 
@@ -63,7 +63,7 @@ export function registerBrowseCommand(
       const ctx = await deps.ctx()
       try {
         if (!url) {
-          console.error('usage: linkinbox browse <url> | linkinbox browse hosts')
+          console.error('usage: atento browse <url> | atento browse hosts')
           process.exitCode = 1
           return
         }
@@ -94,7 +94,7 @@ export function registerBrowseCommand(
           return
         }
         if (rows.length === 0) {
-          console.log('no saved profiles; run `linkinbox login <host>` first')
+          console.log('no saved profiles; run `atento login <host>` first')
           return
         }
         for (const row of rows) {

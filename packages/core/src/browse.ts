@@ -142,7 +142,7 @@ export async function browseRead(
       markdown: '',
       host,
       reason: 'no_profile',
-      detail: `no saved browser profile for ${host}; run: linkinbox login ${host}`,
+      detail: `no saved browser profile for ${host}; run: atento login ${host}`,
     }
   }
 

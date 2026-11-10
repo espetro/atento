@@ -3,7 +3,7 @@ import type { paths } from './schema.js'
 
 export type { paths, components, operations } from './schema.js'
 
-export interface LinkinboxClientOptions {
+export interface AtentoClientOptions {
   /** Server base URL, e.g. `http://127.0.0.1:4173`. */
   baseUrl: string
   /** Bearer token for non-loopback binds (`[server] token_env`). */
@@ -13,11 +13,11 @@ export interface LinkinboxClientOptions {
 }
 
 /**
- * Typed client for the linkinbox HTTP API. `schema.d.ts` is generated from
- * `GET /openapi.json` — regenerate with `pnpm --filter @linkinbox/client
+ * Typed client for the atento HTTP API. `schema.d.ts` is generated from
+ * `GET /openapi.json` — regenerate with `pnpm --filter @atento/client
  * generate` after changing server routes.
  */
-export function createLinkinboxClient(opts: LinkinboxClientOptions): Client<paths> {
+export function createAtentoClient(opts: AtentoClientOptions): Client<paths> {
   return createClient<paths>({
     baseUrl: opts.baseUrl,
     fetch: opts.fetch,

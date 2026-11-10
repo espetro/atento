@@ -6,7 +6,7 @@ import { importSafariReadingList } from '../src/safari-reading-list.js'
 
 describe('safari reading list importer: TCC probe', () => {
   it('maps EACCES to a Full Disk Access hint and returns [] with a warning', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'linkinbox-fda-'))
+    const dir = mkdtempSync(join(tmpdir(), 'atento-fda-'))
     const plistPath = join(dir, 'Bookmarks.plist')
     writeFileSync(plistPath, 'bplist00placeholder')
     try {

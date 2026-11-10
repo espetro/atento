@@ -1,8 +1,8 @@
 // Regenerates src/schema.d.ts from the server's OpenAPI document.
 //
-//   pnpm --filter @linkinbox/client generate
+//   pnpm --filter @atento/client generate
 //
-// Requires @linkinbox/server and @linkinbox/db to be built (their dist/
+// Requires @atento/server and @atento/db to be built (their dist/
 // output is what this script imports). The document is produced by the
 // real Hono app — the same one that serves GET /openapi.json — against a
 // throwaway sqlite store, so generation needs no running server.
@@ -15,10 +15,10 @@ import openapiTS, { astToString } from 'openapi-typescript'
 const here = dirname(fileURLToPath(import.meta.url))
 const outFile = join(here, '..', 'src', 'schema.d.ts')
 
-const { createApp } = await import('@linkinbox/server')
-const { openStore } = await import('@linkinbox/db')
+const { createApp } = await import('@atento/server')
+const { openStore } = await import('@atento/db')
 
-const dir = mkdtempSync(join(tmpdir(), 'linkinbox-openapi-'))
+const dir = mkdtempSync(join(tmpdir(), 'atento-openapi-'))
 const store = await openStore({ path: join(dir, 'gen.db') })
 
 let doc

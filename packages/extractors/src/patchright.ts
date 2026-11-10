@@ -114,7 +114,7 @@ export interface PatchrightExtractorOptions {
 
 /**
  * Profile dir for a host on an adapter:
- * ~/.linkinbox/profiles/<host>/<adapterId>. The pre-M1 "patchright"
+ * ~/.atento/profiles/<host>/<adapterId>. The pre-M1 "patchright"
  * subdirectory is migrated to the stealth adapter id by core's
  * migrateBrowserProfiles.
  */
@@ -124,7 +124,7 @@ export function patchrightProfileDir(
   adapterId = PATCHRIGHT_PROFILE_SUFFIX,
 ): string {
   const host = new URL(url).hostname;
-  const base = profilesDir ?? join(homedir(), ".linkinbox", "profiles");
+  const base = profilesDir ?? join(homedir(), ".atento", "profiles");
   return join(base, host, adapterId);
 }
 

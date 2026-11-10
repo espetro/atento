@@ -1,5 +1,5 @@
 import { extname } from 'node:path'
-import type { RawLink } from '@linkinbox/core'
+import type { RawLink } from '@atento/core'
 import { importMarkdown, parseMarkdown, MARKDOWN_SOURCE } from './markdown.js'
 import { importJson, parseJsonLinks, JSON_SOURCE } from './json.js'
 import { importUrlList, parseUrlList, URL_LIST_SOURCE } from './url-list.js'

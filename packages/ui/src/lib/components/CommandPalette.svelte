@@ -7,7 +7,7 @@
   /**
    * ⌘K command palette (P1.1). One fuzzy list covering navigation, filters,
    * layout/density, app actions, and — when a link is selected — the triage
-   * actions, which dispatch through `linkinbox:menu-action` so the views'
+   * actions, which dispatch through `atento:menu-action` so the views'
    * existing handlers serve both native menus and this palette.
    */
   let {

@@ -9,7 +9,7 @@ import {
 } from '../src/download.js'
 import { runMediaStage } from '../src/orchestrator.js'
 import { mediaReportSchema, renderMedia } from '../src/index.js'
-import type { GuardDeps } from '@linkinbox/core'
+import type { GuardDeps } from '@atento/core'
 
 /** A fake exec that pretends yt-dlp and ffmpeg did their job. */
 function fakeExec(): ExecLike & { calls: Array<{ file: string; args: string[] }> } {
@@ -77,7 +77,7 @@ describe('downloadAudio', () => {
 
 describe('runMediaStage', () => {
   it('runs caption and a faked transcript end to end', async () => {
-    const workDir = '/tmp/linkinbox-media-fake'
+    const workDir = '/tmp/atento-media-fake'
     const exec = fakeExec()
     const asr = vi.fn(async () => ({ text: 'hello from the audio', metrics: { 'metrics.rtf': 0.2 } }))
     const report = await runMediaStage(
@@ -161,7 +161,7 @@ describe('runMediaStage', () => {
   })
 
   it('never cleans up media on success: cleanup deletes the work dir', async () => {
-    await cleanupMedia('/tmp/linkinbox-media-nonexistent-xyz')
+    await cleanupMedia('/tmp/atento-media-nonexistent-xyz')
     expect(true).toBe(true)
   })
 })

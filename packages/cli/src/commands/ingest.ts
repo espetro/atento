@@ -1,11 +1,11 @@
 /**
- * Bulk-ingest commands: `linkinbox ingest file|text|urls|remote|status`.
+ * Bulk-ingest commands: `atento ingest file|text|urls|remote|status`.
  * Thin shells over the app layer's `ingest`/`ingestStatus` use cases — the
  * same contract the MCP tools and the HTTP API expose.
  */
 import type { Command } from 'commander'
 import type { CliContext } from '../context.js'
-import type { IngestInput } from '@linkinbox/app'
+import type { IngestInput } from '@atento/app'
 
 function printSummary(summary: {
   jobId: string

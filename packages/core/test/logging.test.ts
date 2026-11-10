@@ -11,7 +11,7 @@ afterEach(() => {
 
 describe('logging', () => {
   it('writes one JSON line per log call to the file sink', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'linkinbox-log-'))
+    const dir = mkdtempSync(join(tmpdir(), 'atento-log-'))
     const path = join(dir, 'log.jsonl')
     const setup = setupLogging({ path, console: false })
     const log = pipelineLogger('ingest')
@@ -25,14 +25,14 @@ describe('logging', () => {
     const first = JSON.parse(lines[0]!) as { level: string; message: string; logger: string; properties: Record<string, unknown> }
     expect(first.level).toBe('INFO')
     expect(first.message).toContain('https://example.com/a')
-    expect(first.logger).toBe('linkinbox.ingest')
+    expect(first.logger).toBe('atento.ingest')
     expect(first.properties['url']).toBe('https://example.com/a')
     const second = JSON.parse(lines[1]!) as { level: string }
     expect(second.level).toBe('WARN')
   })
 
   it('creates the log directory when missing', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'linkinbox-log-'))
+    const dir = mkdtempSync(join(tmpdir(), 'atento-log-'))
     const path = join(dir, 'nested', 'deeper', 'log.jsonl')
     const setup = setupLogging({ path, console: false })
     pipelineLogger('test').info('hello')
@@ -41,8 +41,8 @@ describe('logging', () => {
   })
 
   it('resolves the path from env before the default', () => {
-    expect(resolveLogPath({ LINKINBOX_LOG_FILE: '/tmp/x.jsonl' })).toBe('/tmp/x.jsonl')
-    expect(resolveLogPath({})).toContain(join('.linkinbox', 'log.jsonl'))
+    expect(resolveLogPath({ ATENTO_LOG_FILE: '/tmp/x.jsonl' })).toBe('/tmp/x.jsonl')
+    expect(resolveLogPath({})).toContain(join('.atento', 'log.jsonl'))
   })
 
   it('toPipelineLogger adapts LogTape to the PipelineLogger shape', () => {

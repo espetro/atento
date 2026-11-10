@@ -167,11 +167,11 @@ describe("router with real extractors (offline)", () => {
 });
 
 describe("profileDirForHost", () => {
-  it("maps host to ~/.linkinbox/profiles/<host>/<adapterId>", async () => {
+  it("maps host to ~/.atento/profiles/<host>/<adapterId>", async () => {
     const { profileDirForHost } = await import("../src/browser.js");
     const { homedir } = await import("node:os");
     const dir = profileDirForHost("https://x.com/user/status/1");
-    expect(dir).toBe(join(homedir(), ".linkinbox", "profiles", "x.com", "headless"));
+    expect(dir).toBe(join(homedir(), ".atento", "profiles", "x.com", "headless"));
   });
 
   it("honours an explicit profiles dir and adapter id", async () => {

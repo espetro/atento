@@ -1,4 +1,4 @@
-import type { Link } from '@linkinbox/core'
+import type { Link } from '@atento/core'
 
 export interface BuildPromptInput {
   link: Link

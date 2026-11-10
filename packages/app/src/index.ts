@@ -1,10 +1,10 @@
 /**
- * @linkinbox/app — the application layer.
+ * @atento/app — the application layer.
  *
- * Use cases and the composition root (`createLinkinbox`) live here; the
+ * Use cases and the composition root (`createAtento`) live here; the
  * driving adapters (cli, mcp, server) import only this package. The concrete
  * adapters — extractors, enrich, media, importers, the sqlite store — are
- * wired once inside `createLinkinboxOps` / `createLinkinbox`.
+ * wired once inside `createAtentoOps` / `createAtento`.
  */
 export * from './config.js'
 export * from './pending-logins.js'
@@ -12,13 +12,13 @@ export * from './adapters/extract-fn.js'
 export * from './adapters/enrich-fn.js'
 export * from './adapters/media-fn.js'
 export * from './adapters/browse-fn.js'
-export * from './linkinbox.js'
+export * from './atento.js'
 export * from './ingest-input.js'
 export * from './collections.js'
 
 // The shared contract surface the driving adapters render from. These are
 // core domain values and shapers, re-exported so adapters never reach into
-// @linkinbox/core for them.
+// @atento/core for them.
 export {
   LINK_STATES,
   COLLECTION_NAMES,
@@ -62,7 +62,7 @@ export {
   disposeLogging,
   createCollectingLogger,
   noopLogger,
-} from '@linkinbox/core'
+} from '@atento/core'
 export type {
   AsrFn,
   BusyRun,
@@ -120,6 +120,6 @@ export type {
   TtlConfig,
   UntilEmptyBatchSummary,
   UntilEmptyResult,
-} from '@linkinbox/core'
-export type { Store } from '@linkinbox/core'
-export type { SqliteStore } from '@linkinbox/db'
+} from '@atento/core'
+export type { Store } from '@atento/core'
+export type { SqliteStore } from '@atento/db'

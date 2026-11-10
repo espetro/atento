@@ -4,15 +4,15 @@ import { fileURLToPath } from 'node:url'
 export default defineConfig({
   resolve: {
     alias: {
-      '@linkinbox/app': fileURLToPath(new URL('../../packages/app/src/index.ts', import.meta.url)),
-      '@linkinbox/core': fileURLToPath(new URL('../../packages/core/src/index.ts', import.meta.url)),
-      '@linkinbox/db': fileURLToPath(new URL('../../packages/db/src/index.ts', import.meta.url)),
-      '@linkinbox/mcp': fileURLToPath(new URL('../../packages/mcp/src/index.ts', import.meta.url)),
-      '@linkinbox/server': fileURLToPath(new URL('../../packages/server/src/index.ts', import.meta.url)),
-      '@linkinbox/extractors': fileURLToPath(new URL('../../packages/extractors/src/index.ts', import.meta.url)),
-      '@linkinbox/importers': fileURLToPath(new URL('../../packages/importers/src/index.ts', import.meta.url)),
-      '@linkinbox/media': fileURLToPath(new URL('../../packages/media/src/index.ts', import.meta.url)),
-      '@linkinbox/enrich': fileURLToPath(new URL('../../packages/enrich/src/index.ts', import.meta.url)),
+      '@atento/app': fileURLToPath(new URL('../../packages/app/src/index.ts', import.meta.url)),
+      '@atento/core': fileURLToPath(new URL('../../packages/core/src/index.ts', import.meta.url)),
+      '@atento/db': fileURLToPath(new URL('../../packages/db/src/index.ts', import.meta.url)),
+      '@atento/mcp': fileURLToPath(new URL('../../packages/mcp/src/index.ts', import.meta.url)),
+      '@atento/server': fileURLToPath(new URL('../../packages/server/src/index.ts', import.meta.url)),
+      '@atento/extractors': fileURLToPath(new URL('../../packages/extractors/src/index.ts', import.meta.url)),
+      '@atento/importers': fileURLToPath(new URL('../../packages/importers/src/index.ts', import.meta.url)),
+      '@atento/media': fileURLToPath(new URL('../../packages/media/src/index.ts', import.meta.url)),
+      '@atento/enrich': fileURLToPath(new URL('../../packages/enrich/src/index.ts', import.meta.url)),
     },
   },
   test: {

@@ -15,14 +15,14 @@ import {
   type BrowseResult,
   type ShareConfig,
   type ShareHostEntry,
-} from '@linkinbox/core'
-import { DEFAULT_BROWSER_CONFIG, isStealthHost, normalizeBrowserConfig, type BrowserConfig } from '@linkinbox/core'
-import { createBrowseReader, type BrowseReader } from '@linkinbox/extractors'
+} from '@atento/core'
+import { DEFAULT_BROWSER_CONFIG, isStealthHost, normalizeBrowserConfig, type BrowserConfig } from '@atento/core'
+import { createBrowseReader, type BrowseReader } from '@atento/extractors'
 import {
   browserAdapterReaders,
   createBrowserRegistry,
   type BrowserRegistry,
-} from '@linkinbox/browser'
+} from '@atento/browser'
 
 export interface BrowseFnOptions {
   /** The share allowlist. */

@@ -1,9 +1,9 @@
 {
-  "name": "@linkinbox/app",
+  "name": "@atento/app",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "linkinbox application layer: use cases and the createLinkinbox composition root shared by the cli, mcp and server adapters",
+  "description": "atento application layer: use cases and the createAtento composition root shared by the cli, mcp and server adapters",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -21,13 +21,13 @@
     "typecheck": "tsc -p tsconfig.test.json"
   },
   "dependencies": {
-    "@linkinbox/browser": "workspace:*",
-    "@linkinbox/core": "workspace:*",
-    "@linkinbox/db": "workspace:*",
-    "@linkinbox/enrich": "workspace:*",
-    "@linkinbox/extractors": "workspace:*",
-    "@linkinbox/importers": "workspace:*",
-    "@linkinbox/media": "workspace:*",
+    "@atento/browser": "workspace:*",
+    "@atento/core": "workspace:*",
+    "@atento/db": "workspace:*",
+    "@atento/enrich": "workspace:*",
+    "@atento/extractors": "workspace:*",
+    "@atento/importers": "workspace:*",
+    "@atento/media": "workspace:*",
     "http-cache-semantics": "^4.3.0",
     "single-file-cli": "^2.25.0",
     "smol-toml": "^1.9.1"

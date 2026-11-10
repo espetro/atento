@@ -15,7 +15,7 @@ import {
 } from '../run-journal.js'
 
 export interface EnrichOptions extends StageOptions {
-  /** Injected enrichment function (implemented by @linkinbox/enrich). */
+  /** Injected enrichment function (implemented by @atento/enrich). */
   enrich: EnrichFn
   /** Cap the number of links processed in this run. */
   limit?: number

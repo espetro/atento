@@ -117,7 +117,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read one collection: json (default), tsv, or streaming jsonl/md. `since`/`cursor` resume a delta; the cursor comes back in the body or the x-linkinbox-cursor header. */
+        /** Read one collection: json (default), tsv, or streaming jsonl/md. `since`/`cursor` resume a delta; the cursor comes back in the body or the x-atento-cursor header. */
         get: operations["getApiCollectionsByName"];
         put?: never;
         post?: never;
@@ -322,7 +322,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Configured browser adapters with capabilities and health — the same dataset `linkinbox browsers` prints. */
+        /** Configured browser adapters with capabilities and health — the same dataset `atento browsers` prints. */
         get: operations["getApiBrowsers"];
         put?: never;
         post?: never;

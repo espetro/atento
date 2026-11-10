@@ -8,7 +8,7 @@
  *  - config by_category overrides default_days correctly
  */
 import { describe, expect, it } from 'vitest'
-import { enrich, normalizeUrl, ttlFromToml, type TtlConfig } from '@linkinbox/core'
+import { enrich, normalizeUrl, ttlFromToml, type TtlConfig } from '@atento/core'
 import { capture, insertLink, tempDb, type TempDb } from './helpers.js'
 import { runPrune, runSweep } from '../src/commands/maintenance.js'
 import { createContext, type CliContext } from '../src/context.js'
@@ -27,7 +27,7 @@ const ttl: TtlConfig = ttlFromToml({
 
 async function contextFor(db: TempDb): Promise<CliContext> {
   const ctx = await createContext({
-    env: { LINKINBOX_DB: db.path },
+    env: { ATENTO_DB: db.path },
     store: db.store,
     quiet: true,
     logPath: `${db.dir}/log.jsonl`,

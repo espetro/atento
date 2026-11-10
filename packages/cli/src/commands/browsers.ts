@@ -2,8 +2,8 @@
  * browsers command: list the configured browser adapters with their
  * capabilities and a health check.
  *
- *   linkinbox browsers          table of adapters + health
- *   linkinbox browsers --json   machine-readable output
+ *   atento browsers          table of adapters + health
+ *   atento browsers --json   machine-readable output
  *
  * The data comes from the app layer (`app.browsers()`); this command only
  * formats it. Health checks never launch a real browsing session:
@@ -13,7 +13,7 @@
  */
 import type { Command } from 'commander'
 import type { CliContext } from '../context.js'
-import type { BrowserAdapterInfo } from '@linkinbox/app'
+import type { BrowserAdapterInfo } from '@atento/app'
 import { renderTable } from '../render.js'
 
 interface Row {

@@ -9,8 +9,8 @@
  * same human pacing (dwell + scroll) between goto and read.
  */
 import { existsSync } from 'node:fs'
-import { browserProfileDir } from '@linkinbox/core'
-import type { PageReaderPort, PageSession } from '@linkinbox/core'
+import { browserProfileDir } from '@atento/core'
+import type { PageReaderPort, PageSession } from '@atento/core'
 import {
   cleanBrowserMarkdown,
   htmlToMarkdown,
@@ -18,7 +18,7 @@ import {
   textToMarkdown,
   type ExtractResult,
   type Extractor,
-} from '@linkinbox/extractors'
+} from '@atento/extractors'
 import type { BrowserRegistry } from './registry.js'
 
 export interface PageReaderExtractorOptions {

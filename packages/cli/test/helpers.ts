@@ -4,9 +4,9 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openStore, type SqliteStore } from '@linkinbox/db'
-import { normalizeUrl, type Link } from '@linkinbox/core'
-import { UNLIMITED_LIMITS } from '@linkinbox/core'
+import { openStore, type SqliteStore } from '@atento/db'
+import { normalizeUrl, type Link } from '@atento/core'
+import { UNLIMITED_LIMITS } from '@atento/core'
 
 export interface TempDb {
   path: string
@@ -17,7 +17,7 @@ export interface TempDb {
 
 /** Open a fresh SQLite database in a temp dir. */
 export async function tempDb(): Promise<TempDb> {
-  const dir = mkdtempSync(join(tmpdir(), 'linkinbox-cli-'))
+  const dir = mkdtempSync(join(tmpdir(), 'atento-cli-'))
   const path = join(dir, 'links.db')
   const store = await openStore({ path })
   return {

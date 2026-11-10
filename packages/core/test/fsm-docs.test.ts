@@ -33,7 +33,7 @@ describe('docs/fsm.md', () => {
   })
 
   it('the mermaid source renders (when mmdr is available)', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'linkinbox-mmd-'))
+    const dir = mkdtempSync(join(tmpdir(), 'atento-mmd-'))
     try {
       const mmd = join(dir, 'fsm.mmd')
       const svg = join(dir, 'fsm.svg')

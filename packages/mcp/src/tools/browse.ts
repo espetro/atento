@@ -6,7 +6,7 @@ import { z } from 'zod/mini'
 import {
   hostOf,
   type ShareConfig,
-} from '@linkinbox/app'
+} from '@atento/app'
 import { json, type ToolDef } from './types.js'
 
 export const browseTools: ToolDef[] = [
@@ -17,7 +17,7 @@ export const browseTools: ToolDef[] = [
       'return markdown (spec name browse.read). READ-ONLY: no clicks, no ' +
       'typing, no forms. Only the hosts the owner listed in the [share] ' +
       'hosts config may be read (the list ships empty, so by default every ' +
-      'call is refused), and only through a profile saved by `linkinbox ' +
+      'call is refused), and only through a profile saved by `atento ' +
       'login`. The read spends the same per-host budget as the pipeline: ' +
       'human pacing, a daily cap, working hours and the circuit breaker. ' +
       'Nothing is written to the link store.',
@@ -35,7 +35,7 @@ export const browseTools: ToolDef[] = [
           host,
           reason: 'not_configured',
           detail:
-            'browsing is not configured in this MCP server; run `linkinbox browse <url>` in the terminal instead',
+            'browsing is not configured in this MCP server; run `atento browse <url>` in the terminal instead',
         })
       }
       const read = await deps.browseFn(ctx)

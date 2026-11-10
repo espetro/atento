@@ -23,7 +23,7 @@ import {
   type PipelineLogger,
   type RawLink,
   type Store,
-} from '@linkinbox/core'
+} from '@atento/core'
 import {
   importFile,
   parseJsonLinks,
@@ -32,7 +32,7 @@ import {
   URL_LIST_SOURCE,
   MARKDOWN_SOURCE,
   JSON_SOURCE,
-} from '@linkinbox/importers'
+} from '@atento/importers'
 
 /** The ingest input kinds, shared by CLI, MCP and HTTP. */
 export type IngestInput =
@@ -166,7 +166,7 @@ export async function parseIngestRemote(url: string): Promise<ParsedInput> {
     response = await fetch(url, {
       signal: controller.signal,
       redirect: 'follow',
-      headers: { 'user-agent': 'linkinbox-ingest/1.0' },
+      headers: { 'user-agent': 'atento-ingest/1.0' },
     })
   } catch (err) {
     throw new Error(
@@ -184,7 +184,7 @@ export async function parseIngestRemote(url: string): Promise<ParsedInput> {
       `ingest_remote payload exceeds ${INGEST_REMOTE_MAX_BYTES} bytes; use ingest_file instead`,
     )
   }
-  const dir = await mkdtemp(join(tmpdir(), 'linkinbox-ingest-'))
+  const dir = await mkdtemp(join(tmpdir(), 'atento-ingest-'))
   try {
     const hint = remoteHint(url)
     const ext = extname(hint)
@@ -273,5 +273,5 @@ export async function runIngestInput(
 }
 
 // Re-exported so adapters can name the importer sources without importing
-// @linkinbox/importers themselves.
+// @atento/importers themselves.
 export { MARKDOWN_SOURCE, URL_LIST_SOURCE, JSON_SOURCE }

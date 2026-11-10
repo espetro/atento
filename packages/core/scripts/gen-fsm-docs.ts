@@ -2,7 +2,7 @@
  * Generates the mermaid state diagram for docs/fsm.md from the transition
  * table, so the document can never drift from the code.
  *
- *   pnpm --filter @linkinbox/core gen:fsm-docs
+ *   pnpm --filter @atento/core gen:fsm-docs
  */
 import { dirname, join, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -93,7 +93,7 @@ export function renderDoc(): string {
     const events = table[state] ?? []
     rows.push(`| \`${state}\` | ${events.length} | ${events.map((e) => `\`${e}\``).join(', ') || '(terminal)'} |`)
   }
-  return `# The linkinbox state machine
+  return `# The atento state machine
 
 
 Every persisted link sits in exactly one state. The state is stored as the discriminant \`links.state\` plus the variant payload \`links.state_data\`, and it is the only source of truth for the status of an item. The legacy \`links.status\` column is a projection of the state, not an independent field.
@@ -151,7 +151,7 @@ ${renderDiagram().trimEnd()}
 ## Reading the state
 
 \`\`\`ts
-import { transition, publicStatus, legacyStatus } from '@linkinbox/core'
+import { transition, publicStatus, legacyStatus } from '@atento/core'
 
 const result = transition(state, event)
 if (result.ok) {
@@ -181,7 +181,7 @@ Every applied event is appended to the \`link_events\` table in the same transac
 
 ## Backwards compatibility
 
-The \`status\` field of the API is unchanged. It is the \`legacyStatus\` projection of the state, one of \`inbox\`, \`scheduled\`, \`archived\`, \`discarded\` or \`deleted\`. Pipeline states project onto \`inbox\`, which is what the old code expected from a link that had not been triaged yet. \`linkinbox list --state <state>\` filters on the fine grained state.
+The \`status\` field of the API is unchanged. It is the \`legacyStatus\` projection of the state, one of \`inbox\`, \`scheduled\`, \`archived\`, \`discarded\` or \`deleted\`. Pipeline states project onto \`inbox\`, which is what the old code expected from a link that had not been triaged yet. \`atento list --state <state>\` filters on the fine grained state.
 `
 }
 

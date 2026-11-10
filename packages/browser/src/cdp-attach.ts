@@ -11,7 +11,7 @@
  * exposes connectOverCDP, the same API surface as playwright). The import
  * is dynamic so the package builds without it; tests inject `connect`.
  */
-import { isLoginWall } from '@linkinbox/core'
+import { isLoginWall } from '@atento/core'
 import type {
   BrowserCaps,
   BrowserHealth,
@@ -22,7 +22,7 @@ import type {
   ProfileRef,
   SessionLoginPort,
   SessionLoginUi,
-} from '@linkinbox/core'
+} from '@atento/core'
 
 /** The narrow CDP page surface the adapter uses (playwright-compatible). */
 export interface CdpPage {

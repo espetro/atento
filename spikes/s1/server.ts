@@ -1,6 +1,6 @@
 /// <reference path="./shims.d.ts" />
 /**
- * S1 spike — @chttp/router serving a slice of the linkinbox API on top of
+ * S1 spike — @chttp/router serving a slice of the atento API on top of
  * the @cutils/sqlite Store adapter. Routes mirror packages/server/src:
  *   GET  /health          (spike-only liveness)
  *   GET  /api/links       (≈ GET /api/links in hono server)
@@ -9,14 +9,14 @@
  *
  * Build:  scriptc build server.ts --npm-static @chttp/router \
  *           --npm-static @cutils/sqlite --ffi node_modules/@cutils/sqlite/ffi.json \
- *           -o linkinbox-s1
+ *           -o atento-s1
  */
 import { createRouter } from "@chttp/router";
 import type { CtxCore } from "@chttp/router";
 import { CutilsSqliteStore } from "./sqlite-store.js";
 import { createHash } from "node:crypto";
 
-const dbPath = process.argv.length > 2 ? process.argv[2] : "linkinbox-s1.db";
+const dbPath = process.argv.length > 2 ? process.argv[2] : "atento-s1.db";
 const port = process.argv.length > 3 ? Number(process.argv[3]) : 3777;
 
 const store = CutilsSqliteStore.open(dbPath);
@@ -108,4 +108,4 @@ app.onError((err: unknown, c: CtxCore) => {
 app.notFound((c: CtxCore) => c.status(404).json({ error: "not found" }));
 
 app.serve({ port });
-console.log(`linkinbox-s1 listening on http://127.0.0.1:${port} (db=${dbPath})`);
+console.log(`atento-s1 listening on http://127.0.0.1:${port} (db=${dbPath})`);

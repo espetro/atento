@@ -2,7 +2,7 @@
  * Tiny bin for the eval runner. The CLI (another slice) calls runEval
  * directly; this bin exists for standalone runs: `pnpm eval` in evals/.
  * Uses the deterministic mock enrich function by default; set
- * LINKINBOX_EVAL_LIVE=1 to use a real env-configured model.
+ * ATENTO_EVAL_LIVE=1 to use a real env-configured model.
  * Exit code 0 = pass, non-zero = regression/threshold failure.
  */
 import { runEval, saveBaseline, DEFAULT_BASELINE_PATH } from './run.js'
@@ -12,11 +12,11 @@ import type { EnrichFn, EvalReport } from './run.js'
 
 const args = process.argv.slice(2)
 const saveBaselineFlag = args.includes('--save-baseline')
-const live = process.env.LINKINBOX_EVAL_LIVE === '1'
+const live = process.env.ATENTO_EVAL_LIVE === '1'
 
 let enrichFn: EnrichFn = createMockEnrichFn()
 if (live) {
-  const { createModelFromEnv, enrichLink } = await import('@linkinbox/enrich')
+  const { createModelFromEnv, enrichLink } = await import('@atento/enrich')
   enrichFn = async (input) => {
     const link = {
       id: 0,
@@ -55,7 +55,7 @@ const extractionOutputs = await extractFixturePages()
 const report: EvalReport = await runEval({ enrichFn, extractionOutputs })
 
 const pct = (n: number) => `${n.toFixed(1)}%`
-console.log(`linkinbox eval: ${report.counts.fixtures} enrichment fixtures, ${report.counts.extractionFixtures} extraction fixtures, ${report.counts.runs} runs`)
+console.log(`atento eval: ${report.counts.fixtures} enrichment fixtures, ${report.counts.extractionFixtures} extraction fixtures, ${report.counts.runs} runs`)
 console.log(`  schema validity:    ${pct(report.schemaValidity)} (>=90)`)
 console.log(`  category match:     ${pct(report.categoryMatch)} (>=80)`)
 console.log(`  expires in range:   ${pct(report.expiresInRange)} (>=70)`)

@@ -1,9 +1,9 @@
 {
-  "name": "@linkinbox/browser",
+  "name": "@atento/browser",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Browser adapters for linkinbox: agent-browser, patchright, cdp-attach and external plugin kinds behind the core PageReaderPort/SessionLoginPort interfaces",
+  "description": "Browser adapters for atento: agent-browser, patchright, cdp-attach and external plugin kinds behind the core PageReaderPort/SessionLoginPort interfaces",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -22,8 +22,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@linkinbox/core": "workspace:*",
-    "@linkinbox/extractors": "workspace:*"
+    "@atento/core": "workspace:*",
+    "@atento/extractors": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.0.0",

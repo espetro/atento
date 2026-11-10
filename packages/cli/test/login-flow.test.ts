@@ -20,11 +20,11 @@ import {
   type LoginPicker,
 } from '../src/commands/login.js'
 import { queryPendingLogins, profileAgeDays } from '../src/pending-logins.js'
-import { emptyHostState } from '@linkinbox/core'
+import { emptyHostState } from '@atento/core'
 
 async function contextFor(db: TempDb): Promise<CliContext> {
   return createContext({
-    env: { LINKINBOX_DB: db.path },
+    env: { ATENTO_DB: db.path },
     store: db.store,
     quiet: true,
     logPath: join(db.dir, 'log.jsonl'),
@@ -333,7 +333,7 @@ describe('interactive login flow', () => {
       const legacyPath = join(profilesDir, 'x.com')
       await db.store.upsertProfile({ host: 'x.com', path: legacyPath })
       const ctx = await createContext({
-        env: { LINKINBOX_DB: db.path, LINKINBOX_CONFIG_DIR: configDir },
+        env: { ATENTO_DB: db.path, ATENTO_CONFIG_DIR: configDir },
         store: db.store,
         quiet: true,
         logPath: join(db.dir, 'log.jsonl'),

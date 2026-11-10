@@ -6,13 +6,13 @@ import Database from 'better-sqlite3'
 import { openStore } from '../src/index.js'
 import { MIGRATIONS } from '../src/migrations.js'
 import { runMigrations } from '../src/migrations.js'
-import type { LinkInput } from '@linkinbox/core'
-import { normalizeUrl } from '@linkinbox/core'
+import type { LinkInput } from '@atento/core'
+import { normalizeUrl } from '@atento/core'
 
 let dir: string
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'linkinbox-fsm-'))
+  dir = mkdtempSync(join(tmpdir(), 'atento-fsm-'))
 })
 
 afterEach(() => {

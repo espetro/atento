@@ -79,7 +79,7 @@ const PLACEHOLDER_HTML = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>linkinbox</title>
+<title>atento</title>
 <style>
   body { font-family: system-ui, sans-serif; margin: 4rem auto; max-width: 40rem;
          padding: 0 1rem; color: #1a1a1a; }
@@ -87,10 +87,10 @@ const PLACEHOLDER_HTML = `<!doctype html>
 </style>
 </head>
 <body>
-<h1>linkinbox</h1>
+<h1>atento</h1>
 <p>The web UI has not been built yet. The API is live — use the CLI,
 MCP endpoint (<code>/mcp</code>) or <a href="/openapi.json">OpenAPI doc</a>.</p>
-<p>To build the UI: <code>pnpm --filter @linkinbox/web build</code>, or point
+<p>To build the UI: <code>pnpm --filter @atento/web build</code>, or point
 <code>web_dir</code> in <code>harness.toml</code> at an existing build.</p>
 </body>
 </html>

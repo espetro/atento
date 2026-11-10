@@ -17,7 +17,7 @@
  *   <spoolDir>/<jobId>/meta.json     { source, createdAt }
  *
  * The spool root is caller-provided: the CLI passes `<config dir>/spool`
- * (i.e. ~/.linkinbox/spool, honouring LINKINBOX_HOME / LINKINBOX_CONFIG_DIR).
+ * (i.e. ~/.atento/spool, honouring ATENTO_HOME / ATENTO_CONFIG_DIR).
  */
 import { randomBytes } from 'node:crypto'
 import { mkdir, readFile } from 'node:fs/promises'

@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Hono } from 'hono'
-import { openStore, type SqliteStore } from '@linkinbox/db'
-import { createApp } from '@linkinbox/server'
+import { openStore, type SqliteStore } from '@atento/db'
+import { createApp } from '@atento/server'
 import { createStaticMiddleware } from '../src/static.js'
 import { resolveWebDir, webDirCandidates } from '../src/serve.js'
 import { DEFAULT_HARNESS_CONFIG } from '../src/config.js'
@@ -17,7 +17,7 @@ afterEach(async () => {
 })
 
 function tempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'linkinbox-harness-static-'))
+  const dir = mkdtempSync(join(tmpdir(), 'atento-harness-static-'))
   dirs.push(dir)
   return dir
 }

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openStore, type SqliteStore } from '@linkinbox/db'
+import { openStore, type SqliteStore } from '@atento/db'
 import { createApp } from '../src/index.js'
 
 let store: SqliteStore
@@ -12,7 +12,7 @@ let app: ReturnType<typeof createApp>
 // Fresh store per test: SSE replay is journal-wide, so a shared db would
 // leak earlier tests' link_events into later connections' backlogs.
 beforeEach(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'linkinbox-events-'))
+  dir = mkdtempSync(join(tmpdir(), 'atento-events-'))
   store = await openStore({ path: join(dir, 'test.db') })
   app = createApp(store, { env: {}, eventsPollMs: 40 })
 })

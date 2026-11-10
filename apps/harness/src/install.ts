@@ -1,6 +1,6 @@
 /**
  * Service registration: `install` writes a launchd agent (macOS) or a
- * systemd user unit (Linux) that keeps `linkinbox-harness start` alive, and
+ * systemd user unit (Linux) that keeps `atento-harness start` alive, and
  * `uninstall` removes it. Registration is best-effort — the unit files are
  * the source of truth and are (re)written idempotently every install.
  *
@@ -12,12 +12,12 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { configDir } from '@linkinbox/app'
+import { configDir } from '@atento/app'
 import { writeFileAtomicSync } from './atomic.js'
 import { defaultExec, type ExecFn } from './notify.js'
 
-export const LAUNCHD_LABEL = 'com.linkinbox.harness'
-export const SYSTEMD_UNIT = 'linkinbox-harness.service'
+export const LAUNCHD_LABEL = 'com.atento.harness'
+export const SYSTEMD_UNIT = 'atento-harness.service'
 
 export interface InstallPaths {
   /** Absolute path of the agent/unit file to write. */
@@ -63,7 +63,7 @@ export interface UnitRenderOptions {
   nodePath?: string
   binPath?: string
   logPath: string
-  /** Extra environment for the service (e.g. LINKINBOX_HOME). */
+  /** Extra environment for the service (e.g. ATENTO_HOME). */
   env?: Record<string, string>
 }
 
@@ -129,7 +129,7 @@ export function renderSystemdUnit(opts: UnitRenderOptions): string {
     )
     .join('\n')
   return `[Unit]
-Description=linkinbox harness (linkinbox-harness start)
+Description=atento harness (atento-harness start)
 After=network-online.target
 
 [Service]
@@ -160,13 +160,13 @@ function escapeXml(s: string): string {
 const SERVICE_PATH_DIRS = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin']
 
 /**
- * Environment for the supervised service: every LINKINBOX_* var plus a
+ * Environment for the supervised service: every ATENTO_* var plus a
  * PATH that guarantees the standard bin dirs (launchd strips PATH).
  */
 export function serviceEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [k, v] of Object.entries(env)) {
-    if (k.startsWith('LINKINBOX_') && typeof v === 'string' && v !== '') out[k] = v
+    if (k.startsWith('ATENTO_') && typeof v === 'string' && v !== '') out[k] = v
   }
   const existing = typeof env['PATH'] === 'string' ? env['PATH'] : ''
   const merged = [...SERVICE_PATH_DIRS]

@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  createLinkinboxOps,
+  createAtentoOps,
   isCollectionName,
   serializeCollection,
   tsvWithCursor,
@@ -17,15 +17,15 @@ import {
   loadConfig,
   type AppConfig,
 } from '../src/index.js'
-import { openStore, type SqliteStore } from '@linkinbox/db'
-import type { Enrichment, ParkReason } from '@linkinbox/core'
-import { normalizeUrl } from '@linkinbox/core'
+import { openStore, type SqliteStore } from '@atento/db'
+import type { Enrichment, ParkReason } from '@atento/core'
+import { normalizeUrl } from '@atento/core'
 
 const dirs: string[] = []
 const stores: SqliteStore[] = []
 
 function tempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'linkinbox-collections-'))
+  const dir = mkdtempSync(join(tmpdir(), 'atento-collections-'))
   dirs.push(dir)
   return dir
 }
@@ -33,8 +33,8 @@ function tempDir(): string {
 async function opsFor(dir: string) {
   const store = await openStore({ path: join(dir, 'links.db') })
   stores.push(store)
-  const config = loadConfig({ LINKINBOX_HOME: dir } as NodeJS.ProcessEnv) as AppConfig
-  const ops = createLinkinboxOps(config, { store, env: {}, spoolDir: join(dir, 'spool') })
+  const config = loadConfig({ ATENTO_HOME: dir } as NodeJS.ProcessEnv) as AppConfig
+  const ops = createAtentoOps(config, { store, env: {}, spoolDir: join(dir, 'spool') })
   return { store, ops }
 }
 
@@ -225,7 +225,7 @@ describe('collections', () => {
     const result = await ops.collectionExport('enriched', { format: 'jsonl' })
     expect(result.count).toBe(1)
     expect(result.format).toBe('jsonl')
-    expect(result.uri).toMatch(/^linkinbox:\/\/exports\/enriched-\d+\.jsonl$/)
+    expect(result.uri).toMatch(/^atento:\/\/exports\/enriched-\d+\.jsonl$/)
     expect(existsSync(result.path)).toBe(true)
     expect(result.path).toContain(join('exports', 'enriched-'))
     const body = readFileSync(result.path, 'utf8')

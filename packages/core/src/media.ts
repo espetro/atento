@@ -1,7 +1,7 @@
 /**
  * The media port: what the pipeline needs from the tiered media stage.
  *
- * The stage itself lives in `@linkinbox/media`; the pipeline depends only on
+ * The stage itself lives in `@atento/media`; the pipeline depends only on
  * this port so core stays free of download and transcription code. The
  * caller (CLI, MCP) injects the implementation alongside the extract and
  * enrich functions. Nothing here names a provider or a model.

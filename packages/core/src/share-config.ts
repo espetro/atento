@@ -5,11 +5,11 @@
  *   hosts = ["x.com", "*.linkedin.com"]
  *
  * `hosts` is the allowlist of hosts another agent may READ through a saved
- * browser profile (`linkinbox browse`, the MCP browse_read tool). It ships
+ * browser profile (`atento browse`, the MCP browse_read tool). It ships
  * EMPTY: nothing is shared until the owner opts in host by host. The same
  * pattern syntax as the skip-list applies (exact host or `*.suffix`,
  * via core.matchesPattern), and a listed host still needs a saved profile
- * from `linkinbox login` before anything can be read for it.
+ * from `atento login` before anything can be read for it.
  *
  * The allowlist only opens the read path. Nothing the browse surface reads
  * is ever written back to the link store.

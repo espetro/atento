@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
-import { parseBrowserConfig, type AppConfig } from '@linkinbox/core'
+import { parseBrowserConfig, type AppConfig } from '@atento/core'
 import { capture, tempDb, type TempDb } from './helpers.js'
 import { createContext, type CliContext } from '../src/context.js'
 import { runBrowsers } from '../src/commands/browsers.js'
@@ -20,7 +20,7 @@ async function contextFor(db: TempDb, browserToml: string): Promise<CliContext> 
     browser: parseBrowserConfig(browserToml),
   } as unknown as AppConfig
   return createContext({
-    env: { LINKINBOX_DB: db.path },
+    env: { ATENTO_DB: db.path },
     store: db.store,
     quiet: true,
     logPath: join(db.dir, 'log.jsonl'),

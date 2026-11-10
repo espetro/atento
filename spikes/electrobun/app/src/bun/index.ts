@@ -1,11 +1,11 @@
 import { BrowserWindow } from "electrobun/main";
 
-// SPIKE: load the linkinbox web UI (served by `linkinbox serve`) directly.
-const UI_URL = process.env.LINKINBOX_UI_URL ?? "http://localhost:4173";
+// SPIKE: load the atento web UI (served by `atento serve`) directly.
+const UI_URL = process.env.ATENTO_UI_URL ?? "http://localhost:4173";
 const COLLECTOR = process.env.SPIKE_COLLECTOR ?? "http://localhost:4799";
 
 const mainWindow = new BrowserWindow({
-	title: "linkinbox — electrobun spike",
+	title: "atento — electrobun spike",
 	url: UI_URL,
 	frame: {
 		width: 1280,
@@ -33,7 +33,7 @@ mainWindow.webview.on("dom-ready", () => {
 	setTimeout(() => drive(process.env.SPIKE_MODE === "check-cookies" ? COOKIES_SCENARIO : SCENARIO), 2500);
 });
 
-// Everything below runs inside the linkinbox page (http://localhost:4173).
+// Everything below runs inside the atento page (http://localhost:4173).
 const SCENARIO = `(async () => {
 	const B = (l, r) => fetch("${COLLECTOR}/log?label=" + encodeURIComponent(l) + "&result=" + encodeURIComponent(String(r))).catch(() => {});
 	const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

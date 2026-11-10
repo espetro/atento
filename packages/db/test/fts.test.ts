@@ -4,12 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { SqliteStore, MIGRATIONS, toFts5Query } from '../src/index.js'
-import type { Enrichment, LinkInput } from '@linkinbox/core'
+import type { Enrichment, LinkInput } from '@atento/core'
 
 let dir: string
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'linkinbox-fts-'))
+  dir = mkdtempSync(join(tmpdir(), 'atento-fts-'))
 })
 
 afterEach(() => {

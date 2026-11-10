@@ -1,11 +1,11 @@
 /**
- * Lifecycle state: the pidfile under the linkinbox config dir
- * (<configDir>/harness.pid, LINKINBOX_HOME-aware via configDir). The file
+ * Lifecycle state: the pidfile under the atento config dir
+ * (<configDir>/harness.pid, ATENTO_HOME-aware via configDir). The file
  * is JSON so `status` can report the port and start time, not just liveness.
  *
  * Pid-reuse safety: `stop` never signals a pid it cannot identify as the
  * harness. Before SIGTERM it runs `ps -p <pid> -o command=` (injectable) and
- * requires the command line to look like linkinbox-harness — a recycled pid
+ * requires the command line to look like atento-harness — a recycled pid
  * belonging to an unrelated process makes stop refuse instead of killing a
  * stranger. `status` stays a cheap liveness probe; `verifyHarnessPid` is
  * exported for callers that want the stronger check.
@@ -14,7 +14,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, readFileSync, rmSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
-import { configDir } from '@linkinbox/app'
+import { configDir } from '@atento/app'
 import { writeFileAtomicSync } from './atomic.js'
 
 const execFileAsync = promisify(execFile)
@@ -94,18 +94,18 @@ export const defaultPsExec: PsExecFn = async (file, args) => {
 }
 
 /**
- * Does this `ps -o command=` line look like the linkinbox harness? Matches
- * the bin name (`linkinbox-harness`, e.g. a pnpm/global shim) or a
- * `bin.js` living under a `harness` directory inside a `linkinbox` tree
+ * Does this `ps -o command=` line look like the atento harness? Matches
+ * the bin name (`atento-harness`, e.g. a pnpm/global shim) or a
+ * `bin.js` living under a `harness` directory inside a `atento` tree
  * (the workspace layout `apps/harness/dist/bin.js`). Deliberately strict:
  * an unverifiable pid is treated as foreign — refusing to signal is the
  * safe direction.
  */
 export function isHarnessCommand(command: string): boolean {
   const cmd = command.toLowerCase()
-  if (cmd.includes('linkinbox-harness')) return true
+  if (cmd.includes('atento-harness')) return true
   return (
-    cmd.includes('linkinbox') &&
+    cmd.includes('atento') &&
     cmd.includes('harness') &&
     /(^|[\s/\\])bin\.js(\s|$)/.test(cmd)
   )

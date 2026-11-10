@@ -582,18 +582,18 @@ export function browsers(): BrowserAdaptersResponse {
 }
 
 export function configInfo(): ConfigInfo {
-  const dir = '~/.linkinbox'
+  const dir = '~/.atento'
   return {
     dir,
     configPath: `${dir}/config.toml`,
     sources: ['~/exports/stash.md', '~/Documents/links.txt'],
     capture: {
-      tokenEnv: 'LINKINBOX_CAPTURE_TOKEN',
+      tokenEnv: 'ATENTO_CAPTURE_TOKEN',
       tokenConfigured: false,
       allowedOrigins: ['http://127.0.0.1:4173', 'http://localhost:4173'],
     },
     server: {
-      tokenEnv: 'LINKINBOX_SERVER_TOKEN',
+      tokenEnv: 'ATENTO_SERVER_TOKEN',
       tokenConfigured: false,
     },
     bind: {

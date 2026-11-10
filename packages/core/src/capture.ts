@@ -75,7 +75,7 @@ export function parseCapture(raw: unknown): Capture {
  * that variable at request time. An unset variable disables the endpoint.
  */
 export interface CaptureConfig {
-  /** Env var that holds the bearer token. Default LINKINBOX_CAPTURE_TOKEN. */
+  /** Env var that holds the bearer token. Default ATENTO_CAPTURE_TOKEN. */
   tokenEnv: string
   /** Origins allowed by CORS. Default: none (same-origin / non-browser clients only). */
   allowedOrigins: string[]
@@ -84,7 +84,7 @@ export interface CaptureConfig {
 }
 
 export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
-  tokenEnv: 'LINKINBOX_CAPTURE_TOKEN',
+  tokenEnv: 'ATENTO_CAPTURE_TOKEN',
   allowedOrigins: [],
   maxBodyBytes: DEFAULT_CAPTURE_MAX_BODY_BYTES,
 }
@@ -99,7 +99,7 @@ function tomlTable(value: unknown): Record<string, unknown> {
  * Parse the `[capture]` table:
  *
  *   [capture]
- *   token_env = "LINKINBOX_CAPTURE_TOKEN"
+ *   token_env = "ATENTO_CAPTURE_TOKEN"
  *   allowed_origins = ["chrome-extension://abcdef"]
  *   max_body_bytes = 2097152
  */

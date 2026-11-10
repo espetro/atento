@@ -31,7 +31,7 @@ import IconSparkles from '~icons/lucide/sparkles'
 
 /**
  * Command palette model (P1.1). `paletteCommands` is pure-ish (reads the
- * density store, dispatches through the same `linkinbox:menu-action` event
+ * density store, dispatches through the same `atento:menu-action` event
  * the shell context menus use) so vitest can exercise it without a DOM.
  */
 
@@ -104,7 +104,7 @@ export function paletteCommands(
 		})
 	}
 
-	// Selected-link actions route through `linkinbox:menu-action` — the same
+	// Selected-link actions route through `atento:menu-action` — the same
 	// bus the native shell context menus use, so triage/attention handlers
 	// serve both.
 	const id = url.selected

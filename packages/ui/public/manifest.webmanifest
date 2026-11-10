@@ -1,6 +1,6 @@
 {
-  "name": "linkinbox",
-  "short_name": "linkinbox",
+  "name": "atento",
+  "short_name": "atento",
   "description": "Link triage inbox",
   "start_url": "/",
   "display": "standalone",

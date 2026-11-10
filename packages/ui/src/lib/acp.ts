@@ -8,9 +8,9 @@ import { resetLayout, setLayout, viewLayout } from '../gen/layout'
  * The Electrobun shell owns the agent subprocess + ACP session; the page
  * talks to it through the same localhost bridge the native menus use.
  * Agent traffic arrives as CustomEvents:
- *   linkinbox:acp-event       — session/update payloads + end_turn/error
- *   linkinbox:acp-permission  — permission prompts to approve in-page
- *   linkinbox:layout-request  — ui-layout MCP tool calls to answer here
+ *   atento:acp-event       — session/update payloads + end_turn/error
+ *   atento:acp-permission  — permission prompts to approve in-page
+ *   atento:layout-request  — ui-layout MCP tool calls to answer here
  * All of this is inert on plain web (no bridge → no events, calls no-op).
  */
 
@@ -22,8 +22,8 @@ export interface AcpStatus {
 }
 
 function bridge(): string | null {
-	const w = window as unknown as { __linkinboxBridge?: string }
-	return typeof w.__linkinboxBridge === 'string' ? w.__linkinboxBridge : null
+	const w = window as unknown as { __atentoBridge?: string }
+	return typeof w.__atentoBridge === 'string' ? w.__atentoBridge : null
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
@@ -138,8 +138,8 @@ export function acpPermission(requestId: string, optionId: string) {
 /** Subscribe to session/update payloads. Returns unsubscribe. */
 export function onAcpEvent(handler: (update: unknown) => void): () => void {
 	const listener = (e: Event) => handler((e as CustomEvent<unknown>).detail)
-	window.addEventListener('linkinbox:acp-event', listener)
-	return () => window.removeEventListener('linkinbox:acp-event', listener)
+	window.addEventListener('atento:acp-event', listener)
+	return () => window.removeEventListener('atento:acp-event', listener)
 }
 
 export interface AcpPermissionRequest {
@@ -150,8 +150,8 @@ export interface AcpPermissionRequest {
 /** Subscribe to agent permission requests. Returns unsubscribe. */
 export function onAcpPermission(handler: (req: AcpPermissionRequest) => void): () => void {
 	const listener = (e: Event) => handler((e as CustomEvent<AcpPermissionRequest>).detail)
-	window.addEventListener('linkinbox:acp-permission', listener)
-	return () => window.removeEventListener('linkinbox:acp-permission', listener)
+	window.addEventListener('atento:acp-permission', listener)
+	return () => window.removeEventListener('atento:acp-permission', listener)
 }
 
 // ---- ui-layout tool serving -------------------------------------------------
@@ -194,7 +194,7 @@ async function runLayoutTool(tool: string, args: Record<string, unknown>): Promi
 }
 
 /**
- * Answer `linkinbox:layout-request` events by running the tool and posting
+ * Answer `atento:layout-request` events by running the tool and posting
  * the result back to the bridge. Wire once (App mount).
  */
 export function startLayoutToolServer(): () => void {
@@ -208,6 +208,6 @@ export function startLayoutToolServer(): () => void {
 			void post('/layout/result', { requestId, result }).catch(() => {})
 		})
 	}
-	window.addEventListener('linkinbox:layout-request', listener)
-	return () => window.removeEventListener('linkinbox:layout-request', listener)
+	window.addEventListener('atento:layout-request', listener)
+	return () => window.removeEventListener('atento:layout-request', listener)
 }

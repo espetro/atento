@@ -1,6 +1,6 @@
 /**
  * Service composition root: `start` builds the whole harness in-process —
- * createLinkinbox (app layer) → createApp (hono api/mcp/capture) → static
+ * createAtento (app layer) → createApp (hono api/mcp/capture) → static
  * middleware (apps/web) → http listener — plus the recurrence scheduler.
  * No MCP hop, no spawned CLI: the server calls `app` directly so SSE and
  * latency stay intact.
@@ -10,18 +10,18 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  createLinkinbox,
+  createAtento,
   pipelineLogger,
   type AppConfig,
   type AsrFn,
   type EnrichFn,
   type ExtractFn,
-  type Linkinbox,
+  type Atento,
   type MediaFn,
-} from '@linkinbox/app'
-import type { Store } from '@linkinbox/core'
-import { createMcpDeps, createMcpHttpHandler } from '@linkinbox/mcp'
-import { createApp, DEFAULT_PORT } from '@linkinbox/server'
+} from '@atento/app'
+import type { Store } from '@atento/core'
+import { createMcpDeps, createMcpHttpHandler } from '@atento/mcp'
+import { createApp, DEFAULT_PORT } from '@atento/server'
 import type { MiddlewareHandler } from 'hono'
 import { loadHarnessConfig, type HarnessConfig } from './config.js'
 import { harnessPidPath, removePidFile, writePidFile, type PidInfo } from './lifecycle.js'
@@ -55,7 +55,7 @@ export function resolveWebDir(
   env: NodeJS.ProcessEnv = process.env,
   root: string = repoRoot(),
 ): string | null {
-  const explicit = env['LINKINBOX_WEB_DIR'] ?? harness.webDir
+  const explicit = env['ATENTO_WEB_DIR'] ?? harness.webDir
   if (explicit !== undefined && explicit.trim() !== '') {
     return existsSync(join(explicit, 'index.html')) ? explicit : null
   }
@@ -77,11 +77,11 @@ export interface HarnessRuntimeOptions {
   webDir?: string | null
   /** Notifier override (tests). */
   notifier?: Notifier
-  /** Pre-built app (tests); created via createLinkinbox when absent. */
-  app?: Linkinbox
+  /** Pre-built app (tests); created via createAtento when absent. */
+  app?: Atento
   /** Pre-built store (tests); the app's store is used when absent. */
   store?: Store
-  /** Adapter overrides forwarded to createLinkinbox (tests). */
+  /** Adapter overrides forwarded to createAtento (tests). */
   extractFn?: ExtractFn
   enrichFn?: EnrichFn
   mediaFn?: MediaFn
@@ -119,7 +119,7 @@ export async function startHarness(options: HarnessRuntimeOptions): Promise<Harn
   const ownsApp = options.app === undefined
   const app =
     options.app ??
-    (await createLinkinbox(options.config, {
+    (await createAtento(options.config, {
       env,
       ...(options.store !== undefined ? { store: options.store } : {}),
       logger: pipelineLogger('harness'),
@@ -130,13 +130,13 @@ export async function startHarness(options: HarnessRuntimeOptions): Promise<Harn
     }))
   const store = options.store ?? app.store
 
-  // 2. HTTP surface: api + capture + mcp + openapi via @linkinbox/server,
+  // 2. HTTP surface: api + capture + mcp + openapi via @atento/server,
   //    then the harness's own static layer for apps/web.
-  const envPort = Number(env['LINKINBOX_PORT'] ?? '')
+  const envPort = Number(env['ATENTO_PORT'] ?? '')
   const port =
     options.port ??
     (Number.isFinite(envPort) && envPort > 0 ? envPort : DEFAULT_PORT)
-  const hostname = options.hostname ?? env['LINKINBOX_HOST'] ?? '127.0.0.1'
+  const hostname = options.hostname ?? env['ATENTO_HOST'] ?? '127.0.0.1'
 
   const mcpFetch = (() => {
     const handler = createMcpHttpHandler(createMcpDeps(app, app.logger))
@@ -177,7 +177,7 @@ export async function startHarness(options: HarnessRuntimeOptions): Promise<Harn
     if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
       throw new Error(
         `cannot bind http://${hostname}:${port} — address already in use ` +
-          `(another linkinbox-harness or process holds the port)`,
+          `(another atento-harness or process holds the port)`,
       )
     }
     throw err
@@ -185,7 +185,7 @@ export async function startHarness(options: HarnessRuntimeOptions): Promise<Harn
   // Post-listen errors (rare for http.Server) must not crash the process
   // as unhandled 'error' events; surface them through the optional hook.
   server.on('error', (err) => {
-    ;(options.onError ?? ((e: Error) => console.error('linkinbox-harness server error:', e)))(err)
+    ;(options.onError ?? ((e: Error) => console.error('atento-harness server error:', e)))(err)
   })
   const address = server.address() as { port: number }
   const boundPort = address.port

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Package the linkinbox desktop app: builds the sidecar server runtime,
+# Package the atento desktop app: builds the sidecar server runtime,
 # builds the Electrobun .app, injects Contents/Resources/server, ad-hoc
 # signs, and installs to ~/Applications.
 #
@@ -7,7 +7,7 @@
 #   Contents/Resources/server/node                  self-contained Node 26
 #   Contents/Resources/server/server-entry.mjs      sidecar entry point
 #   Contents/Resources/server/ui-dist/              built packages/ui
-#   Contents/Resources/server/{dist,node_modules}/  pnpm-deployed @linkinbox/cli
+#   Contents/Resources/server/{dist,node_modules}/  pnpm-deployed @atento/cli
 #
 # The sidecar exists because better-sqlite3 cannot run under the Bun
 # runtime that hosts the Electrobun main process.
@@ -16,18 +16,18 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$APP_DIR/../.." && pwd)"
 RUNTIME="$APP_DIR/server-runtime"
-NODE_BIN="${LINKINBOX_NODE_BIN:-$(mise where node@26 2>/dev/null)/bin/node}"
+NODE_BIN="${ATENTO_NODE_BIN:-$(mise where node@26 2>/dev/null)/bin/node}"
 
 [ -x "$NODE_BIN" ] || { echo "node binary not found: $NODE_BIN" >&2; exit 1; }
 [ -f "$REPO/packages/ui/dist/index.html" ] || {
-	echo "packages/ui/dist missing — run: pnpm --filter @linkinbox/ui build" >&2
+	echo "packages/ui/dist missing — run: pnpm --filter @atento/ui build" >&2
 	exit 1
 }
 
 echo "==> deploying server bundle"
 rm -rf "$RUNTIME/server"
 mkdir -p "$RUNTIME/server"
-pnpm --dir "$REPO" --filter @linkinbox/cli deploy --prod "$RUNTIME/server"
+pnpm --dir "$REPO" --filter @atento/cli deploy --prod "$RUNTIME/server"
 
 # better-sqlite3's native module must match the bundled node's ABI — the
 # deploy above runs under the system node, so rebuild against $NODE_BIN.
@@ -67,19 +67,19 @@ echo "==> ad-hoc signing"
 codesign --force --deep --sign - "$APP" 2>&1 | tail -2 || true
 
 echo "==> installing to ~/Applications"
-rm -rf "$HOME/Applications/linkinbox.app"
-cp -R "$APP" "$HOME/Applications/linkinbox.app"
+rm -rf "$HOME/Applications/atento.app"
+cp -R "$APP" "$HOME/Applications/atento.app"
 
 # cp -R of ~400MB has been observed to truncate; verify and retry once.
-if [ ! -f "$HOME/Applications/linkinbox.app/Contents/Resources/server/server-entry.mjs" ]; then
+if [ ! -f "$HOME/Applications/atento.app/Contents/Resources/server/server-entry.mjs" ]; then
 	echo "==> install copy incomplete, retrying server runtime"
-	rm -rf "$HOME/Applications/linkinbox.app/Contents/Resources/server"
-	cp -R "$APP/Contents/Resources/server" "$HOME/Applications/linkinbox.app/Contents/Resources/server"
+	rm -rf "$HOME/Applications/atento.app/Contents/Resources/server"
+	cp -R "$APP/Contents/Resources/server" "$HOME/Applications/atento.app/Contents/Resources/server"
 fi
-[ -f "$HOME/Applications/linkinbox.app/Contents/Resources/server/server-entry.mjs" ] || {
+[ -f "$HOME/Applications/atento.app/Contents/Resources/server/server-entry.mjs" ] || {
 	echo "server runtime missing after install" >&2
 	exit 1
 }
-chmod +x "$HOME/Applications/linkinbox.app/Contents/Resources/server/node"
+chmod +x "$HOME/Applications/atento.app/Contents/Resources/server/node"
 
-echo "done: ~/Applications/linkinbox.app"
+echo "done: ~/Applications/atento.app"

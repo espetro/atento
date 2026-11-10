@@ -12,7 +12,7 @@ import {
   type ExtractFn,
   type MediaFn,
   type BusyRun,
-} from '@linkinbox/app'
+} from '@atento/app'
 import type { CliContext } from '../context.js'
 
 /** The stage logger names the pipeline always used. */
@@ -112,7 +112,7 @@ export async function runExtract(
   if (untilEmpty) {
     const outcome = await ctx.app.extractUntilEmpty({
       ...shared,
-      // Never sleep inside the CLI loop: the next `linkinbox extract`
+      // Never sleep inside the CLI loop: the next `atento extract`
       // invocation handles the spacing wait, and a process that sleeps
       // minutes is a process that gets killed.
       sleep: async () => {},
@@ -142,7 +142,7 @@ export async function runExtract(
   }
   if (result.needsBrowserCount > 0) {
     console.log(
-      `(${result.needsBrowserCount} need a browser; run \`linkinbox login <host>\` and re-run)`,
+      `(${result.needsBrowserCount} need a browser; run \`atento login <host>\` and re-run)`,
     )
   }
   if (result.mediaCount > 0) {
@@ -247,7 +247,7 @@ export async function runAll(
     if (c.needs_login > 0) parts.push(`${c.needs_login} need login`)
     if (c.blocked > 0) parts.push(`${c.blocked} blocked`)
     if (c.errored > 0) parts.push(`${c.errored} errored`)
-    console.log(`needs action: ${parts.join(', ')} — see \`linkinbox collections summary\``)
+    console.log(`needs action: ${parts.join(', ')} — see \`atento collections summary\``)
     process.exitCode = 2
   }
   const accepted = result.summary.ingest.jobs.reduce((n, j) => n + j.accepted, 0)

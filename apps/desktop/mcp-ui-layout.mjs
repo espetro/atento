@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Minimal MCP stdio server exposing the app's GenUI surface to ACP agents.
 // Dependency-free: line-delimited JSON-RPC over stdio; tool calls are
-// forwarded to the shell's localhost bridge ($LINKINBOX_BRIDGE) which
+// forwarded to the shell's localhost bridge ($ATENTO_BRIDGE) which
 // relays them into the hosted page — the UI's gen/catalog + gen/layout
 // modules remain the source of truth.
 
-const BRIDGE = process.env.LINKINBOX_BRIDGE ?? "";
+const BRIDGE = process.env.ATENTO_BRIDGE ?? "";
 
 const TOOLS = [
 	{
@@ -95,7 +95,7 @@ async function handle(msg) {
 		result(id, {
 			protocolVersion: params?.protocolVersion ?? "2025-06-18",
 			capabilities: { tools: {} },
-			serverInfo: { name: "linkinbox-ui-layout", version: "0.1.0" },
+			serverInfo: { name: "atento-ui-layout", version: "0.1.0" },
 		});
 		return;
 	}
@@ -108,7 +108,7 @@ async function handle(msg) {
 		return;
 	}
 	if (method === "tools/call") {
-		if (BRIDGE === "") return toolError(id, "LINKINBOX_BRIDGE unset");
+		if (BRIDGE === "") return toolError(id, "ATENTO_BRIDGE unset");
 		const name = params?.name;
 		if (!TOOLS.some((t) => t.name === name)) return toolError(id, `unknown tool ${name}`);
 		try {

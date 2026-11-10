@@ -10,7 +10,7 @@ import {
   type LinkStateName,
   type SweepPlan,
   type TriageAction,
-} from '@linkinbox/app'
+} from '@atento/app'
 import { applyFilter } from './filter.js'
 import { json, type ToolDef } from './types.js'
 

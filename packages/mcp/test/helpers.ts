@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
-import { openStore, type SqliteStore } from '@linkinbox/db'
+import { openStore, type SqliteStore } from '@atento/db'
 import {
   createCollectingLogger,
   normalizeUrl,
@@ -15,8 +15,8 @@ import {
   type ExtractFn,
   type Link,
   type ShareConfig,
-} from '@linkinbox/core'
-import { DEFAULT_TTL_CONFIG, type TtlConfig } from '@linkinbox/core'
+} from '@atento/core'
+import { DEFAULT_TTL_CONFIG, type TtlConfig } from '@atento/core'
 import { createMcpServer } from '../src/index.js'
 import type { McpContext, McpDeps } from '../src/index.js'
 
@@ -71,7 +71,7 @@ export function createTestDeps(
 }
 
 export async function createHarness(options: TestDepsOptions = {}): Promise<TestHarness> {
-  const dir = mkdtempSync(join(tmpdir(), 'linkinbox-mcp-'))
+  const dir = mkdtempSync(join(tmpdir(), 'atento-mcp-'))
   const store = await openStore({ path: join(dir, 'links.db') })
   const { deps } = createTestDeps(store, options)
 

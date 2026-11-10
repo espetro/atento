@@ -14,7 +14,7 @@ describe("browser extractor", () => {
   it("returns needsBrowser=true with empty markdown when no profile exists", async () => {
     const extractor = createBrowserExtractor({
       exec: execOk("# should not be called"),
-      profilesDir: "/nonexistent/linkinbox/profiles",
+      profilesDir: "/nonexistent/atento/profiles",
       profileExists: () => false,
     });
     const result = await extractor.extract("https://x.com/user/status/123");
@@ -105,7 +105,7 @@ describe("browser extractor: human pacing", () => {
       exec: execOk(
         "##\n\nTo view keyboard shortcuts, press question mark\n\nView keyboard shortcuts\n\n# Search timeline\n\nMalte Ubl\n\n@cramforce",
       ),
-      profilesDir: "/tmp/linkinbox-profiles",
+      profilesDir: "/tmp/atento-profiles",
       profileExists: () => true,
     });
     const result = await extractor.extract("https://x.com/search?q=claude");

@@ -20,7 +20,7 @@ import {
   DEFAULT_TTL_CONFIG,
   type ExtractFn,
   type TriageAction,
-} from '@linkinbox/core'
+} from '@atento/core'
 import { callJson, createHarness, insertLink } from './helpers.js'
 
 const extractFn: ExtractFn = async () => ({ markdown: '# extracted parity', extractor: 'fake' })
@@ -129,7 +129,7 @@ describe('mcp/core parity', () => {
   it('ingest_run ingests through the same core ingest stage', async () => {
     const h = await createHarness()
     try {
-      const dir = mkdtempSync(join(tmpdir(), 'linkinbox-mcp-parity-'))
+      const dir = mkdtempSync(join(tmpdir(), 'atento-mcp-parity-'))
       const file = join(dir, 'links.md')
       writeFileSync(file, '- [Example](https://example.com/parity)\n')
 

@@ -1,5 +1,5 @@
 /**
- * Collections commands: `linkinbox collections summary|read|export`.
+ * Collections commands: `atento collections summary|read|export`.
  * Thin shells over the app layer's collection use cases — the same
  * contract the MCP tools and the HTTP API expose.
  */
@@ -11,7 +11,7 @@ import {
   DEFAULT_COLLECTION_FIELDS,
   type CollectionExportFormat,
   type CollectionName,
-} from '@linkinbox/app'
+} from '@atento/app'
 import type { CliContext } from '../context.js'
 
 function requireCollection(name: string): CollectionName {
@@ -93,7 +93,7 @@ export function registerCollectionsCommands(
 
   collections
     .command('export')
-    .description('write one collection to ~/.linkinbox/exports/ and print the handle')
+    .description('write one collection to ~/.atento/exports/ and print the handle')
     .argument('<name>')
     .option('--since <cursor>', 'only links changed after this cursor', Number)
     .option('--fields <fields>', 'comma-separated field projection')

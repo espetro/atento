@@ -2,12 +2,12 @@
  * Shared CLI context: config, app, store, logger. Every command resolves its
  * dependencies from here so the command bodies stay thin.
  *
- * The context is built on `createLinkinbox` from @linkinbox/app: the store
+ * The context is built on `createAtento` from @atento/app: the store
  * opening, the config and the adapter wiring all live in the composition
  * root; the CLI only adds its logging sinks on top.
  */
 import {
-  createLinkinbox,
+  createAtento,
   disposeLogging,
   loadConfig,
   pipelineLogger,
@@ -16,16 +16,16 @@ import {
   type AsrFn,
   type EnrichFn,
   type ExtractFn,
-  type Linkinbox,
+  type Atento,
   type MediaFn,
   type PipelineLogger,
   type SqliteStore,
-} from '@linkinbox/app'
+} from '@atento/app'
 
 export interface CliContext {
   config: AppConfig
   /** The application layer: every operation goes through it. */
-  app: Linkinbox
+  app: Atento
   store: SqliteStore
   logger: PipelineLogger
   /** Flush logs and close the store. */
@@ -57,7 +57,7 @@ export async function createContext(options: ContextOptions = {}): Promise<CliCo
   const env = options.env ?? process.env
   const config = options.config ?? loadConfig(env)
   const logger = pipelineLogger('cli')
-  const app = await createLinkinbox(config, {
+  const app = await createAtento(config, {
     env,
     ...(options.store !== undefined ? { store: options.store } : {}),
     logger,
@@ -67,7 +67,7 @@ export async function createContext(options: ContextOptions = {}): Promise<CliCo
     ...(options.asr !== undefined ? { asr: options.asr } : {}),
   })
   setupLogging({
-    path: options.logPath ?? env['LINKINBOX_LOG_FILE'],
+    path: options.logPath ?? env['ATENTO_LOG_FILE'],
     console: options.quiet === true ? false : true,
   })
 

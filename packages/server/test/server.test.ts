@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openStore, type SqliteStore } from '@linkinbox/db'
-import type { Enrichment, LinkInput } from '@linkinbox/core'
+import { openStore, type SqliteStore } from '@atento/db'
+import type { Enrichment, LinkInput } from '@atento/core'
 import { createApp, createFullApp, startServer } from '../src/index.js'
 
 let store: SqliteStore
@@ -36,7 +36,7 @@ async function seed(overrides: Partial<LinkInput> = {}): Promise<number> {
 }
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'linkinbox-server-'))
+  dir = mkdtempSync(join(tmpdir(), 'atento-server-'))
   store = await openStore({ path: join(dir, 'test.db') })
 })
 
@@ -317,7 +317,7 @@ describe('static serving', () => {
   function makeDist(): string {
     const dist = join(dir, `dist-${Math.floor(Math.random() * 1e9)}`)
     mkdirSync(dist, { recursive: true })
-    writeFileSync(join(dist, 'index.html'), '<!doctype html><title>linkinbox</title>')
+    writeFileSync(join(dist, 'index.html'), '<!doctype html><title>atento</title>')
     writeFileSync(join(dist, 'app.js'), 'console.log(1)')
     return dist
   }
@@ -326,13 +326,13 @@ describe('static serving', () => {
     const app = createFullApp({ store, uiDist: makeDist() })
     const index = await app.request('/')
     expect(index.status).toBe(200)
-    expect(await index.text()).toContain('linkinbox')
+    expect(await index.text()).toContain('atento')
     const asset = await app.request('/app.js')
     expect(asset.status).toBe(200)
     expect(await asset.text()).toContain('console.log(1)')
     const spa = await app.request('/some/client/route')
     expect(spa.status).toBe(200)
-    expect(await spa.text()).toContain('linkinbox')
+    expect(await spa.text()).toContain('atento')
   })
 
   it('returns a helpful message when the ui dist is missing', async () => {
@@ -341,7 +341,7 @@ describe('static serving', () => {
     expect(res.status).toBe(404)
     const body = (await res.json()) as { error: string }
     expect(body.error).toContain('ui dist not found')
-    expect(body.error).toContain('@linkinbox/ui build')
+    expect(body.error).toContain('@atento/ui build')
     // api still works
     const links = await app.request('/api/links')
     expect(links.status).toBe(200)

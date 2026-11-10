@@ -5,7 +5,7 @@
 }
 
 /*
- * linkinbox design tokens (docs/screens/references/tokens.md).
+ * atento design tokens (docs/screens/references/tokens.md).
  * Off-light ground, near-black ink, ONE accent, state colors only via
  * .chip-state-*. daisyUI stays loaded as the base layer; every surface in
  * markup uses the semantic classes below — never raw palette utilities.

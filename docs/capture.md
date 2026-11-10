@@ -1,6 +1,6 @@
 # Client-side capture ingest
 
-`POST /capture` on the linkinbox server accepts content a client already extracted in the user's own logged-in session. Any client that can POST JSON can use it: a browser extension, a script on another machine, anything that speaks HTTP. The pipeline trusts that content more than anything it fetches itself, so a captured link skips the headless extract step entirely and goes straight to enrichment.
+`POST /capture` on the atento server accepts content a client already extracted in the user's own logged-in session. Any client that can POST JSON can use it: a browser extension, a script on another machine, anything that speaks HTTP. The pipeline trusts that content more than anything it fetches itself, so a captured link skips the headless extract step entirely and goes straight to enrichment.
 
 Only page captures are supported today. The schema carries a `contentType` field so future content types can be added without a breaking change; only `'page'` is accepted now.
 
@@ -37,10 +37,10 @@ Responses: `201 {id, url, outcome: "created"}` for a new link, `200` with `outco
 ### curl
 
 ```sh
-export LINKINBOX_CAPTURE_TOKEN=$(security find-generic-password -s linkinbox-capture -w 2>/dev/null || echo unset)
+export ATENTO_CAPTURE_TOKEN=$(security find-generic-password -s atento-capture -w 2>/dev/null || echo unset)
 
 curl -s http://127.0.0.1:4173/capture \
-  -H "authorization: Bearer $LINKINBOX_CAPTURE_TOKEN" \
+  -H "authorization: Bearer $ATENTO_CAPTURE_TOKEN" \
   -H 'content-type: application/json' \
   -d '{
     "url": "https://example.com/article",
@@ -78,11 +78,11 @@ const res = await fetch('http://127.0.0.1:4173/capture', {
 
 ## Auth and transport
 
-The bearer token is never stored in config. `~/.linkinbox/config.toml` names the environment variable that holds it:
+The bearer token is never stored in config. `~/.atento/config.toml` names the environment variable that holds it:
 
 ```toml
 [capture]
-token_env = "LINKINBOX_CAPTURE_TOKEN"
+token_env = "ATENTO_CAPTURE_TOKEN"
 allowed_origins = ["chrome-extension://your-extension-id"]
 max_body_bytes = 2097152
 ```
@@ -107,7 +107,7 @@ A new URL is stored with `source` set to the client's `source` and `captured = t
 
 ## Retrying headless
 
-`linkinbox retry <id> --headless` re-queues a captured link for headless extraction. It is explicit and never automatic: the pipeline does not re-fetch captured content on its own. The link returns to the `created` state and the next extract run claims it; normal trust rules then decide whether anything is overwritten.
+`atento retry <id> --headless` re-queues a captured link for headless extraction. It is explicit and never automatic: the pipeline does not re-fetch captured content on its own. The link returns to the `created` state and the next extract run claims it; normal trust rules then decide whether anything is overwritten.
 
 ## Running behind a stable URL for mobile clients
 
@@ -130,7 +130,7 @@ Clients that can reach the server (the browser extension, a script on another ma
 
 ## iOS today
 
-Safari on iOS cannot run this extension path today. The Reading List plist import (`linkinbox import <plist>`) remains the iOS route. An iOS Shortcut that POSTs to `/capture` is untested and is not claimed to work.
+Safari on iOS cannot run this extension path today. The Reading List plist import (`atento import <plist>`) remains the iOS route. An iOS Shortcut that POSTs to `/capture` is untested and is not claimed to work.
 
 ## Per-site cleaning of browser extractions
 
@@ -146,14 +146,14 @@ Passthrough rule: cleaning is pure and never throws. Any other hostname is retur
 
 ## Sharing the saved sessions with other agents
 
-The saved profiles are usable from outside the pipeline: `linkinbox browse <url>` in the terminal, and the MCP tools `browse_read` and `browse_hosts` on the linkinbox MCP server, read one page through the saved profile of its host and return markdown. The full contract for agents, including the refusals and the pacing rules, lives in the `linkinbox-browser` skill at `~/.agents/skills/linkinbox-browser/SKILL.md`.
+The saved profiles are usable from outside the pipeline: `atento browse <url>` in the terminal, and the MCP tools `browse_read` and `browse_hosts` on the atento MCP server, read one page through the saved profile of its host and return markdown. The full contract for agents, including the refusals and the pacing rules, lives in the `atento-browser` skill at `~/.agents/skills/atento-browser/SKILL.md`.
 
 ### The trust model
 
 Three facts carry the whole design, and each one is enforced in code, not in a comment:
 
 1. **The profile cookies never leave the machine.** Nothing on the browse surface reads, exports or logs the profile directory. The engines run it locally; the only output is the page markdown. The store records just the profile path, as with `login`.
-2. **The hosts allowlist gates everything.** Only hosts listed in `[share] hosts` in `~/.linkinbox/config.toml` may be read, matched with the same exact-or-`*.suffix` patterns as the skip list. The list ships EMPTY, so a fresh install shares nothing and every browse call is refused with `not_shared` until the owner opts in host by host. A listed host also needs a saved profile from `linkinbox login`; a read without one is refused with `no_profile`.
+2. **The hosts allowlist gates everything.** Only hosts listed in `[share] hosts` in `~/.atento/config.toml` may be read, matched with the same exact-or-`*.suffix` patterns as the skip list. The list ships EMPTY, so a fresh install shares nothing and every browse call is refused with `not_shared` until the owner opts in host by host. A listed host also needs a saved profile from `atento login`; a read without one is refused with `no_profile`.
 3. **The surface is read-only.** The exposed primitive is `read(url)`. No click, type, form, hover or navigation API exists on the browse path: the reader drives the browser with exactly the commands a page load needs (open, dwell, scroll a human step, read, close). The broader agent-browser toolset is deliberately not reachable from it.
 
-A browse is also paced exactly like a pipeline read: the shared guard applies the human pacing profile, the per-host daily cap (default 40 per rolling day), the working-hours window and the circuit breaker, so an outside agent cannot spend the account's budget faster than the pipeline would. Nothing a browse reads is written to the link store; the only persisted state is the host budget in `host_state`, shared with extraction on purpose. When a host is done being shared, removing it from `[share] hosts` closes the door; `linkinbox login clear <host>` deletes the profile itself.
+A browse is also paced exactly like a pipeline read: the shared guard applies the human pacing profile, the per-host daily cap (default 40 per rolling day), the working-hours window and the circuit breaker, so an outside agent cannot spend the account's budget faster than the pipeline would. Nothing a browse reads is written to the link store; the only persisted state is the host budget in `host_state`, shared with extraction on purpose. When a host is done being shared, removing it from `[share] hosts` closes the door; `atento login clear <host>` deletes the profile itself.

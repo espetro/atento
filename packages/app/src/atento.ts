@@ -1,13 +1,13 @@
 /**
  * The application layer: use cases plus the composition root.
  *
- * `createLinkinbox(config)` is the single place where the concrete adapters
+ * `createAtento(config)` is the single place where the concrete adapters
  * (extractors router, enrich package, media package, browser readers, the
  * SQLite store) are wired from config. The driving adapters — cli, mcp,
  * server — call the use cases on the returned object and never import the
  * adapter packages themselves.
  *
- * `createLinkinboxOps(config, deps)` is the same surface without the
+ * `createAtentoOps(config, deps)` is the same surface without the
  * store/config bootstrap, for adapters that already own a store (the http
  * server, tests).
  *
@@ -17,16 +17,16 @@
 import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
-import { openStore } from '@linkinbox/db'
+import { openStore } from '@atento/db'
 import { createSnapshotter, type SnapshotRequest } from './snapshot.js'
 import { createSiteCache, urlKey, type CachedFile } from './site-cache.js'
-import { importFile, type ImportResult } from '@linkinbox/importers'
+import { importFile, type ImportResult } from '@atento/importers'
 import {
   createAgentBrowserAdapter,
   createBrowserRegistry,
   createPatchrightAdapter,
-} from '@linkinbox/browser'
-import type { PatchrightLaunch } from '@linkinbox/extractors'
+} from '@atento/browser'
+import type { PatchrightLaunch } from '@atento/extractors'
 import {
   applyPrune,
   applySweep,
@@ -126,7 +126,7 @@ import {
   type UntilEmptyResult,
   captureToken,
   serverToken,
-} from '@linkinbox/core'
+} from '@atento/core'
 import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { loadLoginReport, type LoginReport, type PendingLoginPolicy } from './pending-logins.js'
@@ -163,7 +163,7 @@ import type { AppConfig } from './config.js'
  * and the rest fall back to the core defaults — exactly what they did
  * before the app layer existed.
  */
-export interface LinkinboxConfig {
+export interface AtentoConfig {
   ttl?: TtlConfig
   limits?: LimitsConfig
   login?: LoginConfig
@@ -183,7 +183,7 @@ export interface LinkinboxConfig {
 }
 
 /** Dependencies the ops factory cannot derive from config. */
-export interface LinkinboxOpsDeps {
+export interface AtentoOpsDeps {
   /** The store the use cases run over. */
   store: Store
   /** Environment for the dynamic adapter loaders. Default process.env. */
@@ -199,8 +199,8 @@ export interface LinkinboxOpsDeps {
   spoolDir?: string
 }
 
-/** Options for `createLinkinbox`: injectable deps on top of the config. */
-export type LinkinboxOptions = Omit<LinkinboxOpsDeps, 'store'> & {
+/** Options for `createAtento`: injectable deps on top of the config. */
+export type AtentoOptions = Omit<AtentoOpsDeps, 'store'> & {
   /** Inject a store instead of opening config.dbPath (tests, shared stores). */
   store?: Store
 }
@@ -371,7 +371,7 @@ export interface IngestFilesResult {
 }
 
 /** One resumed ingest job outcome plus its job row. */
-export type { IngestJobRunResult } from '@linkinbox/core'
+export type { IngestJobRunResult } from '@atento/core'
 
 /** One browser adapter row for the settings UI / `GET /api/browsers`. */
 export interface BrowserAdapterInfo {
@@ -388,7 +388,7 @@ export interface BrowserAdapterInfo {
   health: { ok: boolean; detail: string }
 }
 
-/** The `linkinbox browsers` dataset, machine-readable. */
+/** The `atento browsers` dataset, machine-readable. */
 export interface BrowserAdaptersInfo {
   adapters: BrowserAdapterInfo[]
   hostMappings: Record<string, string>
@@ -435,13 +435,13 @@ export interface InteractiveLoginResult {
 
 // Re-exported so driving adapters can type the login seams without
 // reaching into the adapter packages themselves.
-export type { PatchrightLaunch } from '@linkinbox/extractors'
+export type { PatchrightLaunch } from '@atento/extractors'
 
 /**
  * Read-only config summary for the settings UI (`GET /api/config`). Only
  * booleans and names leave the process — token VALUES never do.
  */
-export interface LinkinboxConfigInfo {
+export interface AtentoConfigInfo {
   /** Config directory holding config.toml; '' when unknown. */
   dir: string
   /** Absolute path of config.toml, '' when the dir is unknown. */
@@ -471,9 +471,9 @@ export interface LinkinboxConfigInfo {
  * The application surface the driving adapters consume. Every member is a
  * use case bound to the store and config the composition root resolved.
  */
-export interface LinkinboxOps {
+export interface AtentoOps {
   readonly store: Store
-  readonly config: Required<Omit<LinkinboxConfig, 'dbPath'>> & { dbPath?: string }
+  readonly config: Required<Omit<AtentoConfig, 'dbPath'>> & { dbPath?: string }
   readonly logger: PipelineLogger
   /** The durable-ingest spool root. */
   readonly spoolDir: string
@@ -565,10 +565,10 @@ export interface LinkinboxOps {
    * store lists ascending, so the tail is sliced and reversed).
    */
   listRuns(limit?: number): Promise<Run[]>
-  /** Browser adapters with health — the `linkinbox browsers` dataset. */
+  /** Browser adapters with health — the `atento browsers` dataset. */
   browsers(): Promise<BrowserAdaptersInfo>
   /** Read-only config summary for the settings UI; never exposes secrets. */
-  configInfo(): LinkinboxConfigInfo
+  configInfo(): AtentoConfigInfo
   /**
    * Delta read of the link_events log: the resumable cursor stream behind
    * `GET /api/events`. `since` is the last seen event id.
@@ -627,7 +627,7 @@ export interface LinkinboxOps {
 }
 
 /** The full application: ops plus lifecycle. */
-export interface Linkinbox extends LinkinboxOps {
+export interface Atento extends AtentoOps {
   /** Release what the composition root opened (the store, when owned). */
   close(): Promise<void>
 }
@@ -675,7 +675,7 @@ interface ResolvedConfig {
   sources: string[]
 }
 
-function resolveConfig(config: LinkinboxConfig): ResolvedConfig {
+function resolveConfig(config: AtentoConfig): ResolvedConfig {
   return {
     ttl: config.ttl ?? DEFAULT_TTL_CONFIG,
     limits: config.limits ?? DEFAULT_LIMITS,
@@ -707,10 +707,10 @@ function cleanGuardConfig(config: Partial<GuardConfig>): Partial<GuardConfig> {
  * adapter functions are built lazily on first use, so constructing the app
  * never touches the network or spawns a browser.
  */
-export function createLinkinboxOps(
-  config: LinkinboxConfig,
-  deps: LinkinboxOpsDeps,
-): LinkinboxOps {
+export function createAtentoOps(
+  config: AtentoConfig,
+  deps: AtentoOpsDeps,
+): AtentoOps {
   const cfg = resolveConfig(config)
   const store = deps.store
   const env = deps.env ?? process.env
@@ -723,19 +723,19 @@ export function createLinkinboxOps(
       ? join(cfg.dir, 'spool')
       : cfg.dbPath !== undefined
         ? join(dirname(cfg.dbPath), 'spool')
-        : join(tmpdir(), 'linkinbox-spool'))
+        : join(tmpdir(), 'atento-spool'))
   const exportsDir =
     cfg.dir !== ''
       ? join(cfg.dir, 'exports')
       : cfg.dbPath !== undefined
         ? join(dirname(cfg.dbPath), 'exports')
-        : join(tmpdir(), 'linkinbox-exports')
+        : join(tmpdir(), 'atento-exports')
   const artifactsDir =
     cfg.dir !== ''
       ? join(cfg.dir, 'artifacts')
       : cfg.dbPath !== undefined
         ? join(dirname(cfg.dbPath), 'artifacts')
-        : join(tmpdir(), 'linkinbox-artifacts')
+        : join(tmpdir(), 'atento-artifacts')
 
   // Lazily built, memoized adapter functions.
   let extractFnPromise: Promise<ExtractFn> | undefined
@@ -873,7 +873,7 @@ export function createLinkinboxOps(
   const siteCache = createSiteCache(dirname(artifactsDir))
   const snapshotter = createSnapshotter(join(dirname(artifactsDir), 'pages'), urlKey)
 
-  const ops: LinkinboxOps = {
+  const ops: AtentoOps = {
     store,
     config: cfg,
     logger,
@@ -1507,10 +1507,10 @@ export function createLinkinboxOps(
  * injected) and build the use-case surface. This is the ONLY place the
  * concrete adapters are wired.
  */
-export async function createLinkinbox(
+export async function createAtento(
   config: AppConfig,
-  options: LinkinboxOptions = {},
-): Promise<Linkinbox> {
+  options: AtentoOptions = {},
+): Promise<Atento> {
   const env = options.env ?? process.env
   const effective = config
   mkdirSync(dirname(effective.dbPath), { recursive: true })
@@ -1518,7 +1518,7 @@ export async function createLinkinbox(
   const store: Store =
     options.store ?? (await openStore({ path: effective.dbPath }))
 
-  const ops = createLinkinboxOps(effective, { ...options, store, env })
+  const ops = createAtentoOps(effective, { ...options, store, env })
 
   return {
     ...ops,

@@ -7,7 +7,7 @@ import { writable, get } from 'svelte/store'
  */
 export type Density = 'compact' | 'comfortable'
 
-const KEY = 'linkinbox:density'
+const KEY = 'atento:density'
 
 function read(): Density {
   try {
@@ -34,7 +34,7 @@ export function setDensity(next: Density) {
     'system' follows prefers-color-scheme. Applied as .dark on <html>. */
 export type Theme = 'system' | 'light' | 'dark'
 
-const THEME_KEY = 'linkinbox:theme'
+const THEME_KEY = 'atento:theme'
 
 function readTheme(): Theme {
   try {

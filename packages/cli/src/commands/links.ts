@@ -11,7 +11,7 @@ import {
   type TriageAction,
   type LinkStateName,
   type PipelineOverview,
-} from '@linkinbox/app'
+} from '@atento/app'
 import type { CliContext } from '../context.js'
 import { renderTable, shortDate } from '../render.js'
 

@@ -1,5 +1,5 @@
 {
-  "name": "@linkinbox/importers",
+  "name": "@atento/importers",
   "type": "module",
   "version": "0.1.0",
   "private": true,
@@ -17,7 +17,7 @@
     "typecheck": "tsc -p tsconfig.test.json"
   },
   "dependencies": {
-    "@linkinbox/core": "workspace:*",
+    "@atento/core": "workspace:*",
     "plist": "^5.0.0"
   },
   "devDependencies": {

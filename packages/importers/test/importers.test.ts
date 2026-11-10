@@ -5,7 +5,7 @@ import { importMarkdown, parseMarkdown } from '../src/markdown.js'
 import { importJson } from '../src/json.js'
 import { importUrlList } from '../src/url-list.js'
 import { importSafariReadingList } from '../src/safari-reading-list.js'
-import type { RawLink } from '@linkinbox/core'
+import type { RawLink } from '@atento/core'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fixtures = join(here, '..', '..', '..', 'fixtures', 'importers')

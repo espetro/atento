@@ -18,7 +18,7 @@ import type {
   BrowserHealth,
   PageReaderPort,
   SessionLoginPort,
-} from '@linkinbox/core'
+} from '@atento/core'
 
 export interface ExternalAdapterOptions {
   /** The adapter instance id (config key). */

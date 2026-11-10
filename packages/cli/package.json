@@ -1,11 +1,11 @@
 {
-  "name": "@linkinbox/cli",
+  "name": "@atento/cli",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "linkinbox command line interface: thin wrapper over the core ops and pipeline functions",
+  "description": "atento command line interface: thin wrapper over the core ops and pipeline functions",
   "bin": {
-    "linkinbox": "./dist/bin.js"
+    "atento": "./dist/bin.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -28,14 +28,14 @@
     "typecheck": "tsc -p tsconfig.test.json"
   },
   "dependencies": {
-    "@linkinbox/app": "workspace:*",
-    "@linkinbox/browser": "workspace:*",
-    "@linkinbox/core": "workspace:*",
-    "@linkinbox/db": "workspace:*",
-    "@linkinbox/extractors": "workspace:*",
-    "@linkinbox/media": "workspace:*",
-    "@linkinbox/mcp": "workspace:*",
-    "@linkinbox/server": "workspace:*",
+    "@atento/app": "workspace:*",
+    "@atento/browser": "workspace:*",
+    "@atento/core": "workspace:*",
+    "@atento/db": "workspace:*",
+    "@atento/extractors": "workspace:*",
+    "@atento/media": "workspace:*",
+    "@atento/mcp": "workspace:*",
+    "@atento/server": "workspace:*",
     "commander": "^15.0.0"
   },
   "devDependencies": {

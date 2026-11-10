@@ -1,5 +1,5 @@
 /**
- * `linkinbox media <id|url>`: run the tiered media stage on one link that is
+ * `atento media <id|url>`: run the tiered media stage on one link that is
  * already in the store. Prints a per-tier report table, or JSON with --json.
  */
 import type { Command } from 'commander'
@@ -7,8 +7,8 @@ import {
   MEDIA_TIERS,
   normalizeUrl,
   type MediaTierName,
-} from '@linkinbox/app'
-import type { MediaReport, TierResult } from '@linkinbox/media'
+} from '@atento/app'
+import type { MediaReport, TierResult } from '@atento/media'
 import type { CliContext } from '../context.js'
 import type { MediaFn } from '../media-fn.js'
 import { renderTable } from '../render.js'

@@ -91,7 +91,7 @@ async function newPage(width, height) {
   await page.click('[data-testid=filter-button]')
   await page.click('[data-testid=density-comfortable]')
   await page.waitForTimeout(200)
-  const storedDensity = await page.evaluate(() => localStorage.getItem('linkinbox:density'))
+  const storedDensity = await page.evaluate(() => localStorage.getItem('atento:density'))
   check('density persists to localStorage', storedDensity === 'comfortable')
   check('comfortable density removes compact class', (await page.locator('.listpane.density-compact').count()) === 0)
   await page.click('[data-testid=density-compact]')

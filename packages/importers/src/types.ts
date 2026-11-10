@@ -1,4 +1,4 @@
-import type { RawLink } from '@linkinbox/core'
+import type { RawLink } from '@atento/core'
 
 /**
  * Result of an import attempt. Importers never throw on bad input: they

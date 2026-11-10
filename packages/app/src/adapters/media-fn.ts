@@ -16,8 +16,8 @@ import {
   type MediaConfig,
   type MediaTierName,
   type Store,
-} from '@linkinbox/core'
-import type { MediaReport } from '@linkinbox/media'
+} from '@atento/core'
+import type { MediaReport } from '@atento/media'
 
 export interface MediaFnInput {
   url: string
@@ -49,7 +49,7 @@ export interface MediaAdapterOptions {
   /** The store, for the store-backed daily budget. */
   store?: Pick<Store, 'getMediaBudget' | 'saveMediaBudget'>
   /** Override the daily budget (tests). */
-  budget?: import('@linkinbox/core').MediaBudget
+  budget?: import('@atento/core').MediaBudget
 }
 
 interface MediaModule {
@@ -64,15 +64,15 @@ interface EnrichModule {
   createAudiocppAsr?: (options?: unknown) => AsrFn
 }
 
-/** Default loader: dynamic import of @linkinbox/media. */
+/** Default loader: dynamic import of @atento/media. */
 async function defaultLoad(): Promise<unknown> {
-  const specifier = '@linkinbox/media'
+  const specifier = '@atento/media'
   return import(specifier)
 }
 
-/** Default loader: dynamic import of @linkinbox/enrich. */
+/** Default loader: dynamic import of @atento/enrich. */
 async function defaultEnrichLoad(): Promise<unknown> {
-  const specifier = '@linkinbox/enrich'
+  const specifier = '@atento/enrich'
   return import(specifier)
 }
 

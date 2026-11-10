@@ -4,12 +4,12 @@
     "noEmit": true,
     "rootDir": "..",
     "paths": {
-      "@linkinbox/core": ["../core/src/index.ts"],
-      "@linkinbox/db": ["../db/src/index.ts"],
-      "@linkinbox/extractors": ["../extractors/src/index.ts"],
-      "@linkinbox/importers": ["../importers/src/index.ts"],
-      "@linkinbox/media": ["../media/src/index.ts"],
-      "@linkinbox/enrich": ["../enrich/src/index.ts"]
+      "@atento/core": ["../core/src/index.ts"],
+      "@atento/db": ["../db/src/index.ts"],
+      "@atento/extractors": ["../extractors/src/index.ts"],
+      "@atento/importers": ["../importers/src/index.ts"],
+      "@atento/media": ["../media/src/index.ts"],
+      "@atento/enrich": ["../enrich/src/index.ts"]
     }
   },
   "include": ["src", "test", "../core/src", "../db/src", "../extractors/src", "../importers/src", "../media/src", "../enrich/src"]

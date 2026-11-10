@@ -1,9 +1,9 @@
 {
-  "name": "@linkinbox/media",
+  "name": "@atento/media",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Tiered media stage for linkinbox: caption, transcript (yt-dlp + ffmpeg + local ASR), frames (not implemented yet)",
+  "description": "Tiered media stage for atento: caption, transcript (yt-dlp + ffmpeg + local ASR), frames (not implemented yet)",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -22,7 +22,7 @@
     "typecheck": "tsc -p tsconfig.test.json"
   },
   "dependencies": {
-    "@linkinbox/core": "workspace:*",
+    "@atento/core": "workspace:*",
     "zod": "^4.1.13"
   },
   "devDependencies": {

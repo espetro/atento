@@ -1,5 +1,5 @@
 /**
- * Config loading: TOML from ~/.linkinbox/config.toml with env overrides.
+ * Config loading: TOML from ~/.atento/config.toml with env overrides.
  * Only the db path and ttl table today.
  */
 import { homedir } from 'node:os'
@@ -26,7 +26,7 @@ import {
   type ShareConfig,
   type TomlTable,
   type TtlConfig,
-} from '@linkinbox/core'
+} from '@atento/core'
 
 export interface AppConfig {
   /** Path of the sqlite database file. */
@@ -59,21 +59,21 @@ export interface AppConfig {
   sources: string[]
 }
 
-export const DEFAULT_CONFIG_DIR = join(homedir(), '.linkinbox')
+export const DEFAULT_CONFIG_DIR = join(homedir(), '.atento')
 
 /** Env keys that override the config file. */
 export const ENV_KEYS = {
-  dbPath: 'LINKINBOX_DB',
-  configDir: 'LINKINBOX_CONFIG_DIR',
-  home: 'LINKINBOX_HOME',
+  dbPath: 'ATENTO_DB',
+  configDir: 'ATENTO_CONFIG_DIR',
+  home: 'ATENTO_HOME',
 } as const
 
-/** Resolve the config dir: env override, then ~/.linkinbox. */
+/** Resolve the config dir: env override, then ~/.atento. */
 export function configDir(env: NodeJS.ProcessEnv = process.env): string {
   const fromEnv = env[ENV_KEYS.configDir]
   if (fromEnv && fromEnv.trim() !== '') return fromEnv
   const home = env[ENV_KEYS.home]
-  if (home && home.trim() !== '') return join(home, '.linkinbox')
+  if (home && home.trim() !== '') return join(home, '.atento')
   return DEFAULT_CONFIG_DIR
 }
 
@@ -100,7 +100,7 @@ export function defaultProfilesDir(env: NodeJS.ProcessEnv = process.env): string
 }
 
 /**
- * Load the config: reads ~/.linkinbox/config.toml when present (missing file
+ * Load the config: reads ~/.atento/config.toml when present (missing file
  * is fine, defaults apply) and applies env overrides on top.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {

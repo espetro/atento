@@ -2,7 +2,7 @@ import { z } from 'zod/mini'
 import { PARK_REASONS } from '../pipeline/park-reason.js'
 
 /**
- * The linkinbox finite state machine: events.
+ * The atento finite state machine: events.
  *
  * An event carries everything a transition needs (payload + `at` clock).
  * The store applies events atomically with a compare-and-set on the state.

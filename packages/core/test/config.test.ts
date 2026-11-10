@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { parseTtlConfig } from '../src/config.js'
 
 const TOML = `
-# ~/.linkinbox/config.toml
+# ~/.atento/config.toml
 [ttl]
 default_days = 30
 by_category = { job = 45, event = 7, guide = 90 }

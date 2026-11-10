@@ -21,7 +21,7 @@ import { loadConfig, resolveDbPath, configDir } from '../src/config.js'
 
 async function contextFor(db: TempDb): Promise<CliContext> {
   return createContext({
-    env: { LINKINBOX_DB: db.path },
+    env: { ATENTO_DB: db.path },
     store: db.store,
     quiet: true,
     logPath: join(db.dir, 'log.jsonl'),
@@ -392,7 +392,7 @@ describe('cli login', () => {
 
 describe('cli config', () => {
   it('resolves the db path from the environment', () => {
-    expect(resolveDbPath({}, { LINKINBOX_DB: '/tmp/custom.db' })).toBe('/tmp/custom.db')
+    expect(resolveDbPath({}, { ATENTO_DB: '/tmp/custom.db' })).toBe('/tmp/custom.db')
   })
 
   it('resolves the db path from the toml', () => {
@@ -400,16 +400,16 @@ describe('cli config', () => {
   })
 
   it('falls back to the config dir', () => {
-    expect(resolveDbPath({}, { LINKINBOX_CONFIG_DIR: '/tmp/cfg' })).toBe('/tmp/cfg/links.db')
+    expect(resolveDbPath({}, { ATENTO_CONFIG_DIR: '/tmp/cfg' })).toBe('/tmp/cfg/links.db')
   })
 
   it('resolves the config dir from the environment', () => {
-    expect(configDir({ LINKINBOX_CONFIG_DIR: '/tmp/cfg' })).toBe('/tmp/cfg')
-    expect(configDir({ LINKINBOX_HOME: '/home/x' })).toBe(join('/home/x', '.linkinbox'))
+    expect(configDir({ ATENTO_CONFIG_DIR: '/tmp/cfg' })).toBe('/tmp/cfg')
+    expect(configDir({ ATENTO_HOME: '/home/x' })).toBe(join('/home/x', '.atento'))
   })
 
   it('loads defaults when no config file exists', () => {
-    const config = loadConfig({ LINKINBOX_CONFIG_DIR: '/tmp/does-not-exist-cfg' })
+    const config = loadConfig({ ATENTO_CONFIG_DIR: '/tmp/does-not-exist-cfg' })
     expect(config.ttl.default_days).toBe(30)
     expect(config.ttl.delete_after_days).toBe(365)
     expect(config.dbPath).toBe('/tmp/does-not-exist-cfg/links.db')

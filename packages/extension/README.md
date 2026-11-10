@@ -1,6 +1,6 @@
-# @linkinbox/extension
+# @atento/extension
 
-Browser extension capture for linkinbox: save the page you are looking at, from your own logged-in session, straight to `POST /capture`. Design and decisions: `docs/extension.md` (milestones, safety rules, the Safari story). Wire contract: `docs/capture.md`.
+Browser extension capture for atento: save the page you are looking at, from your own logged-in session, straight to `POST /capture`. Design and decisions: `docs/extension.md` (milestones, safety rules, the Safari story). Wire contract: `docs/capture.md`.
 
 This is the M1 proof of concept: an MV3 service worker that on action click captures the active tab, extracts a stub markdown in the page, builds the `/capture` payload and POSTs it with the bearer token, with an in-memory retry queue.
 
@@ -23,17 +23,17 @@ This is the M1 proof of concept: an MV3 service worker that on action click capt
 ## Build and load
 
 ```sh
-pnpm --filter @linkinbox/extension build
+pnpm --filter @atento/extension build
 ```
 
 Then in BrowserOS (or any Chromium): the extensions page, developer mode on, load unpacked from `packages/extension/dist`.
 
-The token goes in the options page and lives in `chrome.storage.local`. The server must list the extension's origin in `[capture].allowed_origins` in `~/.linkinbox/config.toml`, or the browser blocks the POST as a CORS error. The manifest pins a `key`, so the id is stable across reloads: `chrome-extension://dkongbmnamkaomnkljgognnbeamhfcci`.
+The token goes in the options page and lives in `chrome.storage.local`. The server must list the extension's origin in `[capture].allowed_origins` in `~/.atento/config.toml`, or the browser blocks the POST as a CORS error. The manifest pins a `key`, so the id is stable across reloads: `chrome-extension://dkongbmnamkaomnkljgognnbeamhfcci`.
 
 ## Tests
 
 ```sh
-pnpm --filter @linkinbox/extension test
+pnpm --filter @atento/extension test
 ```
 
 40 unit tests over the payload builder, the queue and the safety/flow modules. The fetch, the clock and the random are injected fakes: nothing here opens a socket, and no test ever touches the network.

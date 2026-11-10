@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'plist'
 import type { PlistValue } from 'plist'
-import type { RawLink } from '@linkinbox/core'
+import type { RawLink } from '@atento/core'
 import type { ImportResult } from './types.js'
 
 /**

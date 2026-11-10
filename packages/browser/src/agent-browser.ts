@@ -21,14 +21,14 @@ import type {
   ProfileRef,
   SessionLoginPort,
   SessionLoginUi,
-} from '@linkinbox/core'
-import { browserProfileDir } from '@linkinbox/core'
-import type { ExecLike } from '@linkinbox/extractors'
+} from '@atento/core'
+import { browserProfileDir } from '@atento/core'
+import type { ExecLike } from '@atento/extractors'
 
 export interface AgentBrowserAdapterOptions {
   /** The adapter instance id (config key). */
   id: string
-  /** agent-browser binary; default env LINKINBOX_AGENT_BROWSER then "agent-browser". */
+  /** agent-browser binary; default env ATENTO_AGENT_BROWSER then "agent-browser". */
   command?: string
   /** Chromium binary passed as --executable-path. */
   executablePath?: string
@@ -89,7 +89,7 @@ function defaultSpawn(command: string, args: string[]): Promise<number> {
 export interface AgentBrowserAdapter {
   reader: PageReaderPort
   login: SessionLoginPort
-  /** Health check for `linkinbox browsers`: binary resolves and answers --version. */
+  /** Health check for `atento browsers`: binary resolves and answers --version. */
   health(): Promise<BrowserHealth>
 }
 
@@ -98,7 +98,7 @@ export function createAgentBrowserAdapter(
 ): AgentBrowserAdapter {
   const env = options.env ?? process.env
   const command =
-    options.command ?? env['LINKINBOX_AGENT_BROWSER'] ?? 'agent-browser'
+    options.command ?? env['ATENTO_AGENT_BROWSER'] ?? 'agent-browser'
   const exec = options.exec ?? defaultExec
   const run = options.spawn ?? defaultSpawn
   const profilesDir = options.profilesDir ?? defaultProfilesDir()
@@ -197,5 +197,5 @@ export function createAgentBrowserAdapter(
 
 function defaultProfilesDir(): string {
   const home = process.env['HOME'] ?? ''
-  return `${home}/.linkinbox/profiles`
+  return `${home}/.atento/profiles`
 }

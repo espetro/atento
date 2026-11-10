@@ -2,7 +2,7 @@ import { z } from 'zod/mini'
 import { PARK_REASONS } from '../pipeline/park-reason.js'
 
 /**
- * The linkinbox finite state machine: states.
+ * The atento finite state machine: states.
  *
  * Every persisted link has exactly one current state, stored as
  * `links.state` (the discriminant) plus `links.state_data` (the variant

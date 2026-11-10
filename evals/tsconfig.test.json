@@ -4,8 +4,8 @@
     "noEmit": true,
     "rootDir": "../..",
     "paths": {
-      "@linkinbox/core": ["../packages/core/src/index.ts"],
-      "@linkinbox/extractors": ["../packages/extractors/src/index.ts"]
+      "@atento/core": ["../packages/core/src/index.ts"],
+      "@atento/extractors": ["../packages/extractors/src/index.ts"]
     }
   },
   "include": ["*.ts", "test", "../packages/core/src", "../packages/extractors/src"]

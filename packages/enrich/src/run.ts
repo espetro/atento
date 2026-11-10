@@ -10,10 +10,10 @@ import {
   type BusyRun,
   type Enrichment,
   type Store,
-} from '@linkinbox/core'
+} from '@atento/core'
 import { buildPrompt } from './prompt.js'
 
-export type { EnrichmentInput } from '@linkinbox/core'
+export type { EnrichmentInput } from '@atento/core'
 
 export type EnrichModel = LanguageModelV3
 
@@ -21,14 +21,14 @@ export type EnrichModel = LanguageModelV3
 export function createModelFromEnv(env: NodeJS.ProcessEnv = process.env): EnrichModel {
   const baseURL = env.OPENAI_COMPAT_BASE_URL
   const apiKey = env.OPENAI_COMPAT_API_KEY
-  const modelId = env.LINKINBOX_MODEL
+  const modelId = env.ATENTO_MODEL
   if (!baseURL || !modelId) {
     throw new Error(
-      'createModelFromEnv requires OPENAI_COMPAT_BASE_URL and LINKINBOX_MODEL to be set',
+      'createModelFromEnv requires OPENAI_COMPAT_BASE_URL and ATENTO_MODEL to be set',
     )
   }
   const provider = createOpenAICompatible({
-    name: 'linkinbox',
+    name: 'atento',
     baseURL,
     apiKey,
   })

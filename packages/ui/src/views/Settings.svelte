@@ -153,7 +153,7 @@
         {/each}
         <div class="row"><div class="row-title">{m.settings_config_path()}</div><div class="row-ctl"><code class="mono">{config.configPath}</code></div></div>
       {:else}
-        <div class="row"><div class="row-desc">{m.settings_config_unreadable_pre()} <code>linkinbox config</code>{m.settings_config_unreadable_post()}</div></div>
+        <div class="row"><div class="row-desc">{m.settings_config_unreadable_pre()} <code>atento config</code>{m.settings_config_unreadable_post()}</div></div>
       {/if}
     </section>
     {/if}

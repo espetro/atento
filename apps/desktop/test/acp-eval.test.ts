@@ -4,12 +4,12 @@ import { AcpClient } from "../src/bun/acp";
 
 /**
  * Eval tests: prove an ACP agent can (a) complete the protocol handshake,
- * (b) retrieve linkinbox data, and (c) take CRUD actions — here against a
- * mock linkinbox API that records what the agent did.
+ * (b) retrieve atento data, and (c) take CRUD actions — here against a
+ * mock atento API that records what the agent did.
  */
 describe("ACP agent eval", () => {
 	test("agent retrieves data and performs a CRUD ingest", async () => {
-		// Mock linkinbox API the stub agent talks to.
+		// Mock atento API the stub agent talks to.
 		const calls: { method: string; path: string; body: string }[] = [];
 		const server = Bun.serve({
 			port: 0,
@@ -32,7 +32,7 @@ describe("ACP agent eval", () => {
 		const { client, sessionId } = await AcpClient.spawn(
 			[Bun.which("bun")!, stub],
 			{ cwd: "/tmp", mcpServers: [] },
-			{ env: { LINKINBOX_API: api } },
+			{ env: { ATENTO_API: api } },
 		);
 		expect(sessionId).toBe("fake-session-1");
 

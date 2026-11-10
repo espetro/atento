@@ -572,7 +572,7 @@ async function extractPass(
           await flagHost(store, host, now().getTime(), wallReason, true)
           canaryTrials[host] = 'flagged'
           canaryReasons.set(host, wallReason)
-          logger.warn('private page on {host} (link {linkId}): run `linkinbox login {host}`', {
+          logger.warn('private page on {host} (link {linkId}): run `atento login {host}`', {
             host,
             linkId: link.id,
           })
@@ -628,7 +628,7 @@ async function extractPass(
         const decision = await deferOrError(
           store, link, 'extract', reason, waitMs, maxAttempts, now(), parkReason,
         )
-        logger.warn('extraction blocked on {host} (link {linkId}): run `linkinbox login {host}`', {
+        logger.warn('extraction blocked on {host} (link {linkId}): run `atento login {host}`', {
           host,
           linkId: link.id,
         })

@@ -15,7 +15,7 @@ describe('cli eval', () => {
     const db = await tempDb()
     try {
       const ctx = await createContext({
-        env: { LINKINBOX_DB: db.path },
+        env: { ATENTO_DB: db.path },
         store: db.store,
         quiet: true,
         logPath: join(db.dir, 'log.jsonl'),
@@ -30,7 +30,7 @@ describe('cli eval', () => {
   })
 
   it('runs the runner when one is present and reports the result', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'linkinbox-eval-'))
+    const dir = mkdtempSync(join(tmpdir(), 'atento-eval-'))
     const runnerPath = join(dir, 'runner.mjs')
     writeFileSync(
       runnerPath,
@@ -42,7 +42,7 @@ describe('cli eval', () => {
     const db = await tempDb()
     try {
       const ctx = await createContext({
-        env: { LINKINBOX_DB: db.path },
+        env: { ATENTO_DB: db.path },
         store: db.store,
         quiet: true,
         logPath: join(db.dir, 'log.jsonl'),
@@ -60,7 +60,7 @@ describe('cli eval', () => {
   })
 
   it('exits non zero when the runner reports a regression', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'linkinbox-eval-'))
+    const dir = mkdtempSync(join(tmpdir(), 'atento-eval-'))
     const runnerPath = join(dir, 'runner.mjs')
     writeFileSync(
       runnerPath,
@@ -70,7 +70,7 @@ describe('cli eval', () => {
     const previousExitCode = process.exitCode
     try {
       const ctx = await createContext({
-        env: { LINKINBOX_DB: db.path },
+        env: { ATENTO_DB: db.path },
         store: db.store,
         quiet: true,
         logPath: join(db.dir, 'log.jsonl'),

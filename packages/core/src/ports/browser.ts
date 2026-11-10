@@ -116,7 +116,7 @@ export interface BrowserAdapterConfig {
   options: Record<string, unknown>
 }
 
-/** The outcome of a `linkinbox browsers` health check. */
+/** The outcome of a `atento browsers` health check. */
 export interface BrowserHealth {
   id: string
   kind: BrowserAdapterKind

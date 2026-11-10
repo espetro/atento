@@ -1,9 +1,9 @@
 // Fake ACP agent for eval tests: speaks line-delimited JSON-RPC on stdio.
-// On session/prompt it performs a CRUD action against the linkinbox API
-// ($LINKINBOX_API — proves the agent can act on real data), streams two
+// On session/prompt it performs a CRUD action against the atento API
+// ($ATENTO_API — proves the agent can act on real data), streams two
 // session/update notifications back, then resolves the prompt.
 
-const api = process.env.LINKINBOX_API ?? "http://127.0.0.1:4173";
+const api = process.env.ATENTO_API ?? "http://127.0.0.1:4173";
 
 function send(msg) {
 	process.stdout.write(JSON.stringify(msg) + "\n");

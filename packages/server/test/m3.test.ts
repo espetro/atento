@@ -2,19 +2,19 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openStore, type SqliteStore } from '@linkinbox/db'
+import { openStore, type SqliteStore } from '@atento/db'
 import {
-  createLinkinboxOps,
+  createAtentoOps,
   DEFAULT_TTL_CONFIG,
   type ExtractFn,
-  type LinkinboxOps,
-} from '@linkinbox/app'
-import type { EnrichFn } from '@linkinbox/core'
+  type AtentoOps,
+} from '@atento/app'
+import type { EnrichFn } from '@atento/core'
 import { createApp } from '../src/index.js'
 
 let store: SqliteStore
 let dir: string
-let ops: LinkinboxOps
+let ops: AtentoOps
 let app: ReturnType<typeof createApp>
 
 const fakeExtract: ExtractFn = async () => ({
@@ -38,9 +38,9 @@ async function seed(url: string, overrides: Record<string, unknown> = {}): Promi
 }
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'linkinbox-m3-'))
+  dir = mkdtempSync(join(tmpdir(), 'atento-m3-'))
   store = await openStore({ path: join(dir, 'links.db') })
-  ops = createLinkinboxOps(
+  ops = createAtentoOps(
     { ttl: DEFAULT_TTL_CONFIG, dbPath: join(dir, 'links.db') },
     { store, env: {}, extractFn: fakeExtract, enrichFn: fakeEnrich },
   )

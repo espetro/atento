@@ -5,13 +5,13 @@
  * specifics. Handlers receive a per-call ToolEnv: the resolved McpContext,
  * the shared McpDeps and the app-layer ops built over that context's
  * store. They never reach into store/pipeline internals beyond what
- * LinkinboxOps exposes.
+ * AtentoOps exposes.
  */
 import { z } from 'zod/mini'
 import {
-  createLinkinboxOps,
-  type LinkinboxOps,
-} from '@linkinbox/app'
+  createAtentoOps,
+  type AtentoOps,
+} from '@atento/app'
 import type { McpContext, McpDeps } from '../deps.js'
 
 /** Serialize an MCP tool result: compact JSON as the text payload. */
@@ -35,7 +35,7 @@ export interface ToolEnv {
   /** The resolved MCP context (store, ttl, logger, config fields). */
   ctx: McpContext
   /** The app-layer use cases bound to ctx.store. */
-  ops: LinkinboxOps
+  ops: AtentoOps
 }
 
 export type ToolHandler = (env: ToolEnv, args: any) => Promise<ToolResult>
@@ -54,8 +54,8 @@ export interface ToolDef {
  * per call — it is a plain object over the store, no I/O happens until a
  * use case runs.
  */
-export function opsFor(ctx: McpContext): LinkinboxOps {
-  return createLinkinboxOps(
+export function opsFor(ctx: McpContext): AtentoOps {
+  return createAtentoOps(
     {
       ttl: ctx.ttl,
       ...(ctx.limits ? { limits: ctx.limits } : {}),

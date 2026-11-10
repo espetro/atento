@@ -1,9 +1,9 @@
 {
-	"name": "@linkinbox/desktop",
+	"name": "@atento/desktop",
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",
-	"description": "linkinbox desktop shell (Electrobun) \u2014 hosts the web UI and provides native preview webviews",
+	"description": "atento desktop shell (Electrobun) \u2014 hosts the web UI and provides native preview webviews",
 	"devDependencies": {
 		"@types/bun": "latest"
 	},

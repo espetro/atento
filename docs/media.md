@@ -1,7 +1,7 @@
 # Media stage
 
 The media stage turns video and audio links (reels and similar yt-dlp-able
-media) into text. It is a standalone library (`@linkinbox/media`) plus a CLI
+media) into text. It is a standalone library (`@atento/media`) plus a CLI
 command, and the pipeline now calls it: after a successful extraction the
 extract stage detects video links and runs the media stage, appending
 `renderMedia(report)` to the extracted content before the link moves to
@@ -20,7 +20,7 @@ was empty, and what is not built yet.
 
 The frames tier exists in the code, the types and every report with status
 `unsupported` and reason `frame analysis not implemented`, so the gap is
-visible in `linkinbox media` output, in the JSON result and here.
+visible in `atento media` output, in the JSON result and here.
 
 Planned frames interface: `ffmpeg -i input.mp4 -vf "fps=1/30" -frames:v N
 frame-%02d.jpg`, then the frames go to a local vision provider (one call, OCR
@@ -37,7 +37,7 @@ exhausted or the media is over the configured duration limit).
 ## CLI
 
 ```
-linkinbox media <id|url> [--tiers caption,transcript,frames] [--json]
+atento media <id|url> [--tiers caption,transcript,frames] [--json]
 ```
 
 The link must already be in the store (by numeric id or URL); the caption tier
@@ -45,7 +45,7 @@ uses its stored extracted content. Output is a per-tier table: tier, status,
 seconds, chars, reason. `--json` emits the full report.
 
 ```
-$ linkinbox media 42
+$ atento media 42
 tier        status  seconds  chars  reason
 ---------   ------  -------  -----  ------
 caption     ok      0.00     54
@@ -55,7 +55,7 @@ frames      unsupported  0.00  0  frame analysis not implemented
 
 ## Config
 
-Add a `[media]` section to `~/.linkinbox/config.toml`:
+Add a `[media]` section to `~/.atento/config.toml`:
 
 ```toml
 [media]
@@ -94,16 +94,16 @@ provider or model is hardcoded:
 
 | Env var | Default | Meaning |
 | --- | --- | --- |
-| `LINKINBOX_ASR_BIN` | `audiocpp_cli` | The CLI binary. |
-| `LINKINBOX_ASR_FAMILY` | `parakeet_tdt` | Model family passed to `--family`. |
-| `LINKINBOX_ASR_MODEL` | (none, required) | Model gguf file or package directory. |
-| `LINKINBOX_ASR_BACKEND` | `metal` | Compute backend. |
+| `ATENTO_ASR_BIN` | `audiocpp_cli` | The CLI binary. |
+| `ATENTO_ASR_FAMILY` | `parakeet_tdt` | Model family passed to `--family`. |
+| `ATENTO_ASR_MODEL` | (none, required) | Model gguf file or package directory. |
+| `ATENTO_ASR_BACKEND` | `metal` | Compute backend. |
 
 Example:
 
 ```
-export LINKINBOX_ASR_MODEL=~/.linkinbox/models/parakeet-tdt-0.6b-v3-q8_0.gguf
-linkinbox media <id>
+export ATENTO_ASR_MODEL=~/.atento/models/parakeet-tdt-0.6b-v3-q8_0.gguf
+atento media <id>
 ```
 
 Note: a bare gguf from Hugging Face does not always load (audio.cpp wants a
@@ -122,7 +122,7 @@ realtime), peak RSS about 2.7 GB while the model is loaded.
 - `packages/enrich/src/asr`: the `AsrFn` port implementation (audiocpp
   adapter), env-configured. The port type itself lives in
   `packages/core/src/asr.ts`; `packages/media` depends only on the port.
-- `packages/cli`: `linkinbox media`, the `[media]` config wiring and the
+- `packages/cli`: `atento media`, the `[media]` config wiring and the
   guard-routed `mediaFn` adapter.
 
 `renderMedia(report)` is a pure function that renders the ok tiers as `##
@@ -166,7 +166,7 @@ Works:
 - video detection from the extraction metadata and the URL,
 - the media stage inside the extract stage, with the report on the link and
   the rendered markdown appended to the extracted content,
-- the per-tier report in `linkinbox show <id>` and in `linkinbox media`,
+- the per-tier report in `atento show <id>` and in `atento media`,
 - the store-backed per-day cap,
 - the guard-routed download (strict pacing for walled hosts).
 

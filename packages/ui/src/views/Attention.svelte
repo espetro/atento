@@ -112,15 +112,15 @@
   })
 
   async function copyLoginCommand(host: string) {
-    await copyText(`linkinbox login ${host}`)
+    await copyText(`atento login ${host}`)
   }
 
   // ---- exit-code bridge (arriving from run view with needsAction) -----------
   let bridgeBanner = $state(false)
   onMount(() => {
     try {
-      bridgeBanner = sessionStorage.getItem('linkinbox:attention-from-run') === '1'
-      if (bridgeBanner) sessionStorage.removeItem('linkinbox:attention-from-run')
+      bridgeBanner = sessionStorage.getItem('atento:attention-from-run') === '1'
+      if (bridgeBanner) sessionStorage.removeItem('atento:attention-from-run')
     } catch {
       bridgeBanner = false
     }
@@ -252,9 +252,9 @@
               <tr>
                 <td class="mono">{h.host}</td>
                 <td>{h.count}</td>
-                <td class="mono meta">linkinbox login {h.host}</td>
+                <td class="mono meta">atento login {h.host}</td>
                 <td class="host-actions">
-                  <CopyButton text={`linkinbox login ${h.host}`} />
+                  <CopyButton text={`atento login ${h.host}`} />
                   <button
                     type="button"
                     class="btn btn-sm btn-ghost"
@@ -287,7 +287,7 @@
           <summary class="meta">{m.login_help_title()}</summary>
           <p class="meta">
             {m.login_help_p1()}
-            <span class="mono">~/.linkinbox/profiles/&lt;host&gt;</span>{m.login_help_p2()}
+            <span class="mono">~/.atento/profiles/&lt;host&gt;</span>{m.login_help_p2()}
           </p>
         </details>
       {/if}
@@ -304,7 +304,7 @@
           <button type="button" class="btn btn-sm" onclick={() => (triageError = '')}>{m.action_dismiss()}</button>
         </div>
       {/if}
-      <Resizable.PaneGroup direction="horizontal" autoSaveId="linkinbox:att-split" class="att-cols">
+      <Resizable.PaneGroup direction="horizontal" autoSaveId="atento:att-split" class="att-cols">
         <Resizable.Pane defaultSize={30} minSize={15} maxSize={60} class="att-list">
           <LinkList
             {url}

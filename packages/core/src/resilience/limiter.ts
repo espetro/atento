@@ -529,7 +529,7 @@ export async function limiterGate(deps: LimiterDeps, key: string): Promise<Limit
   }
 }
 
-/** Remaining daily budget for a key, for `linkinbox status`. */
+/** Remaining daily budget for a key, for `atento status`. */
 export function remainingBudget(state: HostState, limit: HostLimit, now: number): number {
   if (!Number.isFinite(limit.dailyCap)) return Number.POSITIVE_INFINITY
   if (state.windowStart === null || now - state.windowStart >= DAY_MS) return limit.dailyCap

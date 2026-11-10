@@ -71,7 +71,7 @@ export async function downloadAudio(url: string, options: DownloadOptions = {}):
   const exec = options.exec ?? defaultExec
   const ytdlpBin = options.ytdlpBin ?? DEFAULT_YTDLP_BIN
   const ffmpegBin = options.ffmpegBin ?? DEFAULT_FFMPEG_BIN
-  const workDir = options.workDir ?? (await mkdtemp(join(tmpdir(), 'linkinbox-media-')))
+  const workDir = options.workDir ?? (await mkdtemp(join(tmpdir(), 'atento-media-')))
   const infoPath = join(workDir, 'info.json')
   const rawPath = join(workDir, 'audio.%(ext)s')
 
@@ -128,7 +128,7 @@ export async function stageLocalAudio(
   wavBytes: Buffer,
   options: { workDir?: string } = {},
 ): Promise<{ wavPath: string; workDir: string }> {
-  const workDir = options.workDir ?? (await mkdtemp(join(tmpdir(), 'linkinbox-media-')))
+  const workDir = options.workDir ?? (await mkdtemp(join(tmpdir(), 'atento-media-')))
   const wavPath = join(workDir, 'audio16k.wav')
   await writeFile(wavPath, wavBytes)
   return { wavPath, workDir }

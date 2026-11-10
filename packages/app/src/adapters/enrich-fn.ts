@@ -1,5 +1,5 @@
 /**
- * Adapter between the (separately built) @linkinbox/enrich package and the
+ * Adapter between the (separately built) @atento/enrich package and the
  * core `EnrichFn` interface.
  *
  * The enrich package is loaded dynamically so the CLI works without it (the
@@ -7,7 +7,7 @@
  * Nothing here names a provider or a model: the enrich package reads its
  * model configuration from the environment.
  */
-import type { EnrichFn, Enrichment, Link } from '@linkinbox/core'
+import type { EnrichFn, Enrichment, Link } from '@atento/core'
 
 export interface EnrichAdapterOptions {
   /** Override the module loader (tests). */
@@ -37,12 +37,12 @@ type RawEnrichResult =
     }
   | { ok: false; error: string; message?: string }
 
-/** Default loader: dynamic import of @linkinbox/enrich. */
+/** Default loader: dynamic import of @atento/enrich. */
 async function defaultLoad(): Promise<unknown> {
   // The specifier is indirected so the optional package is not a hard
   // dependency: TypeScript does not try to resolve it at build time and the
   // runtime import fails cleanly when the package is absent.
-  const specifier = '@linkinbox/enrich'
+  const specifier = '@atento/enrich'
   return import(specifier)
 }
 
@@ -60,7 +60,7 @@ export async function createEnrichFn(options: EnrichAdapterOptions = {}): Promis
     const reason = err instanceof Error ? err.message : String(err)
     return async () => ({
       ok: false,
-      error: `enrichment unavailable: @linkinbox/enrich could not be loaded (${reason})`,
+      error: `enrichment unavailable: @atento/enrich could not be loaded (${reason})`,
     })
   }
 
@@ -71,7 +71,7 @@ export async function createEnrichFn(options: EnrichAdapterOptions = {}): Promis
   const run = mod.runEnrich ?? mod.enrichLink
   if (typeof run === 'function') {
     // The model comes from OPENAI_COMPAT_BASE_URL / OPENAI_COMPAT_API_KEY /
-    // LINKINBOX_MODEL; a missing variable becomes a per-link error, not a crash.
+    // ATENTO_MODEL; a missing variable becomes a per-link error, not a crash.
     let deps: unknown
     let setupError: string | undefined
     if (typeof mod.createModelFromEnv === 'function') {
@@ -92,7 +92,7 @@ export async function createEnrichFn(options: EnrichAdapterOptions = {}): Promis
 
   return async () => ({
     ok: false,
-    error: 'enrichment unavailable: @linkinbox/enrich exposes no known entry point',
+    error: 'enrichment unavailable: @atento/enrich exposes no known entry point',
   })
 }
 

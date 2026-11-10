@@ -26,7 +26,7 @@ import {
  */
 export function mockApiPlugin(enabled: boolean): Plugin {
   if (!enabled) {
-    return { name: 'linkinbox-mock-api', apply: 'serve' }
+    return { name: 'atento-mock-api', apply: 'serve' }
   }
   let state: MockState = createMockState(128)
 
@@ -46,7 +46,7 @@ export function mockApiPlugin(enabled: boolean): Plugin {
   }
 
   return {
-    name: 'linkinbox-mock-api',
+    name: 'atento-mock-api',
     apply: 'serve',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {

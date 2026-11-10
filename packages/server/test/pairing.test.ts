@@ -2,15 +2,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openStore, type SqliteStore } from '@linkinbox/db'
-import { DEFAULT_CAPTURE_CONFIG, DEFAULT_SERVER_CONFIG } from '@linkinbox/core'
+import { openStore, type SqliteStore } from '@atento/db'
+import { DEFAULT_CAPTURE_CONFIG, DEFAULT_SERVER_CONFIG } from '@atento/core'
 import { createApp } from '../src/index.js'
 
 let store: SqliteStore
 let dir: string
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'linkinbox-pair-'))
+  dir = mkdtempSync(join(tmpdir(), 'atento-pair-'))
   store = await openStore({ path: join(dir, 'test.db') })
 })
 
@@ -20,8 +20,8 @@ afterAll(async () => {
 })
 
 const ENV = {
-  LINKINBOX_CAPTURE_TOKEN: 'capture-secret',
-  LINKINBOX_SERVER_TOKEN: 'server-secret',
+  ATENTO_CAPTURE_TOKEN: 'capture-secret',
+  ATENTO_SERVER_TOKEN: 'server-secret',
 }
 
 // One app instance per describe block: pairing codes live in memory, so a

@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url'
 export default defineConfig({
   resolve: {
     alias: {
-      '@linkinbox/core': fileURLToPath(new URL('../packages/core/src/index.ts', import.meta.url)),
-      '@linkinbox/extractors': fileURLToPath(
+      '@atento/core': fileURLToPath(new URL('../packages/core/src/index.ts', import.meta.url)),
+      '@atento/extractors': fileURLToPath(
         new URL('../packages/extractors/src/index.ts', import.meta.url),
       ),
     },

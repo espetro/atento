@@ -6,7 +6,7 @@ import { z } from 'zod/mini'
 import {
   DEFAULT_LIMITS,
   LLM_KEY,
-} from '@linkinbox/app'
+} from '@atento/app'
 import { json, type ToolDef } from './types.js'
 
 const optionalLimit = z.optional(z.number().check(z.int(), z.positive()))
@@ -124,7 +124,7 @@ export const pipelineTools: ToolDef[] = [
       'Hosts that still need a browser login (spec name login.pending). ' +
       'Read-only: pending hosts with their waiting link counts, and the ' +
       'hosts that already have a saved profile with its age. The browser ' +
-      'login itself is a CLI step (linkinbox login): it needs a terminal.',
+      'login itself is a CLI step (atento login): it needs a terminal.',
     inputSchema: z.object({}),
     handler: async (env) => {
       const { ctx, ops } = env

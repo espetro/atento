@@ -11,9 +11,9 @@ import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
 import { createExtractFn } from '../src/extract-fn.js'
 import { unlimitedLimits, type TempDb, tempDb } from './helpers.js'
-import { openStore, type SqliteStore } from '@linkinbox/db'
-import { parseBrowserConfig } from '@linkinbox/core'
-import type { Extractor, ExtractResult } from '@linkinbox/extractors'
+import { openStore, type SqliteStore } from '@atento/db'
+import { parseBrowserConfig } from '@atento/core'
+import type { Extractor, ExtractResult } from '@atento/extractors'
 
 const ok: ExtractResult = { markdown: 'x'.repeat(500) }
 

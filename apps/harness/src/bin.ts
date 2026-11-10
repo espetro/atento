@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * linkinbox-harness — the service runner. `start` is a foreground process
+ * atento-harness — the service runner. `start` is a foreground process
  * (launchd/systemd keep it alive); `stop`/`status` use the pidfile under
- * the linkinbox config dir; `install`/`uninstall` manage the supervisor
+ * the atento config dir; `install`/`uninstall` manage the supervisor
  * unit. Recurrence lives in harness.toml next to config.toml.
  */
 import { Command } from 'commander'
-import { loadConfig } from '@linkinbox/app'
+import { loadConfig } from '@atento/app'
 import { loadHarnessConfig } from './config.js'
 import {
   harnessStatus,
@@ -28,7 +28,7 @@ async function cmdStart(options: { port?: string; hostname?: string }): Promise<
   const status = harnessStatus(e)
   if (status.running) {
     console.error(
-      `linkinbox-harness already running (pid ${status.pid}, ${status.url ?? 'unknown url'})`,
+      `atento-harness already running (pid ${status.pid}, ${status.url ?? 'unknown url'})`,
     )
     process.exitCode = 1
     return
@@ -59,7 +59,7 @@ async function cmdStart(options: { port?: string; hostname?: string }): Promise<
     return
   }
 
-  console.log(`linkinbox-harness serving on ${runtime.url}`)
+  console.log(`atento-harness serving on ${runtime.url}`)
   if (runtime.webDir === null) {
     console.log('web UI not built — placeholder page served (see harness.toml web_dir)')
   } else {
@@ -79,7 +79,7 @@ async function cmdStart(options: { port?: string; hostname?: string }): Promise<
   const shutdown = (signal: string) => {
     if (shuttingDown) return
     shuttingDown = true
-    console.log(`linkinbox-harness: ${signal}, shutting down`)
+    console.log(`atento-harness: ${signal}, shutting down`)
     void runtime
       .close()
       .then(() => process.exit(0))
@@ -95,16 +95,16 @@ async function cmdStart(options: { port?: string; hostname?: string }): Promise<
 async function cmdStop(): Promise<void> {
   const result = await stopHarness({ env: env() })
   if (result.stopped) {
-    console.log(`linkinbox-harness stopped (pid ${result.pid})`)
+    console.log(`atento-harness stopped (pid ${result.pid})`)
   } else if (result.refused === true) {
     console.log(
-      `linkinbox-harness: pid ${result.pid} is alive but could not be verified ` +
+      `atento-harness: pid ${result.pid} is alive but could not be verified ` +
         `as the harness (possible pid reuse) — nothing was signalled`,
     )
   } else if (result.pid !== undefined) {
-    console.log(`linkinbox-harness was not running (stale pidfile removed)`)
+    console.log(`atento-harness was not running (stale pidfile removed)`)
   } else {
-    console.log('linkinbox-harness is not running')
+    console.log('atento-harness is not running')
   }
 }
 
@@ -123,15 +123,15 @@ async function cmdStatus(json: boolean): Promise<void> {
     return
   }
   if (status.running) {
-    console.log(`linkinbox-harness is running${verified ? '' : ' (pid identity unverified — possible pid reuse)'}`)
+    console.log(`atento-harness is running${verified ? '' : ' (pid identity unverified — possible pid reuse)'}`)
     console.log(`  pid:      ${status.pid}`)
     if (status.startedAt) console.log(`  started:  ${status.startedAt}`)
     if (status.url) console.log(`  url:      ${status.url}`)
     if (status.port) console.log(`  port:     ${status.port}`)
   } else if (status.stale === true) {
-    console.log(`linkinbox-harness is not running (stale pidfile for pid ${status.pid})`)
+    console.log(`atento-harness is not running (stale pidfile for pid ${status.pid})`)
   } else {
-    console.log('linkinbox-harness is not running')
+    console.log('atento-harness is not running')
   }
 }
 
@@ -167,14 +167,14 @@ async function cmdUninstall(register: boolean): Promise<void> {
 export function createProgram(): Command {
   const program = new Command()
   program
-    .name('linkinbox-harness')
-    .description('linkinbox service runner: lifecycle, recurrence, notifications, web serving')
+    .name('atento-harness')
+    .description('atento service runner: lifecycle, recurrence, notifications, web serving')
 
   program
     .command('start')
     .description('run the harness in the foreground (serves api + web ui)')
-    .option('--port <port>', 'port to bind (default LINKINBOX_PORT or 4173)')
-    .option('--hostname <host>', 'bind hostname (default LINKINBOX_HOST or 127.0.0.1)')
+    .option('--port <port>', 'port to bind (default ATENTO_PORT or 4173)')
+    .option('--hostname <host>', 'bind hostname (default ATENTO_HOST or 127.0.0.1)')
     .action(async (options: { port?: string; hostname?: string }) => {
       try {
         await cmdStart(options)

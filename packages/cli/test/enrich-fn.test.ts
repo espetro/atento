@@ -1,5 +1,5 @@
 /**
- * The enrich adapter is the seam with the separately built @linkinbox/enrich
+ * The enrich adapter is the seam with the separately built @atento/enrich
  * package. These tests pin the adaptation so the two halves can move
  * independently.
  */
@@ -112,7 +112,7 @@ describe('enrich adapter', () => {
   it('fails cleanly when the package is missing', async () => {
     const fn = await createEnrichFn({
       load: async () => {
-        throw new Error('Cannot find module @linkinbox/enrich')
+        throw new Error('Cannot find module @atento/enrich')
       },
     })
     const result = await fn({
@@ -141,7 +141,7 @@ describe('enrich adapter', () => {
     })
     expect(result.ok).toBe(false)
     if (result.ok) throw new Error('expected failure')
-    expect(result.error).toContain('@linkinbox/enrich')
+    expect(result.error).toContain('@atento/enrich')
   })
 
   it('falls back to runEnrich when there is no factory', async () => {
@@ -201,7 +201,7 @@ describe('createEnrichFn with the real enrich entry point shape', () => {
   it('builds the model from env, passes it as deps and maps usage', async () => {
     const seen: unknown[] = []
     const fn = await createEnrichFn({
-      env: { LINKINBOX_MODEL: 'm' },
+      env: { ATENTO_MODEL: 'm' },
       load: async () => ({
         createModelFromEnv: () => ({ modelId: 'm' }),
         enrichLink: async (_l: unknown, deps: unknown) => {
