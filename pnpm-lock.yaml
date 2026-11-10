@@ -590,6 +590,34 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@24.19.2)(jiti@2.7.0)(jsdom@26.1.0(supports-color@10.2.2))(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.23.15)
 
+  packages/native:
+    dependencies:
+      '@chttp/mcp':
+        specifier: ^0.4.1
+        version: 0.4.1(@chttp/router@0.4.1)
+      '@chttp/router':
+        specifier: ^0.4.1
+        version: 0.4.1
+      '@chttp/static':
+        specifier: ^0.4.1
+        version: 0.4.1(@chttp/router@0.4.1)
+      '@chttp/val':
+        specifier: ^0.4.1
+        version: 0.4.1
+      '@cutils/cli':
+        specifier: ^0.6.0
+        version: 0.6.0
+      '@cutils/sqlite':
+        specifier: ^0.6.0
+        version: 0.6.0
+      scriptc:
+        specifier: ^0.4.10
+        version: 0.4.10
+    devDependencies:
+      better-sqlite3:
+        specifier: ^13.0.3
+        version: 13.0.3
+
   packages/server:
     dependencies:
       '@atento/app':
@@ -895,6 +923,26 @@ packages:
   '@changesets/write@0.4.0':
     resolution: {integrity: sha512-CdTLvIOPiCNuH71pyDu3rA+Q0n65cmAbXnwWH84rKGiFumFzkmHNT8KHTMEchcxN+Kl8I54xGUhJ7l3E7X396Q==}
 
+  '@chttp/mcp@0.4.1':
+    resolution: {integrity: sha512-mY7z8BzD9qe1aY3G3OtZxxieIxKHMPLBhjH5e+L+BFTtdIbAI2vpovuUadQl68Ajnj0zQum69UkomCRWS9BLew==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      '@chttp/router': ^0.4.1
+
+  '@chttp/router@0.4.1':
+    resolution: {integrity: sha512-2IrnoTWoM3TO1HADXb0k5NRMJBaVHzTyIyIU+81mMl63TP95gu0hcLwKpFqYPwevE0INMopMRqvLjUjWPFl3lg==}
+    engines: {node: '>=22'}
+
+  '@chttp/static@0.4.1':
+    resolution: {integrity: sha512-UrICOpRDDfYFMGgj84KceI6mk6GAHFH6+Zem0wS01gbDm3cNPxt8NqqLVuWBtMHV509aNhFQeEMhotwqxZJPHA==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      '@chttp/router': ^0.4.1
+
+  '@chttp/val@0.4.1':
+    resolution: {integrity: sha512-3D4ObwmD973VxCfURWUV9znabkazvcMNDTM7Vw6MlOdpytQ86YEgwELWCrNV5mVxQywfQXxXP8rz9g8Qiz+kbw==}
+    engines: {node: '>=22'}
+
   '@csstools/color-helpers@5.1.0':
     resolution: {integrity: sha512-S11EXWJyy0Mz5SYvRmY8nJYTFFd1LCNV+7cXyAgQtOOuzb4EsgfqDufL+9esx72/eLhsRdGZwaldu/h+E4t4BA==}
     engines: {node: '>=18'}
@@ -922,6 +970,19 @@ packages:
   '@csstools/css-tokenizer@3.0.4':
     resolution: {integrity: sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw==}
     engines: {node: '>=18'}
+
+  '@cutils/cli@0.6.0':
+    resolution: {integrity: sha512-6vuqnjPKNK2wb6ueXXgX4CRucgtGFVzS3xiBLMtB47/k5s9jjYydcksc+zz57T6brBkoDi1xBFMSgF06Aum94A==}
+    engines: {node: '>=22'}
+
+  '@cutils/sqlite@0.6.0':
+    resolution: {integrity: sha512-s9mhgbm0bFhzAE/tyM9XWOobeKCr0+mAcHLIZlGFube9LFcyRUXXF9MfVt3CfuLVee2gnwqQtZ2xkaVN4XCYew==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      koffi: ^2.14.1
+    peerDependenciesMeta:
+      koffi:
+        optional: true
 
   '@drizzle-team/brocli@0.10.2':
     resolution: {integrity: sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w==}
@@ -1902,6 +1963,107 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@scriptc/cli-darwin-arm64@0.4.10':
+    resolution: {integrity: sha512-xLVuVGHcbJWf/VsJc/ual/OXdznVoM0biWroxsyAhcE2S7lcEnojzGJgADQfnA3bXvRqAbVt6LwS3PAqaxUx0A==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@scriptc/cli-darwin-x64@0.4.10':
+    resolution: {integrity: sha512-aBCKpSuJjOEJAIVoja8EgJmiFaVadnByEc56QfWgID1hEPSB/IH+nAXdzd5ELNQkpus5L9+C+k88mF3PQAIjEw==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@scriptc/cli-linux-arm64-gnu@0.4.10':
+    resolution: {integrity: sha512-HfU/4ysLMmMS0nGtayTNwkBq07BHKq2gOZMIPkkqbMwsgRatCF3cULEOWlxuJQokAXDMPKA6Ix8w3eQij8Lj2g==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@scriptc/cli-linux-arm64-musl@0.4.10':
+    resolution: {integrity: sha512-Wk1hx+UveeHFB21pSo5t36ZuMxngBdVIRPV461MABXp+W7Q6kOj/gIXzTFfpUX+2SqZpHLbePmUXSSgQhBq26Q==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@scriptc/cli-linux-x64-gnu@0.4.10':
+    resolution: {integrity: sha512-KRHgkx1LdNb46K5IIcnJ5uZrZWG8qoWpUWpyVINl4edIqT8ntn/P7I69uPlPXjgLoRohF2GQE6gIrt5RuF2pvQ==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@scriptc/cli-linux-x64-musl@0.4.10':
+    resolution: {integrity: sha512-39nsbIu8cFAOZGc/sfPwaUHvu0dvaP7+CjwfDYqGLgDEgaZM/qt2NZfKRqx8I7XMwoOmnBOFPbv+Y9DpVDJBkw==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@scriptc/cli-win32-x64-msvc@0.4.10':
+    resolution: {integrity: sha512-eAXi/HvZLri1KtLDnJHjMmzu/rx2maaazSPPFj6NUWHjuDlcOpngEI/x3nWpNt/TNs4y32mbODczPR7Bx4HieQ==}
+    cpu: [x64]
+    os: [win32]
+
+  '@scriptc/llvm-darwin-arm64@0.4.10':
+    resolution: {integrity: sha512-9p6JHfP6Cv0NhbDv4xsmNpV9z7eiabZ288ryicJDiyGOjbfEVnKRy/dzqpWa26dzqoyboTBeIVb1kf3DzfcoMA==}
+    cpu: [arm64]
+    os: [darwin]
+    hasBin: true
+
+  '@scriptc/llvm-darwin-x64@0.4.10':
+    resolution: {integrity: sha512-xGnjMhAAdOv5+/H5/INxXBtdqNxuvj58CK6t3v/s4xduo3MEtg/IIjsy5GnEDeHnHhTr/P6nD4QyJVE3pnvnfg==}
+    cpu: [x64]
+    os: [darwin]
+    hasBin: true
+
+  '@scriptc/llvm-linux-arm64-gnu@0.4.10':
+    resolution: {integrity: sha512-pUcA95uYgrmvTI1tKoQJZVplKmMqqrG5IkE5wLK3QUrnG/yS1lN68m03oi8JtfOThibxKNJ/fbldPpDsMlz/jw==}
+    cpu: [arm64]
+    os: [linux]
+    hasBin: true
+
+  '@scriptc/llvm-linux-arm64-musl@0.4.10':
+    resolution: {integrity: sha512-qNkDFeQKkJb+bf+3LKX/+gX8GDqJcyziYIJUxWX9HK36hG/0zTC02RIgM62n2mH7QyltsX94A/Ghyu2roizTbg==}
+    cpu: [arm64]
+    os: [linux]
+    hasBin: true
+
+  '@scriptc/llvm-linux-x64-gnu@0.4.10':
+    resolution: {integrity: sha512-QUeaKqvm178RuyEdGgxxeuSN6g5+W0CLaCqkH2GYvRoelNxzxArptUqILw+d/6lXM5tLVHxPGGGssJZAhTlUXg==}
+    cpu: [x64]
+    os: [linux]
+    hasBin: true
+
+  '@scriptc/llvm-linux-x64-musl@0.4.10':
+    resolution: {integrity: sha512-0wzPoL1ahVXBb42SRugzV04++WuEHnR5Pt6dRIyivk8bHjcTKz40zY8ZaZP+jcGxjaflfeg67DypOxqOd9VKHw==}
+    cpu: [x64]
+    os: [linux]
+    hasBin: true
+
+  '@scriptc/llvm-win32-x64-msvc@0.4.10':
+    resolution: {integrity: sha512-rqeXpn0P15pXeZAERO9nFtK0dC+blPH/g/thys6VYwdiNqFmPZFNpdjsviFeTMmSkN1zNlmb37SnOpedzPMrWw==}
+    cpu: [x64]
+    os: [win32]
+
+  '@scriptc/runtime-darwin-arm64@0.4.10':
+    resolution: {integrity: sha512-Vw3Dlq2vRVn98bzsCLnl3tOpe23KJPuOWuPilhehQYnySXvDjen5YVpEGgXd5/mTDf0NFIkp3rY4cGnd23QzVQ==}
+
+  '@scriptc/runtime-darwin-x64@0.4.10':
+    resolution: {integrity: sha512-voM21H7XF9VMlK3Cnrb9pmgooViIb8985YkuoQdX79tDklZILNHxBlXlh6xzzkLBXRFZtZYUHzsNEOsM8SOfrg==}
+
+  '@scriptc/runtime-linux-arm64-gnu@0.4.10':
+    resolution: {integrity: sha512-N0ZU2EM6y7S/CPYbudfObld0/DLyo+pRCwl2HlfeC7Ha4D2RkeNkp8Hqvgze9dpyRv0lTW7dgmySyGf2XISINw==}
+
+  '@scriptc/runtime-linux-arm64-musl@0.4.10':
+    resolution: {integrity: sha512-djYG0kmeJbiRRJr1hE1va5X+nCwyjCZqlQpqi/Q/O34hV3jL/w88rtLy9HnjaVPxRQKGrI9VQ4rPUpPTbBPTZw==}
+
+  '@scriptc/runtime-linux-x64-gnu@0.4.10':
+    resolution: {integrity: sha512-TanY2EQzCG56c2YH9QsGOz568TIUbnXNvgVbbUvr+M+OBZqeIzKPeRaqd34F3bT3Hw8/BsDdeJp1xB+5yww3xw==}
+
+  '@scriptc/runtime-linux-x64-musl@0.4.10':
+    resolution: {integrity: sha512-EVr4/hp/sQuxn6PA77u1a6ST+RDbLcW4v8ZCHSLy+jFACEy9f/9g3j0QetX8yE3Pxu8H4xUuqwcKSHya0hNvDQ==}
+
+  '@scriptc/runtime-win32-x64-msvc@0.4.10':
+    resolution: {integrity: sha512-xmvFPOczkwkVFI4Z9OBnFU9AkbiPuXgpwC39g6FqwOaRCRGXa/KYG5Q9+zZOGbkstStJ7JC3VtdKht9gu6kWRw==}
+
   '@sinclair/typebox@0.31.30':
     resolution: {integrity: sha512-MGsM7bVmHg3sUKCphlu3SGQ+T+5JTbygZWYArfKQCW5anJeACHeqLhcnf+R7XlCWZ+QR3C8JTBx3kCKJTN69ow==}
 
@@ -2315,6 +2477,10 @@ packages:
   better-sqlite3@12.11.1:
     resolution: {integrity: sha512-dq9AtApgg5PGFtBzPFSBl3HZQjHok5gaQCM6zh2Yk0aSmDCs1CbnVI8/HgASQkNKsWFpseIO9beg5xxpYhbIfA==}
     engines: {node: 20.x || 22.x || 23.x || 24.x || 25.x || 26.x}
+
+  better-sqlite3@13.0.3:
+    resolution: {integrity: sha512-RbOBxmLBG8uvFUc15X9+9SFemKcQ0WBuISBVkpuiaUB2qblC8UWlHEjdWVoZ8AdhSwmoEgsiXKfopX0CQxaACQ==}
+    engines: {node: '>=22'}
 
   binaryen@130.0.0:
     resolution: {integrity: sha512-XDrb+zql0RbFPKgj7MuH9zOc78R3Fa/P/VSGnnpdwYsvNZPWjcMYMdAkKCOQEL2A7yqgjSMTDRFp6gfSDW+/QQ==}
@@ -3096,6 +3262,10 @@ packages:
     resolution: {integrity: sha512-bkb/RkuWCE64eWu1PCh3Fu2pGc9mKRs+kOE+FU2bGHRYlQa86/D321DSATV54AsCQMKz3/xSt9sRgraZTpqdhQ==}
     engines: {node: '>=10'}
 
+  node-addon-api@8.9.2:
+    resolution: {integrity: sha512-VijLXbi3UACN69I0JVXJsX4tjACjNoQDgv2gTF6sx2wWEi8tkSg2eX8p5gSIFi8z2+DL3oHmY6OyKce38SDolg==}
+    engines: {node: ^18 || ^20 || >= 21}
+
   node-fetch@2.7.0:
     resolution: {integrity: sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==}
     engines: {node: 4.x || >=6.0.0}
@@ -3364,6 +3534,11 @@ packages:
   saxes@6.0.0:
     resolution: {integrity: sha512-xAg7SOnEhrm5zI3puOOKyy1OMcMlIJZYNJY7xLBwSze0UjhPLnWfj2GF2EpT0jmzaJKIWKHLsaSSajf35bcYnA==}
     engines: {node: '>=v12.22.7'}
+
+  scriptc@0.4.10:
+    resolution: {integrity: sha512-5YkcoQp4zsjM8YA/T1ZO1oNnWJFE5RxmT5PF/woEhvFFR8Tn/z1cvO7tQlNgNKJGKm2hMXSYCvEXGrkEq3g5CQ==}
+    engines: {node: '>=24'}
+    hasBin: true
 
   semver@7.8.5:
     resolution: {integrity: sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==}
@@ -4132,6 +4307,18 @@ snapshots:
       human-id: 4.2.2
       prettier: 2.8.8
 
+  '@chttp/mcp@0.4.1(@chttp/router@0.4.1)':
+    dependencies:
+      '@chttp/router': 0.4.1
+
+  '@chttp/router@0.4.1': {}
+
+  '@chttp/static@0.4.1(@chttp/router@0.4.1)':
+    dependencies:
+      '@chttp/router': 0.4.1
+
+  '@chttp/val@0.4.1': {}
+
   '@csstools/color-helpers@5.1.0': {}
 
   '@csstools/css-calc@2.1.4(@csstools/css-parser-algorithms@3.0.5(@csstools/css-tokenizer@3.0.4))(@csstools/css-tokenizer@3.0.4)':
@@ -4151,6 +4338,10 @@ snapshots:
       '@csstools/css-tokenizer': 3.0.4
 
   '@csstools/css-tokenizer@3.0.4': {}
+
+  '@cutils/cli@0.6.0': {}
+
+  '@cutils/sqlite@0.6.0': {}
 
   '@drizzle-team/brocli@0.10.2': {}
 
@@ -4793,6 +4984,90 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.66.0':
     optional: true
 
+  '@scriptc/cli-darwin-arm64@0.4.10':
+    dependencies:
+      '@scriptc/llvm-darwin-arm64': 0.4.10
+      '@scriptc/runtime-darwin-arm64': 0.4.10
+    optional: true
+
+  '@scriptc/cli-darwin-x64@0.4.10':
+    dependencies:
+      '@scriptc/llvm-darwin-x64': 0.4.10
+      '@scriptc/runtime-darwin-x64': 0.4.10
+    optional: true
+
+  '@scriptc/cli-linux-arm64-gnu@0.4.10':
+    dependencies:
+      '@scriptc/llvm-linux-arm64-gnu': 0.4.10
+      '@scriptc/runtime-linux-arm64-gnu': 0.4.10
+    optional: true
+
+  '@scriptc/cli-linux-arm64-musl@0.4.10':
+    dependencies:
+      '@scriptc/llvm-linux-arm64-musl': 0.4.10
+      '@scriptc/runtime-linux-arm64-musl': 0.4.10
+    optional: true
+
+  '@scriptc/cli-linux-x64-gnu@0.4.10':
+    dependencies:
+      '@scriptc/llvm-linux-x64-gnu': 0.4.10
+      '@scriptc/runtime-linux-x64-gnu': 0.4.10
+    optional: true
+
+  '@scriptc/cli-linux-x64-musl@0.4.10':
+    dependencies:
+      '@scriptc/llvm-linux-x64-musl': 0.4.10
+      '@scriptc/runtime-linux-x64-musl': 0.4.10
+    optional: true
+
+  '@scriptc/cli-win32-x64-msvc@0.4.10':
+    dependencies:
+      '@scriptc/llvm-win32-x64-msvc': 0.4.10
+      '@scriptc/runtime-win32-x64-msvc': 0.4.10
+    optional: true
+
+  '@scriptc/llvm-darwin-arm64@0.4.10':
+    optional: true
+
+  '@scriptc/llvm-darwin-x64@0.4.10':
+    optional: true
+
+  '@scriptc/llvm-linux-arm64-gnu@0.4.10':
+    optional: true
+
+  '@scriptc/llvm-linux-arm64-musl@0.4.10':
+    optional: true
+
+  '@scriptc/llvm-linux-x64-gnu@0.4.10':
+    optional: true
+
+  '@scriptc/llvm-linux-x64-musl@0.4.10':
+    optional: true
+
+  '@scriptc/llvm-win32-x64-msvc@0.4.10':
+    optional: true
+
+  '@scriptc/runtime-darwin-arm64@0.4.10':
+    optional: true
+
+  '@scriptc/runtime-darwin-x64@0.4.10':
+    optional: true
+
+  '@scriptc/runtime-linux-arm64-gnu@0.4.10':
+    optional: true
+
+  '@scriptc/runtime-linux-arm64-musl@0.4.10':
+    optional: true
+
+  '@scriptc/runtime-linux-x64-gnu@0.4.10':
+    optional: true
+
+  '@scriptc/runtime-linux-x64-musl@0.4.10':
+    optional: true
+
+  '@scriptc/runtime-win32-x64-msvc@0.4.10':
+    optional: true
+
   '@sinclair/typebox@0.31.30': {}
 
   '@standard-community/standard-json@0.3.7(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(valibot@1.5.0(typescript@5.9.3))(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)':
@@ -5114,6 +5389,10 @@ snapshots:
     dependencies:
       bindings: 1.5.0
       prebuild-install: 7.1.3
+
+  better-sqlite3@13.0.3:
+    dependencies:
+      node-addon-api: 8.9.2
 
   binaryen@130.0.0: {}
 
@@ -5821,6 +6100,8 @@ snapshots:
     dependencies:
       semver: 7.8.5
 
+  node-addon-api@8.9.2: {}
+
   node-fetch@2.7.0:
     dependencies:
       whatwg-url: 5.0.0
@@ -6111,6 +6392,16 @@ snapshots:
   saxes@6.0.0:
     dependencies:
       xmlchars: 2.2.0
+
+  scriptc@0.4.10:
+    optionalDependencies:
+      '@scriptc/cli-darwin-arm64': 0.4.10
+      '@scriptc/cli-darwin-x64': 0.4.10
+      '@scriptc/cli-linux-arm64-gnu': 0.4.10
+      '@scriptc/cli-linux-arm64-musl': 0.4.10
+      '@scriptc/cli-linux-x64-gnu': 0.4.10
+      '@scriptc/cli-linux-x64-musl': 0.4.10
+      '@scriptc/cli-win32-x64-msvc': 0.4.10
 
   semver@7.8.5: {}
 
