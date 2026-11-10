@@ -27,6 +27,8 @@ export const CLI_ONLY_EXCEPTIONS: Record<string, string> = {
     're-queues a captured link for headless extraction on this machine; a local pipeline operation, the extract_run tool covers the batch form',
   backup:
     'writes a sqlite snapshot file on the local machine; a host-level maintenance operation, not an agent data operation',
+  requeue:
+    'moves parked needs_browser and deferred links back into the extraction queue on this machine; a local pipeline operation',
   browsers:
     'reports local browser adapter capabilities and health (binary checks, CDP endpoint probes); a host-level diagnostic, not an agent data operation',
 }
