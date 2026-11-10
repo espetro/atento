@@ -11,7 +11,7 @@ const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const version = JSON.parse(readFileSync(join(repo, 'packages/atento/package.json'), 'utf8')).version
 const tag = `v${version}`
 const sh = (cmd, args) => execFileSync(cmd, args, { stdio: 'inherit', cwd: repo })
-const exists = execFileSync('git', ['tag', '--list', tag], { encoding: 'utf8' }).trim() !== ''
+const exists = execFileSync('git', ['ls-remote', '--tags', 'origin', tag], { encoding: 'utf8' }).trim() !== ''
 if (exists) {
   console.log(`${tag} already exists`)
 } else {
