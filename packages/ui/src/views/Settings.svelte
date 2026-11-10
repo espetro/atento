@@ -3,6 +3,7 @@
   import { api } from '../lib/api'
   import { timeAgo } from '../lib/format'
   import CopyButton from '../lib/components/CopyButton.svelte'
+  import { acpAvailable } from '../lib/acp'
   import { m } from '../paraglide/messages.js'
   import type { UrlState } from '../lib/urlState'
 
@@ -36,6 +37,48 @@
   const config = $derived(configQuery.data ?? null)
   const latestRun = $derived(runsQuery.data?.runs?.[0] ?? null)
   const serverUrl = $derived(typeof window !== 'undefined' ? window.location.origin : '')
+
+  type SettingsSection = 'agent' | 'browsers' | 'sources' | 'schedule' | 'pairing' | 'server'
+  let section = $state<SettingsSection>('agent')
+  const SECTIONS: [SettingsSection, string][] = [
+    ['agent', 'Agent'],
+    ['browsers', 'Browsers'],
+    ['sources', 'Sources'],
+    ['schedule', 'Schedule'],
+    ['pairing', 'Pairing'],
+    ['server', 'Server'],
+  ]
+
+  interface AcpAgent { id: string; label: string; command: string[]; path: string }
+  interface AgentsResponse { configured: string[] | null; available: AcpAgent[] }
+  let agents = $state<AgentsResponse | null>(null)
+  let agentBusy = $state(false)
+  let customCmd = $state('')
+  const bridge = () => (window as unknown as { __linkinboxBridge?: string }).__linkinboxBridge ?? null
+
+  async function loadAgents() {
+    const b = bridge()
+    if (b === null) return
+    try {
+      const res = await fetch(`${b}/acp/agents`)
+      if (res.ok) agents = await res.json()
+    } catch { /* bridge down */ }
+  }
+  async function pickAgent(command: string[]) {
+    const b = bridge()
+    if (b === null || agentBusy) return
+    agentBusy = true
+    try {
+      await fetch(`${b}/acp/config`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ command }),
+      })
+      await loadAgents()
+    } finally { agentBusy = false }
+  }
+  let acpOn = $state(false)
+  void acpAvailable().then((ok) => { acpOn = ok; void loadAgents() })
 
   let pairCode = $state<string | null>(null)
   let pairExpiry = $state<string | null>(null)
@@ -77,13 +120,78 @@
   }
 </script>
 
-<div class="settings" data-testid="settings-view">
-  <header class="settings-head">
-    <h1 class="settings-title">{m.settings_title()}</h1>
-    <button type="button" class="btn btn-sm" onclick={() => void refresh()}>{m.action_refresh()}</button>
-  </header>
+<div class="settings settings-shell" data-testid="settings-view">
+  <nav class="settings-nav" aria-label={m.settings_title()}>
+    <div class="settings-nav-head">
+      <h1 class="settings-title display">{m.settings_title()}</h1>
+    </div>
+    {#each SECTIONS as [id, label] (id)}
+      <button
+        type="button"
+        class="settings-nav-item"
+        class:is-active={section === id}
+        onclick={() => (section = id)}
+        data-testid={`settings-nav-${id}`}
+      >{label}</button>
+    {/each}
+    <button type="button" class="settings-nav-item settings-nav-refresh" onclick={() => void refresh()}>{m.action_refresh()}</button>
+  </nav>
+  <div class="settings-body">
 
   <!-- Browser adapters -->
+  {#if section === 'agent'}
+  <section class="pane card" data-testid="settings-agent">
+    <h2 class="card-title">Agent</h2>
+    <p class="card-note">Pick the ACP agent binary the shell spawns for the in-app agent. Detected clients are listed automatically; use a custom command for anything else.</p>
+    {#if !acpOn}
+      <p class="meta">{m.assistant_not_configured()}</p>
+    {:else if agents === null}
+      <div class="skeleton" style="height: 60px;"></div>
+    {:else}
+      <ul class="agent-list">
+        {#each agents.available as a (a.id)}
+          {@const active = agents!.configured !== null && agents!.configured.join(' ') === a.command.join(' ')}
+          <li>
+            <button
+              type="button"
+              class="agent-option"
+              class:is-active={active}
+              disabled={agentBusy}
+              onclick={() => void pickAgent(a.command)}
+              data-testid={`agent-pick-${a.id}`}
+            >
+              <span class="agent-name">{a.label}</span>
+              <code class="mono agent-cmd">{a.path} {a.command.slice(1).join(' ')}</code>
+              {#if active}<span class="agent-active">active</span>{/if}
+            </button>
+          </li>
+        {:else}
+          <li class="meta">No known ACP clients found on PATH.</li>
+        {/each}
+      </ul>
+      <div class="agent-custom">
+        <input
+          class="input"
+          placeholder="custom command — e.g. maki acp"
+          bind:value={customCmd}
+          data-testid="agent-custom-input"
+        />
+        <button
+          type="button"
+          class="btn btn-sm"
+          disabled={agentBusy || customCmd.trim() === ''}
+          onclick={() => { void pickAgent(customCmd.trim().split(/\s+/)); customCmd = '' }}
+          data-testid="agent-custom-save"
+        >Use custom</button>
+      </div>
+      {#if agents.configured !== null}
+        <p class="meta-faint">Configured: <code class="mono">{agents.configured.join(' ')}</code></p>
+      {/if}
+    {/if}
+  </section>
+  {/if}
+
+  {#if section === 'browsers'}
   <section class="pane card" data-testid="settings-browsers">
     <h2 class="card-title">{m.settings_browsers()}</h2>
     <p class="card-note">{m.settings_browsers_note()}</p>
@@ -131,8 +239,10 @@
       <p class="meta-faint">{m.settings_refresh_note()}</p>
     {/if}
   </section>
+  {/if}
 
   <!-- Sources -->
+  {#if section === 'sources'}
   <section class="pane card" data-testid="settings-sources">
     <h2 class="card-title">{m.settings_sources()}</h2>
     <p class="card-note">{m.settings_sources_note_pre()} <code>[sources]</code> {m.settings_sources_note_post()}</p>
@@ -151,8 +261,10 @@
       <p class="meta">{m.settings_config_unreadable_pre()} <code>linkinbox config</code>{m.settings_config_unreadable_post()}</p>
     {/if}
   </section>
+  {/if}
 
   <!-- Schedule -->
+  {#if section === 'schedule'}
   <section class="pane card" data-testid="settings-schedule">
     <h2 class="card-title">{m.settings_schedule()}</h2>
     <p class="card-note">{m.settings_schedule_note()}</p>
@@ -179,8 +291,10 @@
       </ul>
     </details>
   </section>
+  {/if}
 
   <!-- Extension pairing -->
+  {#if section === 'pairing'}
   <section class="pane card" data-testid="settings-pairing">
     <h2 class="card-title">{m.settings_pairing()}</h2>
     <p class="card-note">{m.settings_pairing_note()}</p>
@@ -215,8 +329,10 @@
       </p>
     </details>
   </section>
+  {/if}
 
   <!-- Server -->
+  {#if section === 'server'}
   <section class="pane card" data-testid="settings-server">
     <h2 class="card-title">{m.settings_server()}</h2>
     {#if config}
@@ -234,6 +350,8 @@
       <p class="meta">{m.settings_server_unavailable()}</p>
     {/if}
   </section>
+  {/if}
+  </div>
 </div>
 
 <style>
@@ -246,11 +364,6 @@
     gap: 14px;
     height: 100%;
     overflow-y: auto;
-  }
-  .settings-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
   }
   .settings-title {
     font-size: 22px;
@@ -352,6 +465,116 @@
   }
   .fact dd {
     margin: 0;
+  }
+  .settings-shell {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+  }
+  .settings-nav {
+    flex: none;
+    width: 148px;
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding-top: 18px;
+  }
+  .settings-nav-head {
+    margin-bottom: 10px;
+    padding: 0 10px;
+  }
+  .settings-nav-item {
+    text-align: left;
+    padding: 6px 10px;
+    border-radius: 7px;
+    border: none;
+    background: transparent;
+    color: var(--color-ink-soft);
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      background-color 140ms var(--ease-out-expo),
+      color 140ms var(--ease-out-expo);
+  }
+  .settings-nav-item:hover {
+    color: var(--color-ink);
+    background: var(--color-accent);
+  }
+  .settings-nav-item.is-active {
+    background: var(--color-accent);
+    color: var(--color-ink);
+  }
+  .settings-nav-refresh {
+    margin-top: 14px;
+    color: var(--color-ink-faint);
+  }
+  .settings-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .agent-list {
+    list-style: none;
+    margin: 0 0 10px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .agent-option {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: 9px;
+    border: 1px solid var(--color-line);
+    background: var(--color-surface-raised);
+    text-align: left;
+    cursor: pointer;
+    transition:
+      border-color 140ms var(--ease-out-expo),
+      background-color 140ms var(--ease-out-expo);
+  }
+  .agent-option:hover:not(:disabled) {
+    border-color: var(--color-line-strong);
+  }
+  .agent-option.is-active {
+    border-color: var(--color-accent-blue);
+    background: var(--color-accent-wash);
+  }
+  .agent-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-ink);
+    flex: none;
+  }
+  .agent-cmd {
+    font-size: 11.5px;
+    color: var(--color-ink-faint);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+  .agent-active {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-accent-blue);
+    flex: none;
+  }
+  .agent-custom {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .agent-custom .input {
+    flex: 1;
+    font-size: 12.5px;
   }
   .mono {
     font-family: var(--font-mono, ui-monospace, monospace);

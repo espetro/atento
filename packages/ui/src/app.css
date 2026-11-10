@@ -210,8 +210,16 @@ kbd {
 
   /* Staggered row entrance (Notion reference): rows rise 6px + fade,
      18ms apart, capped at 20 via --i. Transform+opacity only. */
+  .list-row {
+    transition:
+      transform 160ms var(--ease-out-expo),
+      background-color 140ms var(--ease-out-expo);
+  }
+  .list-row:hover {
+    transform: translateX(2px);
+  }
   .list-row.row-enter {
-    animation: row-in 220ms var(--ease-out-expo) both;
+    animation: row-in 220ms var(--ease-out-expo) backwards;
     animation-delay: calc(var(--i, 0) * 18ms);
   }
   @keyframes row-in {

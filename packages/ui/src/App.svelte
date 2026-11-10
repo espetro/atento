@@ -18,9 +18,10 @@
   import * as Sidebar from '$lib/components/ui/sidebar/index.js'
   import IconSparkles from '~icons/lucide/sparkles'
   import IconPanelLeft from '~icons/lucide/panel-left'
-  import IconInbox from '~icons/lucide/inbox'
   import IconSearch from '~icons/lucide/search'
   import IconSettings from '~icons/lucide/settings'
+  import IconListFilter from '~icons/lucide/list-filter'
+  import FilterMenu from './lib/components/FilterMenu.svelte'
   import LiveSync from './lib/components/LiveSync.svelte'
   import { sseConnected } from './lib/events'
   import { initTheme } from './lib/prefs'
@@ -30,7 +31,17 @@
 
   let url = $state<UrlState>(parseUrlState(new URLSearchParams(window.location.search)))
   let paletteOpen = $state(false)
-  let assistantOpen = $state(false)
+  let agentOpen = $state(false)
+  let qInput = $state('')
+  $effect(() => { if (url.q !== qInput) qInput = url.q })
+  let searchEl = $state<HTMLInputElement | null>(null)
+  let filterOpen = $state(false)
+  let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+  function onSearchInput() {
+    if (searchTimer !== null) clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => setUrl({ q: qInput }), 220)
+  }
   // ACP assistant: only when the shell bridge exposes /acp (never on web).
   let assistantAvailable = $state(false)
 
@@ -62,11 +73,13 @@
     window.addEventListener('keydown', onPaletteKey)
     const onPaletteEvt = () => (paletteOpen = true)
     window.addEventListener('linkinbox:palette', onPaletteEvt)
+    const onFocusSearch = () => { searchEl?.focus(); searchEl?.select() }
+    window.addEventListener('linkinbox:focus-search', onFocusSearch)
     // ⌘J toggles the agent panel (desktop shell only).
     const onAssistantKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
         e.preventDefault()
-        if (assistantAvailable) assistantOpen = !assistantOpen
+        if (assistantAvailable) agentOpen = !agentOpen
       }
     }
     window.addEventListener('keydown', onAssistantKey)
@@ -74,11 +87,29 @@
     // source of truth and lives in the page).
     const offTheme = initTheme()
     const offLayoutServer = startLayoutToolServer()
+    // Persist window bounds so the next launch restores last size (B-shell).
+    let boundsTimer: ReturnType<typeof setTimeout> | null = null
+    const postBounds = () => {
+      const bridge = (window as unknown as { __linkinboxBridge?: string }).__linkinboxBridge
+      if (bridge === undefined) return
+      if (boundsTimer !== null) clearTimeout(boundsTimer)
+      boundsTimer = setTimeout(() => {
+        void fetch(`${bridge}/window-bounds`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ w: window.innerWidth, h: window.innerHeight, x: window.screenX, y: window.screenY }),
+        }).catch(() => {})
+      }, 400)
+    }
+    window.addEventListener('resize', postBounds)
+    postBounds()
     void acpAvailable().then((ok) => (assistantAvailable = ok))
     return () => {
       window.removeEventListener('keydown', onAssistantKey)
       window.removeEventListener('linkinbox:palette', onPaletteEvt)
+      window.removeEventListener('linkinbox:focus-search', onFocusSearch)
       offTheme()
+      window.removeEventListener('resize', postBounds)
       offLayoutServer()
       window.removeEventListener('popstate', onPop)
       window.removeEventListener('keydown', onPaletteKey)
@@ -92,21 +123,41 @@
   <Sidebar.Provider class="app-shell" data-testid="app-shell">
     <AppSidebar {url} {setUrl} onIngest={() => setUrl({ dialog: 'ingest' })} />
     <Sidebar.Inset>
-      <header class="topbar" data-testid="topbar">
-        <button type="button" class="topbar-logo" onclick={() => setUrl({ view: 'triage', collection: '', host: '', category: '', selected: null })} aria-label={m.app_name()}>
-          <IconInbox />
-        </button>
-        <Sidebar.Trigger aria-label={m.aria_open_collections()} data-testid="rail-toggle" />
-        <span class="topbar-right">
-          <button type="button" class="topbar-btn" aria-label={m.search_aria()} onclick={() => (paletteOpen = true)} data-testid="topbar-search">
-            <IconSearch />
-          </button>
-          <button type="button" class="topbar-btn" aria-label={m.nav_settings()} onclick={() => setUrl({ view: 'settings', selected: null })} data-testid="topbar-settings">
-            <IconSettings />
-          </button>
-        </span>
-      </header>
       <main class="app-main">
+        <header class="topbar" data-testid="topbar">
+          <Sidebar.Trigger aria-label={m.aria_open_collections()} data-testid="rail-toggle" />
+          <span class="topbar-right">
+            <input
+              bind:this={searchEl}
+              class="input search-input-pill topbar-search"
+              type="search"
+              placeholder={m.search_placeholder()}
+              aria-label={m.search_aria()}
+              data-testid="search-input"
+              bind:value={qInput}
+              oninput={onSearchInput}
+            />
+            <span class="filter-anchor">
+              <button
+                type="button"
+                class="topbar-btn"
+                aria-haspopup="dialog"
+                aria-expanded={filterOpen}
+                aria-label={m.filter_button()}
+                onclick={() => (filterOpen = !filterOpen)}
+                data-testid="filter-button"
+              >
+                <IconListFilter />
+              </button>
+              {#if filterOpen}
+                <FilterMenu {url} {setUrl} />
+              {/if}
+            </span>
+            <button type="button" class="topbar-btn" aria-label={m.nav_settings()} onclick={() => setUrl({ view: 'settings', selected: null })} data-testid="topbar-settings">
+              <IconSettings />
+            </button>
+          </span>
+        </header>
         {#if url.view === 'attention'}
           <Attention {url} {setUrl} />
         {:else if url.view === 'run'}
@@ -130,26 +181,29 @@
     {url}
     {setUrl}
     invalidate={() => queryClient.invalidateQueries()}
-    openAssistant={assistantAvailable ? () => (assistantOpen = true) : undefined}
+    openAssistant={assistantAvailable ? () => (agentOpen = true) : undefined}
     onClose={() => (paletteOpen = false)}
   />
 
   {#if assistantAvailable}
+    {#if agentOpen}
+      <Dialog open={true} labelledBy="agent-title" onClose={() => (agentOpen = false)}>
+        <div class="agent-dialog" data-testid="assistant-pane">
+          <AssistantDrawer onClose={() => (agentOpen = false)} />
+        </div>
+      </Dialog>
+    {/if}
     <button
       type="button"
-      class="agent-fab"
+      class="agent-dock"
       aria-label={m.assistant_title()}
-      aria-expanded={assistantOpen}
-      onclick={() => (assistantOpen = !assistantOpen)}
+      aria-expanded={agentOpen}
+      onclick={() => (agentOpen = !agentOpen)}
       data-testid="agent-fab"
     >
       <IconSparkles />
+      <span>Agent</span>
     </button>
-    {#if assistantOpen}
-      <div class="assistant-pop" data-testid="assistant-pane">
-        <AssistantDrawer onClose={() => (assistantOpen = false)} />
-      </div>
-    {/if}
   {/if}
 
   {#if !$sseConnected}
@@ -217,7 +271,6 @@
     padding: 8px 12px;
     flex: none;
   }
-  .topbar-logo,
   .topbar-btn {
     display: inline-flex;
     align-items: center;
@@ -233,10 +286,6 @@
       background-color 140ms var(--ease-out-expo),
       color 140ms var(--ease-out-expo);
   }
-  .topbar-logo {
-    color: var(--color-ink);
-  }
-  .topbar-logo:hover,
   .topbar-btn:hover {
     background: var(--color-accent);
     color: var(--color-ink);
@@ -246,60 +295,56 @@
     display: flex;
     gap: 2px;
   }
-  /* Notion-style agent: FAB bottom-right → floating chat panel. */
-  .agent-fab {
+  /* Agent dock: icon+title pill pinned inside the content card's corner
+     (Linear reference) → opens the agent dialog. */
+  .agent-dock {
     position: fixed;
     right: 20px;
     bottom: 20px;
     z-index: 65;
-    width: 44px;
-    height: 44px;
-    border-radius: 999px;
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
+    gap: 6px;
+    padding: 7px 13px;
+    border-radius: 999px;
     background: var(--color-surface-raised);
     border: 1px solid var(--color-line-strong);
     color: var(--color-ink);
+    font-size: 12.5px;
+    font-weight: 500;
     box-shadow: var(--shadow-pop);
     cursor: pointer;
     transition:
       transform 180ms var(--ease-out-expo),
-      box-shadow 180ms var(--ease-out-expo);
+      background-color 140ms var(--ease-out-expo);
   }
-  .agent-fab:hover {
-    transform: translateY(-2px) scale(1.04);
+  .agent-dock:hover {
+    background: var(--color-surface-sunken);
+    transform: translateY(-1px);
   }
-  .agent-fab:active {
-    transform: scale(0.95);
+  .agent-dock:active {
+    transform: scale(0.97);
   }
-  .agent-fab[aria-expanded='true'] {
+  .agent-dock[aria-expanded='true'] {
     background: var(--color-ink);
     border-color: var(--color-ink);
     color: var(--color-surface);
   }
-  .assistant-pop {
-    position: fixed;
-    right: 20px;
-    bottom: 76px;
-    z-index: 64;
-    width: min(380px, calc(100vw - 32px));
-    height: min(560px, calc(100dvh - 110px));
+  .agent-dialog {
+    width: min(560px, calc(100vw - 48px));
+    height: min(620px, calc(100dvh - 120px));
     display: flex;
     flex-direction: column;
-    background: var(--color-surface-raised);
-    border: 1px solid var(--color-line);
-    border-radius: 16px;
-    box-shadow: var(--shadow-pop);
     overflow: hidden;
-    transform-origin: bottom right;
-    animation: pop-in 200ms var(--ease-out-expo);
+    margin: -10px;
   }
-  @keyframes pop-in {
-    from {
-      opacity: 0;
-      transform: scale(0.94) translateY(8px);
-    }
+  .topbar-search {
+    width: 220px;
+    font-size: 12.5px;
+  }
+  .filter-anchor {
+    position: relative;
+    display: inline-flex;
   }
   .keymap {
     min-width: 320px;

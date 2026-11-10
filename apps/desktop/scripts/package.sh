@@ -33,7 +33,14 @@ pnpm --dir "$REPO" --filter @linkinbox/cli deploy --prod "$RUNTIME/server"
 # deploy above runs under the system node, so rebuild against $NODE_BIN.
 BSQ_DIR=$(find "$RUNTIME/server/node_modules/.pnpm" -maxdepth 3 -type d -name better-sqlite3 | head -1)
 if [ -n "$BSQ_DIR" ]; then
-	PATH="$(dirname "$NODE_BIN"):$PATH" "$NODE_BIN" "$(dirname "$NODE_BIN")/npm" --prefix "$BSQ_DIR" rebuild 2>&1 | tail -2
+	# mise's `npm` is a shell-script shim — can't be run via `node npm`.
+	# Prefer the real npm-cli.js when present, else invoke the shim on PATH.
+	NPM_CLI="$(dirname "$NODE_BIN")/../lib/node_modules/npm/bin/npm-cli.js"
+	if [ -f "$NPM_CLI" ]; then
+		PATH="$(dirname "$NODE_BIN"):$PATH" "$NODE_BIN" "$NPM_CLI" --prefix "$BSQ_DIR" rebuild 2>&1 | tail -2
+	else
+		PATH="$(dirname "$NODE_BIN"):$PATH" npm --prefix "$BSQ_DIR" rebuild 2>&1 | tail -2
+	fi
 fi
 
 cp "$APP_DIR/server-entry.mjs" "$RUNTIME/server/"

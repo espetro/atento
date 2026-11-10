@@ -51,12 +51,13 @@ export class AcpClient {
 	static async spawn(
 		cmd: string[],
 		session: AcpSessionInfo,
+		options?: { env?: Record<string, string> },
 	): Promise<{ client: AcpClient; sessionId: string }> {
 		const proc = Bun.spawn(cmd, {
 			stdin: "pipe",
 			stdout: "pipe",
 			stderr: "inherit",
-			env: process.env,
+			env: { ...process.env, ...options?.env },
 		});
 		const client = new AcpClient(proc);
 		await client.request("initialize", {

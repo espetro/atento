@@ -100,6 +100,17 @@
     return typeof out === 'string' ? DOMPurify.sanitize(out) : ''
   }
 
+  const QUICK_ACTIONS: { label: string; prompt: string }[] = [
+    { label: 'Summarize selected', prompt: 'Summarize the currently selected link and suggest whether to keep or discard it.' },
+    { label: 'Triage inbox', prompt: 'Look at my inbox collection and propose a triage pass: which links deserve attention, which can be discarded, and why.' },
+    { label: 'Unblock deferred', prompt: 'Inspect the blocked and needs_login collections and suggest how to unblock them.' },
+    { label: 'Group into collection', prompt: 'Group the currently visible links into a sensible custom collection and create it.' },
+  ]
+  function quickAction(prompt: string) {
+    draft = prompt
+    void send()
+  }
+
   async function send() {
     const text = draft.trim()
     if (text === '' || busy) return
@@ -206,6 +217,11 @@
     {/if}
 
     <footer class="assistant-foot">
+      <div class="quick-actions" data-testid="agent-quick-actions">
+        {#each QUICK_ACTIONS as a (a.label)}
+          <button type="button" class="quick-chip" disabled={busy} onclick={() => quickAction(a.prompt)}>{a.label}</button>
+        {/each}
+      </div>
       <textarea
         class="textarea composer"
         rows="2"
@@ -337,6 +353,41 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+  .quick-actions {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 8px;
+  }
+  .quick-actions::-webkit-scrollbar {
+    display: none;
+  }
+  .quick-chip {
+    flex: none;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--color-line-strong);
+    background: var(--color-surface-sunken);
+    color: var(--color-ink-soft);
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      background-color 140ms var(--ease-out-expo),
+      color 140ms var(--ease-out-expo),
+      transform 140ms var(--ease-out-expo);
+  }
+  .quick-chip:hover:not(:disabled) {
+    background: var(--color-surface-raised);
+    color: var(--color-ink);
+    transform: translateY(-1px);
+  }
+  .quick-chip:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
   .composer {
     font-size: 13px;

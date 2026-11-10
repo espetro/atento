@@ -107,10 +107,7 @@ const UI_URL = process.env.LINKINBOX_URL ?? sidecar?.url ?? "http://localhost:41
 const mainWindow = new BrowserWindow({
 	title: "linkinbox",
 	url: UI_URL,
-	frame: {
-		width: 1440,
-		height: 900,
-	},
+	frame: savedWindowFrame(),
 });
 
 console.log(`[desktop] window created, loading ${UI_URL}`);
@@ -131,6 +128,76 @@ process.on("exit", () => {
 // ---------------------------------------------------------------------------
 
 const ACP_CONFIG_PATH = join(homedir(), ".linkinbox", "acp-agent.json");
+const WINDOW_BOUNDS_PATH = join(homedir(), ".linkinbox", "window.json");
+
+function savedWindowFrame(): { width: number; height: number; x?: number; y?: number } {
+	try {
+		const b = JSON.parse(readFileSync(WINDOW_BOUNDS_PATH, "utf8")) as {
+			w?: number;
+			h?: number;
+			x?: number;
+			y?: number;
+		};
+		if (typeof b.w === "number" && b.w >= 400 && typeof b.h === "number" && b.h >= 300) {
+			// innerWidth ≈ frame width; add back the macOS titlebar height.
+			const frame: { width: number; height: number; x?: number; y?: number } = {
+				width: Math.round(b.w),
+				height: Math.round(b.h + 32),
+			};
+			if (typeof b.x === "number") frame.x = Math.round(b.x);
+			if (typeof b.y === "number") frame.y = Math.round(b.y + 32);
+			return frame;
+		}
+	} catch {
+		// first launch
+	}
+	return { width: 1440, height: 900 };
+}
+
+// Known ACP clients. Probed on PATH (augmented — packaged apps get a minimal
+// PATH without homebrew/user bin dirs). First detected agent becomes the
+// default when the user has no explicit config.
+const ACP_AGENTS = [
+	{ id: "claude", label: "Claude Code", command: ["claude-code-acp"] },
+	{ id: "codex", label: "Codex", command: ["codex-acp"] },
+	{ id: "agy", label: "Agy", command: ["agy", "acp"] },
+	{ id: "maki", label: "Maki", command: ["maki", "acp"] },
+] as const;
+
+const EXTRA_PATHS = [
+	"/opt/homebrew/bin",
+	"/usr/local/bin",
+	join(homedir(), ".local", "bin"),
+	join(homedir(), ".bun", "bin"),
+	join(homedir(), ".npm-global", "bin"),
+	join(homedir(), ".nix-profile", "bin"),
+];
+
+function whichBin(name: string): string | null {
+	try {
+		return Bun.which(name, {
+			PATH: [...EXTRA_PATHS, process.env.PATH ?? ""].join(":"),
+		});
+	} catch {
+		return null;
+	}
+}
+
+interface AcpAgentInfo {
+	id: string;
+	label: string;
+	command: string[];
+	path: string;
+}
+
+function detectAgents(): AcpAgentInfo[] {
+	const out: AcpAgentInfo[] = [];
+	for (const a of ACP_AGENTS) {
+		const path = whichBin(a.command[0]);
+		if (path !== null) out.push({ ...a, command: [...a.command], path });
+	}
+	return out;
+}
 
 function acpCommand(): string[] | null {
 	try {
@@ -146,7 +213,8 @@ function acpCommand(): string[] | null {
 	if (env !== undefined && env.trim() !== "") {
 		return env.trim().split(/\s+/);
 	}
-	return null;
+	const found = detectAgents()[0];
+	return found ? found.command : null;
 }
 
 function saveAcpCommand(command: string[]) {
@@ -195,7 +263,8 @@ async function ensureAcp(): Promise<AcpSession> {
 	const cmd = acpCommand();
 	if (cmd === null) throw new Error("no agent configured");
 	acpError = "";
-	const { client, sessionId } = await AcpClient.spawn(cmd, {
+	const resolved = whichBin(cmd[0]!) ?? cmd[0]!;
+	const { client, sessionId } = await AcpClient.spawn([resolved, ...cmd.slice(1)], {
 		cwd: homedir(),
 		mcpServers: acpMcpServers(),
 	});
@@ -294,6 +363,22 @@ const shellBridge = Bun.serve({
 				},
 				{ headers: cors },
 			);
+		}
+		if (path === "/acp/agents" && req.method === "GET") {
+			return Response.json(
+				{ configured: acpCommand(), available: detectAgents() },
+				{ headers: cors },
+			);
+		}
+		if (path === "/window-bounds" && req.method === "POST") {
+			try {
+				const b = (await req.json()) as { w?: number; h?: number; x?: number; y?: number };
+				mkdirSync(dirname(WINDOW_BOUNDS_PATH), { recursive: true });
+				writeFileSync(WINDOW_BOUNDS_PATH, JSON.stringify({ w: b.w, h: b.h, x: b.x, y: b.y }));
+				return Response.json({ ok: true }, { headers: cors });
+			} catch (e) {
+				return new Response(String(e), { status: 400, headers: cors });
+			}
 		}
 		if (path === "/acp/config" && req.method === "POST") {
 			try {

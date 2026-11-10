@@ -10,8 +10,6 @@
   import type { LinkAction, LinkSummary } from '../lib/types'
   import { hasShellBridge, linkMenuItems, showShellContextMenu } from '../lib/desktop'
   import { density } from '../lib/prefs'
-  import FilterMenu from '../lib/components/FilterMenu.svelte'
-  import IconListFilter from '~icons/lucide/list-filter'
   import IconInbox from '~icons/lucide/inbox'
   import IconX from '~icons/lucide/x'
   import { m } from '../paraglide/messages.js'
@@ -144,7 +142,6 @@
   // yields fresh virtual items. count is pushed via setOptions below.
 
   let scrollEl = $state<HTMLElement | null>(null)
-  let searchEl = $state<HTMLInputElement | null>(null)
 
   const virtualizerStore = createVirtualizer({
     count: 0,
@@ -178,22 +175,9 @@
     })
   })
 
-  // Debounced search input -> ?q=
-  let qInput = $state('')
-  let qTimer: ReturnType<typeof setTimeout> | undefined
-  $effect(() => {
-    qInput = url.q
-  })
-  function onSearchInput() {
-    clearTimeout(qTimer)
-    qTimer = setTimeout(() => {
-      if (qInput !== url.q) setUrl({ q: qInput, selected: null })
-    }, 250)
-  }
   $effect(() => {
     const off = onShortcut('/', () => {
-      searchEl?.focus()
-      searchEl?.select()
+      window.dispatchEvent(new CustomEvent('linkinbox:focus-search'))
     })
     return off
   })
@@ -235,31 +219,7 @@
 
   function clearFilters() {
     setUrl({ q: '', state: '', category: '', host: '', stale: false, selected: null })
-    qInput = ''
   }
-
-  // ---- filter dropdown (A4) --------------------------------------------------
-  let filterOpen = $state(false)
-  let filterAnchor = $state<HTMLElement | null>(null)
-
-  $effect(() => {
-    if (!filterOpen) return
-    const onDown = (e: MouseEvent) => {
-      if (filterAnchor && !filterAnchor.contains(e.target as Node)) filterOpen = false
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        filterOpen = false
-      }
-    }
-    window.addEventListener('mousedown', onDown)
-    window.addEventListener('keydown', onKey, true)
-    return () => {
-      window.removeEventListener('mousedown', onDown)
-      window.removeEventListener('keydown', onKey, true)
-    }
-  })
 
   function isStale(link: LinkSummary): boolean {
     return link.expires_at != null && new Date(link.expires_at).getTime() < Date.now()
@@ -301,43 +261,10 @@
       <h1 class="list-title display">{meta.label}</h1>
       <span class="meta" data-testid="total-count">{m.list_total_items({ count: total })}</span>
     </div>
-    <div class="search-row">
-      <div class="search-side">
-        <button
-          type="button"
-          class="btn btn-sm filter-btn"
-          aria-haspopup="dialog"
-          aria-expanded={filterOpen}
-          onclick={() => (filterOpen = !filterOpen)}
-          data-testid="filter-button"
-        >
-          <IconListFilter width={13} height={13} aria-hidden="true" />
-          {m.filter_button()}
-          {#if hasActiveFilters}<span class="filter-dot" aria-hidden="true"></span>{/if}
-        </button>
-        <div class="filter-anchor" bind:this={filterAnchor}>
-          {#if filterOpen}
-            <FilterMenu {url} {setUrl} />
-          {/if}
-        </div>
-      </div>
-      <div class="search-center">
-        <input
-          bind:this={searchEl}
-          class="input search-input search-input-pill"
-          type="search"
-          placeholder={m.search_placeholder()}
-          aria-label={m.search_aria()}
-          data-testid="search-input"
-          bind:value={qInput}
-          oninput={onSearchInput}
-        />
-      </div>
-      <div class="search-side search-side-end"></div>
-    </div>
+
     {#if hasActiveFilters}
       <div class="filter-chips">
-        {#if url.q}<button class="chip chip-button" onclick={() => { qInput = ''; setUrl({ q: '', selected: null }) }}>“{truncate(url.q, 30)}” <IconX class="chip-x" /></button>{/if}
+        {#if url.q}<button class="chip chip-button" onclick={() => setUrl({ q: '', selected: null })}>“{truncate(url.q, 30)}” <IconX class="chip-x" /></button>{/if}
         {#if url.state}<button class="chip chip-button" onclick={() => setUrl({ state: '', selected: null })}>{m.chip_state({ value: url.state.replace(/_/g, ' ') })} <IconX class="chip-x" /></button>{/if}
         {#if url.category}<button class="chip chip-button" onclick={() => setUrl({ category: '', selected: null })}>{m.chip_category({ value: url.category })} <IconX class="chip-x" /></button>{/if}
         {#if url.host}<button class="chip chip-button" onclick={() => setUrl({ host: '', selected: null })}>{m.chip_host({ value: url.host })} <IconX class="chip-x" /></button>{/if}
@@ -508,33 +435,8 @@
     text-transform: capitalize;
   }
   /* Pill search matches the topbar (Quiet.md reference). */
-  .search-input-pill {
-    border-radius: 999px;
-    background: var(--color-surface-sunken);
-    border-color: transparent;
-    padding-inline: 14px;
-  }
-  .search-input-pill:focus {
-    background: var(--color-surface-raised);
-    border-color: var(--color-accent-blue);
-  }
   /* A4: filter button on the left, search centered in the remaining space,
      spare slot on the right keeps the input visually centered. */
-  .search-row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-  .search-side {
-    position: relative;
-    display: flex;
-    align-items: center;
-    flex: none;
-    min-width: 0;
-  }
-  .search-side-end {
-    flex: none;
-  }
   .filter-anchor {
     display: contents;
   }
@@ -550,17 +452,6 @@
     border-radius: 999px;
     background: var(--color-accent-blue);
     flex: none;
-  }
-  .search-center {
-    flex: 1;
-    display: flex;
-    justify-content: center;
-    min-width: 0;
-  }
-  .search-input {
-    width: 100%;
-    max-width: 400px;
-    min-width: 0;
   }
   .chip-button {
     cursor: pointer;

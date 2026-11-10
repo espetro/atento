@@ -298,6 +298,10 @@
 </Sidebar.Root>
 
 <style>
+  /* Generous group spacing (Linear-style section rhythm). */
+  :global([data-slot='sidebar-group']) {
+    margin-bottom: 14px;
+  }
   /* Bottom-edge fade: signals more content below the fold (eval pass 2). */
   :global([data-slot='sidebar-content']) {
     mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent);
@@ -337,6 +341,8 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
+    white-space: nowrap;
+    flex: none;
     padding: 4px 8px;
     border-radius: 7px;
     border: none;
