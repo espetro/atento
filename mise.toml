@@ -1,2 +1,43 @@
 [tools]
+node = "24"
+pnpm = "12"
+bun = "1.3"
 "github:Y2Z/monolith" = { version = "2.12.0", rename_exe = "monolith" }
+
+[env]
+_.path = ["node_modules/.bin"]
+
+[tasks.install]
+description = "Install workspace dependencies"
+run = "pnpm install --frozen-lockfile"
+
+[tasks.build]
+description = "Build every package and the web ui"
+run = "pnpm build"
+
+[tasks.test]
+description = "Run the test suites"
+run = "pnpm test"
+
+[tasks.typecheck]
+description = "Typecheck every package"
+run = "pnpm typecheck"
+
+[tasks.validate]
+description = "Build and typecheck (what CI runs before tests)"
+run = "pnpm validate"
+
+[tasks.dev]
+description = "Start the local API and web ui (http://localhost:4173)"
+depends = ["build"]
+run = "node packages/cli/dist/bin.js serve"
+
+[tasks."release:cli"]
+description = "Build the atento + atento-mcp tarball for this platform into dist-release/"
+depends = ["build"]
+run = "pnpm release:cli"
+
+[tasks."release:desktop"]
+description = "Build the Atento desktop app for this platform"
+depends = ["build"]
+run = "bash apps/desktop/scripts/package.sh"

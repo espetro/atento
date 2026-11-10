@@ -9,3 +9,6 @@ dist-scripts
 
 # Paraglide compile cache
 **/project.inlang/cache/
+models/
+.agents/docs/screens/refs/
+dist-release
