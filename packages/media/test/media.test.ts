@@ -32,7 +32,7 @@ function fakeGuard() {
     random: () => 0.5,
     sleep: async () => {},
     config: {
-      limits: { globalConcurrency: 8, maxBatch: 20, llmConcurrency: 3, walledGardens: [], skipHosts: [], hosts: {} },
+      limits: { globalConcurrency: 8, maxBatch: 20, llmConcurrency: 3, walledGardens: [], skipHosts: [], reviewHosts: [], hosts: {} },
       breaker: { baseCooldownMs: 1000, factor: 2, maxCooldownMs: 1000, failureThreshold: 5, maxLevel: 1 },
       retry: { maxAttempts: 1, baseDelayMs: 0, maxDelayMs: 0, factor: 1 },
     },
