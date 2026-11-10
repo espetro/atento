@@ -1,7 +1,7 @@
 /**
  * metrics, eval and serve commands.
  */
-import { optionalModule } from '../modules.js'
+import { evalLoader, optionalModule } from '../modules.js'
 import type { Command } from 'commander'
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -95,7 +95,7 @@ export async function runEval(ctx: CliContext, runnerPath?: string): Promise<Eva
     | { passed?: boolean }
     | undefined
   const passed = report?.passed !== false
-  console.log(JSON.stringify(report, null, 2))
+  console.log(JSON.stringify(report ?? null, null, 2))
   if (!passed) {
     process.exitCode = 1
   }
@@ -130,9 +130,13 @@ export function evalRunnerCandidates(runnerPath?: string): string[] {
 }
 
 async function loadEvalModule(runnerPath?: string): Promise<EvalModule> {
+  // The loader is a dynamic import, which compiled builds cannot follow: bin.ts
+  // registers it, the native entry does not, so evals report as unavailable.
+  const loader = evalLoader()
+  if (loader === undefined) return null
   for (const candidate of evalRunnerCandidates(runnerPath)) {
     try {
-      return (await import(pathToFileURL(candidate).href)) as EvalModule
+      return (await loader(pathToFileURL(candidate).href)) as EvalModule
     } catch {
       // try the next candidate
     }

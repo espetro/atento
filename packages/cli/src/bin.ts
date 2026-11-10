@@ -8,7 +8,7 @@ import * as server from '@atento/server'
 import { registerModules } from './modules.js'
 import { createProgram } from './program.js'
 
-registerModules({ mcp, server })
+registerModules({ mcp, server, evalLoader: (url) => import(url) })
 
 const program = createProgram()
 

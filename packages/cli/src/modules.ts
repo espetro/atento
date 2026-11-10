@@ -10,6 +10,8 @@
 export interface OptionalModules {
   mcp?: typeof import('@atento/mcp')
   server?: typeof import('@atento/server')
+  /** Loads the eval runner module by file URL (a dynamic import, Node builds only). */
+  evalLoader?: (url: string) => Promise<unknown>
 }
 
 const registered: OptionalModules = {}
@@ -17,6 +19,11 @@ const registered: OptionalModules = {}
 export function registerModules(modules: OptionalModules): void {
   if (modules.mcp !== undefined) registered.mcp = modules.mcp
   if (modules.server !== undefined) registered.server = modules.server
+  if (modules.evalLoader !== undefined) registered.evalLoader = modules.evalLoader
+}
+
+export function evalLoader(): ((url: string) => Promise<unknown>) | undefined {
+  return registered.evalLoader
 }
 
 export function optionalModule<K extends keyof OptionalModules>(name: K): OptionalModules[K] {
