@@ -38,6 +38,6 @@ depends = ["build"]
 run = "pnpm release:cli"
 
 [tasks."release:desktop"]
-description = "Build the Atento desktop app for this platform"
+description = "Build the Atento desktop app for this platform (CI runs this; do not use for releases locally)"
 depends = ["build"]
-run = "bash apps/desktop/scripts/package.sh"
+run = "node apps/desktop/scripts/package.ts"

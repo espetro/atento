@@ -20,14 +20,17 @@ const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const outArg = process.argv.indexOf('--out')
 const outDir = resolve(repo, outArg > 0 ? process.argv[outArg + 1] : 'dist-release')
 const version = JSON.parse(readFileSync(join(repo, 'packages/atento/package.json'), 'utf8')).version
-const os = { darwin: 'darwin', linux: 'linux' }[process.platform]
+const isWin = process.platform === 'win32'
+const os = { darwin: 'darwin', linux: 'linux', win32: 'windows' }[process.platform]
 const arch = { arm64: 'arm64', x64: 'x64' }[process.arch]
 if (!os || !arch) throw new Error(`unsupported platform ${process.platform}-${process.arch}`)
 
 const name = `atento-${version}-${os}-${arch}`
 const root = join(outDir, name)
 const lib = join(root, 'lib')
-const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: 'inherit', cwd: repo, ...opts })
+// pnpm is a .cmd shim on Windows, which Node only spawns through a shell.
+const run = (cmd, args, opts = {}) =>
+  execFileSync(cmd, args, { stdio: 'inherit', cwd: repo, shell: isWin && cmd === 'pnpm', ...opts })
 
 if (!existsSync(join(repo, 'packages/ui/dist/index.html'))) {
   throw new Error('packages/ui/dist is missing, run `pnpm build` first')
@@ -37,10 +40,12 @@ rmSync(root, { recursive: true, force: true })
 mkdirSync(root, { recursive: true })
 
 console.log('==> deploying @atento/cli')
-run('pnpm', ['--filter', '@atento/cli', 'deploy', '--prod', lib])
+// Windows: hoisted layout (real directories instead of junctions).
+run('pnpm', ['--filter', '@atento/cli', 'deploy', '--prod', ...(isWin ? ['--config.node-linker=hoisted'] : []), lib])
 cpSync(join(repo, 'packages/ui/dist'), join(lib, 'ui-dist'), { recursive: true })
-copyFileSync(process.execPath, join(lib, 'node'))
-chmodSync(join(lib, 'node'), 0o755)
+const nodeName = isWin ? 'node.exe' : 'node'
+copyFileSync(process.execPath, join(lib, nodeName))
+chmodSync(join(lib, nodeName), 0o755)
 
 // Resolve symlinks (mise and brew link into PATH) before locating lib/.
 const launcher = (entry, args = '') => `#!/bin/sh
@@ -53,26 +58,39 @@ done
 here="$(cd "$(dirname "$self")/.." && pwd)"
 ATENTO_UI_DIST="\${ATENTO_UI_DIST:-$here/lib/ui-dist}" exec "$here/lib/node" "$here/lib/${entry}" ${args}"$@"
 `
+const cmdLauncher = (args) => `@echo off\r
+set "HERE=%~dp0.."\r
+if "%ATENTO_UI_DIST%"=="" set "ATENTO_UI_DIST=%HERE%\\lib\\ui-dist"\r
+"%HERE%\\lib\\node.exe" "%HERE%\\lib\\dist\\bin.js" ${args}%*\r
+`
 mkdirSync(join(root, 'bin'))
 // `atento-mcp` is a shortcut for `atento mcp`; the MCP server ships in every tarball.
 for (const [bin, args] of [
   ['atento', ''],
   ['atento-mcp', 'mcp '],
 ]) {
-  writeFileSync(join(root, 'bin', bin), launcher('dist/bin.js', args))
-  chmodSync(join(root, 'bin', bin), 0o755)
+  if (isWin) {
+    writeFileSync(join(root, 'bin', `${bin}.cmd`), cmdLauncher(args))
+  } else {
+    writeFileSync(join(root, 'bin', bin), launcher('dist/bin.js', args))
+    chmodSync(join(root, 'bin', bin), 0o755)
+  }
 }
 copyFileSync(join(repo, 'LICENSE'), join(root, 'LICENSE'))
 copyFileSync(join(repo, 'README.md'), join(root, 'README.md'))
 
 console.log('==> smoke test')
-const out = execFileSync(join(root, 'bin', 'atento'), ['--version'], { encoding: 'utf8' }).trim()
+const out = isWin
+  ? execFileSync(join(lib, nodeName), [join(lib, 'dist', 'bin.js'), '--version'], { encoding: 'utf8' }).trim()
+  : execFileSync(join(root, 'bin', 'atento'), ['--version'], { encoding: 'utf8' }).trim()
 console.log(`atento --version -> ${out}`)
-execFileSync(join(lib, 'node'), ['-e', "new (require('better-sqlite3'))(':memory:')"], {
+execFileSync(join(lib, nodeName), ['-e', "new (require('better-sqlite3'))(':memory:')"], {
   cwd: join(lib, 'node_modules/@atento/db'),
   stdio: 'inherit',
 })
 
-const tarball = join(outDir, `${name}.tar.gz`)
-run('tar', ['-C', outDir, '-czf', tarball, name])
-console.log(`==> ${tarball}`)
+// Relative paths and cwd: GNU tar reads "C:\\..." as a remote host. bsdtar
+// (Windows 10+) writes zip with -a.
+const archive = isWin ? `${name}.zip` : `${name}.tar.gz`
+execFileSync('tar', isWin ? ['-a', '-c', '-f', archive, name] : ['-czf', archive, name], { cwd: outDir, stdio: 'inherit' })
+console.log(`==> ${join(outDir, archive)}`)

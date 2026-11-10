@@ -40,6 +40,7 @@ interface SidecarServer {
 }
 
 const SIDECAR_PORTS = [4173, 4174, 4175];
+const NODE_NAME = process.platform === "win32" ? "node.exe" : "node";
 
 function resourcesDir(): string | null {
 	// Packaged: <App>.app/Contents/MacOS/<exe> -> ../Resources/app/server.tar.gz
@@ -88,7 +89,7 @@ async function startSidecar(): Promise<SidecarServer | null> {
 		let proc: SidecarServer["proc"];
 		try {
 			proc = Bun.spawn(
-				[join(dir, "node"), join(dir, "server-entry.mjs")],
+				[join(dir, NODE_NAME), join(dir, "server-entry.mjs")],
 				{
 					cwd: dir,
 					env: {
@@ -368,7 +369,7 @@ function acpMcpServers(): AcpMcpServer[] {
 		dir !== null
 			? join(dir, "mcp-ui-layout.mjs")
 			: join(import.meta.dir, "..", "..", "mcp-ui-layout.mjs");
-	const nodeBin = dir !== null ? join(dir, "node") : "node";
+	const nodeBin = dir !== null ? join(dir, NODE_NAME) : "node";
 	servers.push({
 		name: "ui-layout",
 		command: nodeBin,

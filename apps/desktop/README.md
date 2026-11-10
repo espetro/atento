@@ -102,8 +102,8 @@ expects `dom-probe-count: 2` with one element per host.
   declared in `electrobun.config.ts`. They were generated from the UI logo;
   replace them when a real brand icon exists.
 - No bundled-API mode in dev: the window loads `ATENTO_URL`. The
-  **packaged** app is self-contained — `scripts/package.sh` builds a
-  sidecar server (`Contents/Resources/server`: a Node 26 binary, a
+  **packaged** app is self-contained — `scripts/package.ts` (run by CI) builds a
+  sidecar server (a tarball in `Resources/app`, unpacked to `~/.atento/runtime` on first launch: a Node 26 binary, a
   `pnpm deploy --prod` of `@atento/cli`, `server-entry.mjs` and the
   built UI) which the shell spawns on 127.0.0.1 (ports 4173–4175) when
   `ATENTO_URL` is unset. The sidecar exists because better-sqlite3
