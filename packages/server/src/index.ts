@@ -1094,6 +1094,56 @@ export function createApp(store: Store, opts: Partial<Omit<ServerOptions, 'store
     },
   )
 
+  // Cached favicon for a host: fetched once, then served from disk so the
+  // sidebar and link rows still show icons offline.
+  app.get(
+    '/api/favicon/:host',
+    describeRoute({
+      tags: ['links'],
+      summary: 'Cached favicon for a host',
+      parameters: [{ name: 'host', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: {
+        200: { description: 'Icon bytes', content: { 'image/*': { schema: { type: 'string', format: 'binary' } } } },
+        ...errorResponses,
+      },
+    }),
+    async (c) => {
+      const icon = await ops.favicon(c.req.param('host'))
+      if (!icon) return c.json({ error: 'not found' }, 404)
+      return new Response(icon.body as unknown as BodyInit, {
+        headers: {
+          'content-type': icon.contentType,
+          'cache-control': 'public, max-age=604800',
+        },
+      })
+    },
+  )
+
+  // Last good render of a link's page (scripts stripped), for offline viewing.
+  app.get(
+    '/api/links/:id{[0-9]+}/render',
+    describeRoute({
+      tags: ['links'],
+      summary: 'Cached last render (sanitized HTML) of a link page',
+      parameters: [ID_PARAM],
+      responses: {
+        200: { description: 'HTML', content: { 'text/html': { schema: { type: 'string' } } } },
+        ...errorResponses,
+      },
+    }),
+    async (c) => {
+      const page = await ops.readRender(Number(c.req.param('id')))
+      if (!page) return c.json({ error: 'not found' }, 404)
+      return new Response(page.body as unknown as BodyInit, {
+        headers: {
+          'content-type': page.contentType,
+          // Defence in depth: the cached page can never run script or phone home.
+          'content-security-policy': "default-src 'none'; img-src * data:; style-src * 'unsafe-inline'; font-src *; sandbox",
+        },
+      })
+    },
+  )
+
   // ---- run journal ---------------------------------------------------------
 
   app.post(

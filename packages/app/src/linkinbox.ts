@@ -18,6 +18,7 @@ import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 import { openStore } from '@linkinbox/db'
+import { createSiteCache, type CachedFile } from './site-cache.js'
 import { importFile, type ImportResult } from '@linkinbox/importers'
 import {
   createAgentBrowserAdapter,
@@ -578,6 +579,10 @@ export interface LinkinboxOps {
    * the link's directory.
    */
   readArtifact(linkId: number, name: string): Promise<ArtifactContent | null>
+  /** Cached favicon for a host (fetched once, then served from disk offline). */
+  favicon(host: string): Promise<CachedFile | null>
+  /** The last good render (sanitized HTML) cached for a link, or null. */
+  readRender(linkId: number): Promise<CachedFile | null>
   /**
    * Re-extract one link: RETRY it back to the `created` queue when its FSM
    * state allows, then run the extract stage scoped to that link only.
@@ -862,6 +867,8 @@ export function createLinkinboxOps(
     }
   }
 
+  const siteCache = createSiteCache(dirname(artifactsDir))
+
   const ops: LinkinboxOps = {
     store,
     config: cfg,
@@ -874,7 +881,16 @@ export function createLinkinboxOps(
     extractFn() {
       extractFnPromise ??= (async () => {
         await ensureBrowserProfiles()
-        return deps.extractFn ?? createExtractFn(extractFnOptions())
+        const fn = deps.extractFn ?? createExtractFn(extractFnOptions())
+        // Keep the last good render so the site still shows offline.
+        const wrapped: ExtractFn = async (url) => {
+          const out = await fn(url)
+          if (out.html && out.markdown.trim() !== '' && !out.needsBrowser && !out.blocked) {
+            await siteCache.saveRender(url, out.html, out.finalUrl).catch(() => undefined)
+          }
+          return out
+        }
+        return wrapped
       })()
       return extractFnPromise
     },
@@ -1268,6 +1284,15 @@ export function createLinkinboxOps(
 
     listEvents(since, limit) {
       return store.listLinkEvents(since ?? 0, limit)
+    },
+
+    favicon(host) {
+      return siteCache.favicon(host)
+    },
+
+    async readRender(linkId) {
+      const link = await store.getLink(linkId)
+      return link ? siteCache.readRender(link.url) : null
     },
 
     async readArtifact(linkId, name) {
