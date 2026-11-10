@@ -31,7 +31,7 @@ export default {
 		},
 		win: {
 			bundleCEF: false,
-			icon: "icon.png",
+			icon: "icon-win.png",
 		},
 	},
 	runtime: {
