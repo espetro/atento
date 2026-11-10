@@ -130,29 +130,39 @@ process.on("exit", () => {
 const ACP_CONFIG_PATH = join(homedir(), ".linkinbox", "acp-agent.json");
 const WINDOW_BOUNDS_PATH = join(homedir(), ".linkinbox", "window.json");
 
-function savedWindowFrame(): { width: number; height: number; x?: number; y?: number } {
+type Frame = { x: number; y: number; width: number; height: number };
+
+/** Last native window frame (written by the shell itself), or a default size. */
+function savedWindowFrame(): Partial<Frame> & { width: number; height: number } {
 	try {
-		const b = JSON.parse(readFileSync(WINDOW_BOUNDS_PATH, "utf8")) as {
-			w?: number;
-			h?: number;
-			x?: number;
-			y?: number;
-		};
-		if (typeof b.w === "number" && b.w >= 400 && typeof b.h === "number" && b.h >= 300) {
-			// innerWidth ≈ frame width; add back the macOS titlebar height.
-			const frame: { width: number; height: number; x?: number; y?: number } = {
-				width: Math.round(b.w),
-				height: Math.round(b.h + 32),
-			};
-			if (typeof b.x === "number") frame.x = Math.round(b.x);
-			if (typeof b.y === "number") frame.y = Math.round(b.y + 32);
-			return frame;
+		const f = JSON.parse(readFileSync(WINDOW_BOUNDS_PATH, "utf8")) as Partial<Frame>;
+		if (
+			[f.x, f.y, f.width, f.height].every((n) => typeof n === "number" && Number.isFinite(n)) &&
+			f.width! >= 400 &&
+			f.height! >= 300
+		) {
+			return f as Frame;
 		}
 	} catch {
 		// first launch
 	}
-	return { width: 1440, height: 900 };
+	return { width: 1280, height: 820 };
 }
+
+let boundsTimer: ReturnType<typeof setTimeout> | undefined;
+function persistWindowFrame(): void {
+	clearTimeout(boundsTimer);
+	boundsTimer = setTimeout(() => {
+		try {
+			mkdirSync(dirname(WINDOW_BOUNDS_PATH), { recursive: true });
+			writeFileSync(WINDOW_BOUNDS_PATH, JSON.stringify(mainWindow.getFrame()));
+		} catch {
+			// best effort
+		}
+	}, 400);
+}
+mainWindow.on("resize", persistWindowFrame);
+mainWindow.on("move", persistWindowFrame);
 
 // Known ACP clients. Probed on PATH (augmented — packaged apps get a minimal
 // PATH without homebrew/user bin dirs). First detected agent becomes the
@@ -369,16 +379,6 @@ const shellBridge = Bun.serve({
 				{ configured: acpCommand(), available: detectAgents() },
 				{ headers: cors },
 			);
-		}
-		if (path === "/window-bounds" && req.method === "POST") {
-			try {
-				const b = (await req.json()) as { w?: number; h?: number; x?: number; y?: number };
-				mkdirSync(dirname(WINDOW_BOUNDS_PATH), { recursive: true });
-				writeFileSync(WINDOW_BOUNDS_PATH, JSON.stringify({ w: b.w, h: b.h, x: b.x, y: b.y }));
-				return Response.json({ ok: true }, { headers: cors });
-			} catch (e) {
-				return new Response(String(e), { status: 400, headers: cors });
-			}
 		}
 		if (path === "/acp/config" && req.method === "POST") {
 			try {
