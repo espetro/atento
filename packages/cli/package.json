@@ -35,7 +35,6 @@
     "@atento/db": "workspace:*",
     "@atento/extractors": "workspace:*",
     "@atento/media": "workspace:*",
-    "@atento/mcp": "workspace:*",
     "@atento/server": "workspace:*",
     "commander": "^15.0.0"
   },
@@ -43,9 +42,13 @@
     "@modelcontextprotocol/client": "2.4.0",
     "@types/node": "^24.10.1",
     "typescript": "^5.9.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "@atento/mcp": "workspace:*"
   },
   "engines": {
     "node": ">=22"
+  },
+  "optionalDependencies": {
+    "@atento/mcp": "workspace:*"
   }
 }

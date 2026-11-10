@@ -43,7 +43,7 @@ copyFileSync(process.execPath, join(lib, 'node'))
 chmodSync(join(lib, 'node'), 0o755)
 
 // Resolve symlinks (mise and brew link into PATH) before locating lib/.
-const launcher = (entry) => `#!/bin/sh
+const launcher = (entry, args = '') => `#!/bin/sh
 self="$0"
 while [ -L "$self" ]; do
   dir="$(cd "$(dirname "$self")" && pwd)"
@@ -51,14 +51,15 @@ while [ -L "$self" ]; do
   case "$self" in /*) ;; *) self="$dir/$self" ;; esac
 done
 here="$(cd "$(dirname "$self")/.." && pwd)"
-ATENTO_UI_DIST="\${ATENTO_UI_DIST:-$here/lib/ui-dist}" exec "$here/lib/node" "$here/lib/${entry}" "$@"
+ATENTO_UI_DIST="\${ATENTO_UI_DIST:-$here/lib/ui-dist}" exec "$here/lib/node" "$here/lib/${entry}" ${args}"$@"
 `
 mkdirSync(join(root, 'bin'))
-for (const [bin, entry] of [
-  ['atento', 'dist/bin.js'],
-  ['atento-mcp', 'node_modules/@atento/mcp/dist/bin.js'],
+// `atento-mcp` is a shortcut for `atento mcp`; the MCP server ships in every tarball.
+for (const [bin, args] of [
+  ['atento', ''],
+  ['atento-mcp', 'mcp '],
 ]) {
-  writeFileSync(join(root, 'bin', bin), launcher(entry))
+  writeFileSync(join(root, 'bin', bin), launcher('dist/bin.js', args))
   chmodSync(join(root, 'bin', bin), 0o755)
 }
 copyFileSync(join(repo, 'LICENSE'), join(root, 'LICENSE'))

@@ -30,6 +30,7 @@
  */
 export { createMcpServer, withJsonSchema } from './server.js'
 export { createMcpHttpHandler } from './http.js'
+export { runStdioServer } from './stdio.js'
 export { TOOLS, callTool, json, opsFor, applyFilter } from './tools/index.js'
 export type {
   ToolDef,

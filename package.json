@@ -17,7 +17,7 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "test": "turbo run test --filter=!@atento/evals",
+    "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "validate": "turbo run build typecheck",
     "changeset": "changeset",

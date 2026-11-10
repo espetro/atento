@@ -12,6 +12,8 @@ export function createMockEnrichFn(opts: {
   regressSlugs?: string[]
   corruptCategory?: boolean
   jitter?: boolean
+  /** Clock for expires_at; pass the same value as runEval({ now }). */
+  now?: Date
 } = {}): EnrichFn {
   const failSlugs = new Set(opts.failSlugs ?? [])
   const regressSlugs = new Set(opts.regressSlugs ?? [])
@@ -27,7 +29,7 @@ export function createMockEnrichFn(opts: {
       why_it_matters: `Mock summary for ${input.slug}.`,
       read_minutes: 5,
       action: isRegress ? 'archive' : actionFor(input.slug),
-      expires_at: expiresDays === null ? null : isoInDays(expiresDays),
+      expires_at: expiresDays === null ? null : isoInDays(expiresDays, opts.now ?? new Date()),
       expiry_reason: expiresDays === null ? null : 'mock expiry',
       confidence: 0.9,
     }
@@ -35,8 +37,8 @@ export function createMockEnrichFn(opts: {
   }
 }
 
-function isoInDays(days: number): string {
-  return new Date(Date.now() + days * 86_400_000).toISOString()
+function isoInDays(days: number, now: Date): string {
+  return new Date(now.getTime() + days * 86_400_000).toISOString()
 }
 
 function expiryDaysFor(slug: string, jitter: boolean): number | null {

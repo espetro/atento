@@ -23,7 +23,7 @@ describe('runEval', () => {
   it('passes with the deterministic mock matching golden labels', async () => {
     const extractionOutputs = await extractFixturePages()
     const report = await runEval({
-      enrichFn: createMockEnrichFn({ jitter: true }),
+      enrichFn: createMockEnrichFn({ now, jitter: true }),
       now,
       extractionOutputs,
     })
@@ -41,7 +41,7 @@ describe('runEval', () => {
   })
 
   it('is consistent across runs (deterministic mock)', async () => {
-    const report = await runEval({ enrichFn: createMockEnrichFn(), now, runs: 3 })
+    const report = await runEval({ enrichFn: createMockEnrichFn({ now, now }), now, runs: 3 })
     for (const item of report.items) {
       expect(item.consistent).toBe(true)
     }
@@ -49,7 +49,7 @@ describe('runEval', () => {
 
   it('fails thresholds with an injected category regression', async () => {
     const report = await runEval({
-      enrichFn: createMockEnrichFn({ regressSlugs: ['job-posting', 'news-funding'] }),
+      enrichFn: createMockEnrichFn({ now, regressSlugs: ['job-posting', 'news-funding'] }),
       now,
     })
     expect(report.categoryMatch).toBeLessThan(100)
@@ -60,7 +60,7 @@ describe('runEval', () => {
 
   it('fails the category gate when enough labels are corrupted', async () => {
     const report = await runEval({
-      enrichFn: createMockEnrichFn({ corruptCategory: true }),
+      enrichFn: createMockEnrichFn({ now, corruptCategory: true }),
       now,
     })
     expect(report.categoryMatch).toBeLessThan(80)
@@ -70,7 +70,7 @@ describe('runEval', () => {
 
   it('fails the schema gate when the enrich fn errors on everything', async () => {
     const report = await runEval({
-      enrichFn: createMockEnrichFn({ failSlugs: ['job-posting', 'event-conference', 'guide-kubernetes'] }),
+      enrichFn: createMockEnrichFn({ now, failSlugs: ['job-posting', 'event-conference', 'guide-kubernetes'] }),
       now,
     })
     expect(report.schemaValidity).toBeLessThan(90)
@@ -78,10 +78,10 @@ describe('runEval', () => {
   })
 
   it('reports regression against a stored baseline when metrics drop', async () => {
-    const good = await runEval({ enrichFn: createMockEnrichFn(), now })
+    const good = await runEval({ enrichFn: createMockEnrichFn({ now, now }), now })
     await withBaseline(good, async (baselinePath) => {
       const bad = await runEval({
-        enrichFn: createMockEnrichFn({ corruptCategory: true }),
+        enrichFn: createMockEnrichFn({ now, corruptCategory: true }),
         now,
         baselinePath,
       })
@@ -92,10 +92,10 @@ describe('runEval', () => {
   })
 
   it('passes against a matching baseline', async () => {
-    const good = await runEval({ enrichFn: createMockEnrichFn(), now })
+    const good = await runEval({ enrichFn: createMockEnrichFn({ now, now }), now })
     await withBaseline(good, async (baselinePath) => {
       const again = await runEval({
-        enrichFn: createMockEnrichFn(),
+        enrichFn: createMockEnrichFn({ now, now }),
         now,
         baselinePath,
       })

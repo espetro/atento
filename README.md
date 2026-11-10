@@ -32,22 +32,22 @@ mise use -g github:espetro/atento
 curl -fsSL https://raw.githubusercontent.com/espetro/atento/main/install.sh | sh
 ```
 
-You get two self-contained commands (Node is bundled, nothing else to install): `atento` (CLI and local web UI) and `atento-mcp` (MCP server over stdio).
+You get two self-contained commands (Node is bundled, nothing else to install): `atento` (CLI and local web UI) and `atento-mcp`, a shortcut for `atento mcp` (the MCP server over stdio, always included with the CLI).
 
 Add it to your agent:
 
 ```sh
 # Claude Code
-claude mcp add atento -- atento-mcp
+claude mcp add atento -- atento mcp
 
 # Codex
-codex mcp add atento -- atento-mcp
+codex mcp add atento -- atento mcp
 ```
 
 Any other client, in its MCP config:
 
 ```json
-{ "mcpServers": { "atento": { "command": "atento-mcp" } } }
+{ "mcpServers": { "atento": { "command": "atento", "args": ["mcp"] } } }
 ```
 
 Then ask your agent: "ingest my reading list, triage the inbox and tell me what needs a login".

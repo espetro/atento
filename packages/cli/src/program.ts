@@ -17,6 +17,7 @@ import { registerBrowseCommand } from './commands/browse.js'
 import { registerIngestCommands } from './commands/ingest.js'
 import { registerCollectionsCommands } from './commands/collections.js'
 import { registerBrowsersCommand } from './commands/browsers.js'
+import { registerMcpCommand } from './commands/mcp.js'
 import { loadConfig } from './config.js'
 import type { EnrichFn, ExtractFn, TtlConfig } from '@atento/app'
 import type { MediaFn } from './media-fn.js'
@@ -73,6 +74,7 @@ export function createProgram(options: ProgramOptions = {}): Command {  const pr
   registerIngestCommands(program, { ctx })
   registerCollectionsCommands(program, { ctx })
   registerBrowsersCommand(program, { ctx })
+  registerMcpCommand(program)
 
   return program
 }
