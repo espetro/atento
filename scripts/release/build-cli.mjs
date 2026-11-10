@@ -80,9 +80,8 @@ copyFileSync(join(repo, 'LICENSE'), join(root, 'LICENSE'))
 copyFileSync(join(repo, 'README.md'), join(root, 'README.md'))
 
 console.log('==> smoke test')
-const out = isWin
-  ? execFileSync(join(lib, nodeName), [join(lib, 'dist', 'bin.js'), '--version'], { encoding: 'utf8' }).trim()
-  : execFileSync(join(root, 'bin', 'atento'), ['--version'], { encoding: 'utf8' }).trim()
+const launcherPath = join(root, 'bin', isWin ? 'atento.cmd' : 'atento')
+const out = execFileSync(launcherPath, ['--version'], { encoding: 'utf8', shell: isWin }).trim()
 console.log(`atento --version -> ${out}`)
 execFileSync(join(lib, nodeName), ['-e', "new (require('better-sqlite3'))(':memory:')"], {
   cwd: join(lib, 'node_modules/@atento/db'),

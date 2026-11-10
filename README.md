@@ -56,7 +56,7 @@ Then ask your agent: "ingest my reading list, triage the inbox and tell me what 
 
 Download `Atento-desktop-<version>-<os>-<arch>` from the [latest release](https://github.com/espetro/atento/releases/latest) and open it. There is no setup dialog: the app starts its own local server, opens the inbox and shows its health in the footer status dot (green, orange or red, details in the dropdown).
 
-macOS builds are not notarized yet, so the first launch needs `xattr -dr com.apple.quarantine /Applications/Atento.app`. Windows is not supported yet (see [Roadmap](#roadmap)).
+macOS builds are not notarized yet, so the first launch needs `xattr -dr com.apple.quarantine /Applications/Atento.app`. On Windows, unzip `Atento-desktop-<version>-windows-x64.zip` and run `Atento-Setup.exe` (or `Atento\bin\launcher.exe`). Windows builds are experimental: they are built and smoke-tested in CI, not yet run by hand on a Windows machine.
 
 ## Quick start
 
@@ -123,7 +123,7 @@ Release flow: add a changeset with `pnpm changeset`, merge to `main`, merge the 
 
 ## Roadmap
 
-- Windows builds (the CLI and MCP are close; the desktop shell needs WebView2 verification).
+- Windows: builds ship from 0.1.1 as experimental; the desktop shell needs a manual WebView2 check.
 - Signed and notarized macOS app.
 - npm packages for `npx atento-mcp`.
 
