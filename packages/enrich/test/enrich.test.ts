@@ -1,6 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import { generateObject } from 'ai'
-import { MockLanguageModelV3 } from 'ai/test'
 import {
   EnrichmentSchema,
   RUN_STALE_MS,
@@ -11,43 +9,37 @@ import {
 } from '@atento/core'
 import { enrichLink, enrichPending, createModelFromEnv, type EnrichModel } from '../src/run.js'
 import { buildPrompt } from '../src/prompt.js'
+import { ENRICHMENT_JSON_SCHEMA, parseEnrichment } from '../src/chat.js'
 import type { Link, Store, Enrichment } from '@atento/core'
 
 const modelId = 'mock-enricher'
 
 function mockModel(rawOutput: unknown, modelIdOverride = modelId): EnrichModel {
-  return new MockLanguageModelV3({
-    provider: 'mock',
+  return {
     modelId: modelIdOverride,
-    doGenerate: async () => ({
-      finishReason: { unified: 'stop', raw: undefined },
-      content: [{ type: 'text', text: JSON.stringify(rawOutput) }],
-      warnings: [],
-      usage: { inputTokens: { total: 100 }, outputTokens: { total: 40 } },
-      request: {},
-      response: { id: 'mock-1', timestamp: new Date(), modelId: modelIdOverride },
-    }),
-  })
+    generate: async () => ({ text: JSON.stringify(rawOutput), tokensIn: 100, tokensOut: 40 }),
+  }
 }
 
-/** A model whose doGenerate blocks on `gate` — for concurrency tests. */
+/** A model whose generate blocks on `gate`, for concurrency tests. */
 function gatedModel(gate: Promise<void>, onCall?: () => void): EnrichModel {
-  return new MockLanguageModelV3({
-    provider: 'mock',
+  return {
     modelId,
-    doGenerate: async () => {
+    generate: async () => {
       onCall?.()
       await gate
-      return {
-        finishReason: { unified: 'stop', raw: undefined },
-        content: [{ type: 'text', text: JSON.stringify(validEnrichment) }],
-        warnings: [],
-        usage: { inputTokens: { total: 100 }, outputTokens: { total: 40 } },
-        request: {},
-        response: { id: 'mock-1', timestamp: new Date(), modelId },
-      }
+      return { text: JSON.stringify(validEnrichment), tokensIn: 100, tokensOut: 40 }
     },
-  })
+  }
+}
+
+function throwingModel(message: string): EnrichModel {
+  return {
+    modelId,
+    generate: async () => {
+      throw new Error(message)
+    },
+  }
 }
 
 const validEnrichment = {
@@ -286,13 +278,7 @@ describe('enrichLink', () => {
   })
 
   it('returns an error result on model failure', async () => {
-    const failing = new MockLanguageModelV3({
-      provider: 'mock',
-      modelId,
-      doGenerate: async () => {
-        throw new Error('gateway timeout')
-      },
-    })
+    const failing = throwingModel('gateway timeout')
     const result = await enrichLink(makeLink(), { model: failing, now })
     expect(result.ok).toBe(false)
     if (result.ok) return
@@ -330,13 +316,7 @@ describe('enrichPending', () => {
   })
 
   it('counts errors without throwing', async () => {
-    const failing = new MockLanguageModelV3({
-      provider: 'mock',
-      modelId,
-      doGenerate: async () => {
-        throw new Error('boom')
-      },
-    })
+    const failing = throwingModel('boom')
     const { store, calls } = makeStore([makeLink({ id: 1 })])
     const summary = await enrichPending(store, { model: failing, now })
     expect(summary.processed).toBe(1)
@@ -442,13 +422,79 @@ describe('createModelFromEnv', () => {
   })
 })
 
-describe('generateObject integration', () => {
-  it('works end-to-end with the mock model', async () => {
-    const result = await generateObject({
-      model: mockModel(validEnrichment),
-      schema: EnrichmentSchema,
-      prompt: 'enrich this',
-    })
-    expect(result.object.category).toBe('job')
+describe('chat model over fetch', () => {
+  const env = { OPENAI_COMPAT_BASE_URL: 'http://gw.test/v1/', OPENAI_COMPAT_API_KEY: 'k', ATENTO_MODEL: 'm-1' }
+
+  it('posts a json_schema chat completion and parses usage', async () => {
+    const seen: { url: string; init: RequestInit }[] = []
+    const real = globalThis.fetch
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      seen.push({ url, init })
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify(validEnrichment) } }],
+          usage: { prompt_tokens: 11, completion_tokens: 7 },
+        }),
+        { status: 200 },
+      )
+    }) as typeof fetch
+    try {
+      const result = await enrichLink(makeLink(), { model: createModelFromEnv(env), now })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.usage).toEqual({ tokensIn: 11, tokensOut: 7 })
+      expect(result.modelId).toBe('m-1')
+      expect(seen[0]!.url).toBe('http://gw.test/v1/chat/completions')
+      const body = JSON.parse(String(seen[0]!.init.body))
+      expect(body.model).toBe('m-1')
+      expect(body.response_format.type).toBe('json_schema')
+      expect((seen[0]!.init.headers as Record<string, string>).authorization).toBe('Bearer k')
+    } finally {
+      globalThis.fetch = real
+    }
+  })
+
+  it('reports an HTTP error as a model-stage failure', async () => {
+    const real = globalThis.fetch
+    globalThis.fetch = (async () => new Response('nope', { status: 500 })) as typeof fetch
+    try {
+      const result = await enrichLink(makeLink(), { model: createModelFromEnv(env), now })
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.stage).toBe('model')
+        expect(result.error).toContain('HTTP 500')
+      }
+    } finally {
+      globalThis.fetch = real
+    }
+  })
+
+  it('hand validator agrees with EnrichmentSchema', () => {
+    const cases: unknown[] = [
+      validEnrichment,
+      { ...validEnrichment, priority: 'urgent' },
+      { ...validEnrichment, confidence: 1.5 },
+      { ...validEnrichment, read_minutes: 2.5 },
+      { ...validEnrichment, read_minutes: -1 },
+      { ...validEnrichment, category: '' },
+      { ...validEnrichment, expires_at: null, expiry_reason: null },
+      { ...validEnrichment, expires_at: 5 },
+      { ...validEnrichment, action: 'later' },
+      { ...validEnrichment, why_it_matters: undefined },
+    ]
+    for (const c of cases) {
+      expect(parseEnrichment(JSON.stringify(c)).ok).toBe(EnrichmentSchema.safeParse(c).success)
+    }
+  })
+
+  it('accepts fenced JSON and rejects garbage', () => {
+    expect(parseEnrichment('```json\n' + JSON.stringify(validEnrichment) + '\n```').ok).toBe(true)
+    expect(parseEnrichment('not json').ok).toBe(false)
+  })
+
+  it('keeps ENRICHMENT_JSON_SCHEMA in step with the schema keys', () => {
+    const schema = JSON.parse(ENRICHMENT_JSON_SCHEMA)
+    expect(Object.keys(schema.properties).sort()).toEqual(Object.keys(validEnrichment).sort())
+    expect([...schema.required].sort()).toEqual(Object.keys(validEnrichment).sort())
   })
 })

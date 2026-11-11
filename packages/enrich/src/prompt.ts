@@ -1,7 +1,13 @@
-import type { Link } from '@atento/core'
+/** The slice of a link the prompt reads. Structural so this file has no imports (native-compilable). */
+export interface PromptLink {
+  url: string
+  title: string | null
+  addedAt: Date | null
+  extractedContent: string | null
+}
 
 export interface BuildPromptInput {
-  link: Link
+  link: PromptLink
   /** Today's date, ISO. expires_at must be computed relative to this. */
   now?: Date
   /** Max characters of extracted content fed to the model. */
