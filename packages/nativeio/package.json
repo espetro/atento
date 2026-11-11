@@ -1,0 +1,9 @@
+{
+  "name": "@atento/nativeio",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "scriptc": "^0.4.11"
+  }
+}
