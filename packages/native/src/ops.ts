@@ -13,6 +13,10 @@ import {
   guardDepsFromStore,
   guardStatuses,
   LLM_KEY,
+  collectionOfLink,
+  isCollectionName,
+  LINK_STATES,
+  type Link,
   type TriageAction,
   type SweepPlan,
 } from "@atento/core";
@@ -173,4 +177,139 @@ export async function limitsStatusJson(): Promise<string> {
     );
   }
   return '{"hosts":[' + out.join(",") + "]}";
+}
+
+// ---------------------------------------------------------------- collections
+
+/** Collection fields a row can project (same list as the Node tool schema). */
+export const COLLECTION_FIELD_NAMES = [
+  "id", "url", "url_hash", "title", "source", "added_at", "note", "tags",
+  "category", "priority", "action", "confidence", "read_minutes", "status",
+  "state", "reason", "needs_browser", "expires_at", "expiry_reason",
+  "why_it_matters", "summary", "created_at", "updated_at",
+];
+
+const DEFAULT_COLLECTION_FIELDS = ["id", "url", "title", "category", "priority", "summary"];
+const COLLECTION_READ_DEFAULT_LIMIT = 50;
+const COLLECTION_READ_MAX_LIMIT = 200;
+
+function isoOrNull(d: Date | null): string | null {
+  return d === null ? null : d.toISOString();
+}
+
+function stateReasonOf(link: Link): string | null {
+  const data = link.stateData;
+  if (data === null) return null;
+  const reason = data["reason"];
+  return typeof reason === "string" ? reason : null;
+}
+
+function whyItMattersOf(link: Link): string | null {
+  const enrichment = link.enrichment;
+  if (enrichment === null) return null;
+  const value = (enrichment as unknown as Record<string, unknown>)["why_it_matters"];
+  return typeof value === "string" ? value : null;
+}
+
+/** projectCollectionRow from packages/app/src/collections.ts, field order preserved. */
+function projectCollectionRow(link: Link, fields: string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const field of fields) {
+    switch (field) {
+      case "id": out["id"] = link.id; break;
+      case "url": out["url"] = link.url; break;
+      case "url_hash": out["url_hash"] = link.urlHash; break;
+      case "title": out["title"] = link.title; break;
+      case "source": out["source"] = link.source; break;
+      case "added_at": out["added_at"] = isoOrNull(link.addedAt); break;
+      case "note": out["note"] = link.note; break;
+      case "tags": out["tags"] = link.tags; break;
+      case "category": out["category"] = link.category; break;
+      case "priority": out["priority"] = link.priority; break;
+      case "action": out["action"] = link.action; break;
+      case "confidence": out["confidence"] = link.confidence; break;
+      case "read_minutes": out["read_minutes"] = link.readMinutes; break;
+      case "status": out["status"] = link.status; break;
+      case "state": out["state"] = link.state; break;
+      case "reason": out["reason"] = stateReasonOf(link); break;
+      case "needs_browser": out["needs_browser"] = link.needsBrowser; break;
+      case "expires_at": out["expires_at"] = isoOrNull(link.expiresAt); break;
+      case "expiry_reason": out["expiry_reason"] = link.expiryReason; break;
+      case "why_it_matters": out["why_it_matters"] = whyItMattersOf(link); break;
+      case "summary": {
+        const summary = whyItMattersOf(link);
+        out["summary"] = summary === null ? null : summary.slice(0, 200);
+        break;
+      }
+      case "created_at": out["created_at"] = isoOrNull(link.createdAt); break;
+      case "updated_at": out["updated_at"] = isoOrNull(link.updatedAt); break;
+      default: break;
+    }
+  }
+  return out;
+}
+
+/** TSV body + `# cursor:` trailer, same bytes as serializeCollection + tsvWithCursor. */
+function collectionTsv(rows: Record<string, unknown>[], fields: string[], cursor: number): string {
+  const esc = (v: unknown): string => {
+    if (v === null || v === undefined) return "";
+    const s = Array.isArray(v) ? (v as unknown[]).join(",") : String(v);
+    return s.replace(/[\t\n\r]/g, " ");
+  };
+  const lines: string[] = [fields.join("\t")];
+  for (const row of rows) {
+    const cells: string[] = [];
+    for (const f of fields) cells.push(esc(row[f]));
+    lines.push(cells.join("\t"));
+  }
+  return lines.join("\n") + "\n" + "# cursor: " + cursor + "\n";
+}
+
+export interface CollectionReadIn {
+  since?: number;
+  fields?: string[];
+  format?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * collections.read: paginated inline read of one collection (json or tsv).
+ * Returns the exact text payload the Node tool wraps in its json() result.
+ */
+export async function collectionReadText(name: string, o: CollectionReadIn): Promise<string> {
+  if (!isCollectionName(name)) throw new Error("unknown collection: " + name);
+  const s = await openStore();
+  const limit = Math.min(Math.max(1, o.limit ?? COLLECTION_READ_DEFAULT_LIMIT), COLLECTION_READ_MAX_LIMIT);
+  const offset = Math.max(0, o.offset ?? 0);
+  const fields = o.fields !== undefined ? o.fields : DEFAULT_COLLECTION_FIELDS;
+  for (const f of fields) {
+    if (COLLECTION_FIELD_NAMES.indexOf(f) < 0) throw new Error("unknown collection field: " + f);
+  }
+  let matched: Link[];
+  if (o.since !== undefined) {
+    const changed = await s.listChangedLinks(o.since);
+    matched = [];
+    for (const l of changed) if (collectionOfLink(l) === name) matched.push(l);
+  } else {
+    const states = LINK_STATES.filter((st) => st !== "deleted");
+    const live = await s.listByStates(states);
+    matched = [];
+    for (const l of live) if (collectionOfLink(l) === name) matched.push(l);
+  }
+  matched.sort((a, b) => a.id - b.id);
+  const page = matched.slice(offset, offset + limit);
+  const hasMore = offset + limit < matched.length;
+  const cursor = o.since !== undefined && hasMore ? o.since : await s.linkEventCursor();
+  const rows: Record<string, unknown>[] = [];
+  for (const l of page) rows.push(projectCollectionRow(l, fields));
+  if (o.format === "tsv") return collectionTsv(rows, fields, cursor);
+  return JSON.stringify({
+    collection: name,
+    cursor: cursor,
+    count: page.length,
+    total: matched.length,
+    hasMore: hasMore,
+    rows: rows,
+  });
 }
