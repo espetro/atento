@@ -52,7 +52,7 @@ function runCli(impl, argv, fx, stdin) {
 
 const NOW_ISO = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g
 function maskNow(text) {
-  return text.replace(/("(?:since|until)\\*": *\\*")[^"\\]+/g, '$1<ts>').replace(NOW_ISO, (m) => (Date.parse(m) >= START - 60_000 ? '<now>' : m))
+  return text.replace(/range: \S+ \.\. \S+/g, 'range: <ts>').replace(/("(?:since|until)\\*": *\\*")[^"\\]+/g, '$1<ts>').replace(NOW_ISO, (m) => (Date.parse(m) >= START - 60_000 ? '<now>' : m))
 }
 function maskDeep(v, key) {
   if (typeof v === 'string') return maskNow(v)
