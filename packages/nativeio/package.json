@@ -5,5 +5,10 @@
   "type": "module",
   "dependencies": {
     "scriptc": "^0.4.11"
+  },
+  "scripts": {
+    "build": "scriptc build src/atento-io.ts -o dist/atento-io",
+    "coverage": "scriptc coverage src/atento-io.ts",
+    "e2e": "node scripts/e2e.mjs dist/atento-io ../browser/bin/atento-browserd.mjs"
   }
 }
