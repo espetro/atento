@@ -5,8 +5,31 @@ packages:
 allowBuilds:
   better-sqlite3: true
   esbuild: true
+  scriptc: true
 minimumReleaseAgeExclude:
   - '@ai-sdk/gateway@3.0.224'
   - '@ai-sdk/openai-compatible@2.0.88'
   - '@ai-sdk/provider-utils@4.0.63'
   - ai@6.0.318
+  - '@scriptc/cli-darwin-arm64@0.4.11'
+  - '@scriptc/cli-darwin-x64@0.4.11'
+  - '@scriptc/cli-linux-arm64-gnu@0.4.11'
+  - '@scriptc/cli-linux-arm64-musl@0.4.11'
+  - '@scriptc/cli-linux-x64-gnu@0.4.11'
+  - '@scriptc/cli-linux-x64-musl@0.4.11'
+  - '@scriptc/cli-win32-x64-msvc@0.4.11'
+  - '@scriptc/llvm-darwin-arm64@0.4.11'
+  - '@scriptc/llvm-darwin-x64@0.4.11'
+  - '@scriptc/llvm-linux-arm64-gnu@0.4.11'
+  - '@scriptc/llvm-linux-arm64-musl@0.4.11'
+  - '@scriptc/llvm-linux-x64-gnu@0.4.11'
+  - '@scriptc/llvm-linux-x64-musl@0.4.11'
+  - '@scriptc/llvm-win32-x64-msvc@0.4.11'
+  - '@scriptc/runtime-darwin-arm64@0.4.11'
+  - '@scriptc/runtime-darwin-x64@0.4.11'
+  - '@scriptc/runtime-linux-arm64-gnu@0.4.11'
+  - '@scriptc/runtime-linux-arm64-musl@0.4.11'
+  - '@scriptc/runtime-linux-x64-gnu@0.4.11'
+  - '@scriptc/runtime-linux-x64-musl@0.4.11'
+  - '@scriptc/runtime-win32-x64-msvc@0.4.11'
+  - scriptc@0.4.11
