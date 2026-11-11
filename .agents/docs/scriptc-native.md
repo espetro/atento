@@ -56,3 +56,14 @@ One job per target builds the shim with zig, then runs `scriptc build`, then smo
 Publish the native binary next to the Node tarball as `atento-native-<target>`.
 Flip to the real CLI entry once the Store driver lands, and keep the Node CLI as the fallback until command parity tests (`packages/cli/test/cli-parity.test.ts`) run against both.
 Release order: cutils#53, chttp#107 and #108, release them, then bump the versions here and drop `CUTILS_BUILD_SHIM`.
+
+## scriptc 0.4.11 compat results (2026-11-10)
+
+Setup: scriptc 0.4.11 released packages and runtime packs, chttp and cutils built from merged main via local `link:` overrides (not committed; unreleased), no `--libnode` needed (no island is reachable from `packages/native`).
+`packages/native/src/atento.ts` ports the pure read layer of the real schema to raw SQL (projection, FTS5 query, park reasons, collections, overview, pipeline rows); `cli.ts` and `mcpserver.ts` use it.
+
+- `scriptc coverage src/cli.ts`: 98% of 3929 statements static, no errors. Remaining diagnostics: SC1090 on `shim_*` (only without `--ffi`, resolved by the manifest), SC2020 `TextEncoder` in the unused `@chttp/mcp` http transport, 2 SC6001 in `@cutils/cli` (`mergeExtra` copies).
+- Native vs Node CLI on a 40 link fixture: 32 of 32 comparisons identical (list with status/state/category/stale/FTS/limit/fields, json and table, show text and json including history, overview text and json, error paths).
+- MCP over stdio: 23 of 23 tools registered and listed; 15 of 15 comparable calls on the 11 ported tools (`links_list`, `links_get`, `links_overview`, `links_pipeline`, `collections_summary`, with FTS) identical to Node. 18 tools still answer "not available in the native build yet": links_triage, links_restore, links_sweep, collection_read, collection_export, browse_read, browse_hosts, ingest_* (6), extract_run, enrich_run, metrics_get, limits_status, login_pending.
+- Cross builds from a macOS arm64 host with zig 0.16 shims and 0.4.11 runtime packs: linux-x64, linux-arm64, win-x64, mac-x64 all link (ELF, ELF, PE32+, Mach-O). Not run (no foreign hosts here).
+- Known gaps: native is read-only (`Database.open(readonly)`); links_get accepts fields the Node schema rejects (no enum validation); write commands, ingest, extract, enrich need the FSM and Store port (atento work), and network/LLM paths need `--libnode` islands (scriptc islands are report-only in 0.4.11).
