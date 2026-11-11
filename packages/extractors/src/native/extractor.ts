@@ -55,3 +55,33 @@ function baseOf(root: HNode, url: string): string {
   }
   return url;
 }
+
+import { FetchOptions, fetchPage } from "./fetcher.js";
+
+/** Fetch then extract. Mirrors the Node router contract: 404/410 are final, 4xx/5xx and fetch errors need a browser. */
+export async function extractUrl(url: string, opts: FetchOptions): Promise<NativeExtract> {
+  const f = await fetchPage(url, opts);
+  if (f.error !== "") {
+    const r = new NativeExtract();
+    r.needsBrowser = true;
+    r.finalUrl = url;
+    return r;
+  }
+  if (f.status === 404 || f.status === 410) {
+    const r = new NativeExtract();
+    r.gone = f.status;
+    r.status = f.status;
+    r.finalUrl = f.finalUrl;
+    return r;
+  }
+  if (f.status >= 400) {
+    const r = new NativeExtract();
+    r.needsBrowser = true;
+    r.status = f.status;
+    r.finalUrl = f.finalUrl;
+    return r;
+  }
+  const r = extractHtml(f.body, f.finalUrl);
+  r.status = f.status;
+  return r;
+}
