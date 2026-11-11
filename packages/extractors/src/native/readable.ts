@@ -95,6 +95,24 @@ function scoreParas(node: HNode, cands: HNode[]): void {
   }
 }
 
+const SEMANTIC = ["main", "content", "main-content", "post-content", "entry-content", "article-body", "article-content", "page-content", "post-body", "markdown-body", "prose", "post"];
+
+function hasToken(el: HNode): boolean {
+  const toks = (el.attr("class") + " " + el.attr("id")).toLowerCase().split(" ");
+  for (const t of toks) {
+    if (t !== "" && SEMANTIC.indexOf(t) >= 0) return true;
+  }
+  return false;
+}
+
+function semanticAll(node: HNode, out: HNode[]): void {
+  for (const c of node.children) {
+    if (c.isText()) continue;
+    if (hasToken(c)) out.push(c);
+    semanticAll(c, out);
+  }
+}
+
 /** Pick the node holding the main readable content. Mutates the tree (prune). */
 export function pickContent(root: HNode): HNode {
   prune(root);
@@ -110,6 +128,10 @@ export function pickContent(root: HNode): HNode {
   const bodyLen = textLen(body);
   if (art !== null && textLen(art) >= 400 && textLen(art) * 3 >= bodyLen) return art;
   if (main !== null && textLen(main) >= 400 && textLen(main) * 2 >= bodyLen) return main;
+  const sem: HNode[] = [];
+  semanticAll(body, sem);
+  const semBest = bestOf(sem);
+  if (semBest !== null && textLen(semBest) >= 300 && textLen(semBest) * 3 >= bodyLen) return semBest;
   const cands: HNode[] = [];
   scoreParas(body, cands);
   let top: HNode | null = null;
@@ -124,7 +146,14 @@ export function pickContent(root: HNode): HNode {
     }
   }
   if (top === null) return body;
-  const par = top.parent;
-  if (par !== null && par.tag !== "body" && par.tag !== "#root" && par.score >= top.score * 0.8 && par.score > 0) return par;
-  return top;
+  let cur: HNode = top;
+  for (let k = 0; k < 4; k++) {
+    const par = cur.parent;
+    if (par === null || par.tag === "body" || par.tag === "#root" || par.tag === "html") break;
+    const ptl = par.isText() ? 0 : textLen(par);
+    const pd = ptl === 0 ? 1 : linkLen(par) / ptl;
+    if (par.score * (1 - pd) >= topScore * 0.7 && pd < 0.4) cur = par;
+    else break;
+  }
+  return cur;
 }
