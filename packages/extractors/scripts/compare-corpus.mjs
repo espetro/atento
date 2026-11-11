@@ -32,7 +32,8 @@ files.forEach((f, i) => {
   let def = "", rd = "";
   try { def = new Defuddle(parseHTML(html).document, { url }).parse().content ?? ""; def = def.replace(/<[^>]+>/g, " "); } catch {}
   try { const a = new Readability(parseHTML(html).document).parse(); rd = a?.textContent ?? ""; } catch {}
-  const nw = words(nat.markdown);
+  // Link and image targets are not prose: drop them before tokenizing, as the HTML-stripped references have none.
+  const nw = words(nat.markdown.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ').replace(/\]\([^)]*\)/g, ']'));
   rows.push({ f, nat: nw.length, def: words(def).length, rd: words(rd).length, f1def: f1(nw, words(def)), f1rd: f1(nw, words(rd)), f1defrd: f1(words(rd), words(def)), natMs: Math.round(natMs) });
 });
 const mean = (k) => rows.reduce((s, r) => s + r[k], 0) / rows.length;
