@@ -4,7 +4,7 @@ import { Server, tool, parseBody } from "@chttp/mcp";
 import * as v from "@chttp/val";
 import * as readline from "node:readline";
 import { str, num } from "./lib.ts";
-import { doTriage, doRestore, doSweepPlan, doApplySweep, planJson, metricsJson, loginPendingJson, limitsStatusJson, collectionReadText, COLLECTION_FIELD_NAMES, TRIAGE_ACTIONS } from "./ops.ts";
+import { doTriage, doRestore, doSweepPlan, doApplySweep, planJson, metricsJson, loginPendingJson, limitsStatusJson, collectionReadText, collectionExportText, COLLECTION_FIELD_NAMES, TRIAGE_ACTIONS } from "./ops.ts";
 import { ListOpts, listRows, projectJson, filterMatches, getRow, overviewMcpJson, pipelineJson, collectionsSummaryJson } from "./atento.ts";
 
 // InferOutput<object> degrades optional array fields (chttp#110), so coerce by hand.
@@ -132,10 +132,26 @@ export function startMcp(): void {
       }),
   );
 
+  tool(
+    server,
+    "collection_export",
+    v.object({
+      name: v.picklist(["enriched", "pending", "needs_login", "blocked", "errored", "review", "triaged"]),
+      since: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
+      fields: v.optional(v.array(v.picklist(COLLECTION_FIELD_NAMES))),
+      format: v.optional(v.picklist(["jsonl", "md", "tsv"])),
+    }),
+    async (input) =>
+      collectionExportText(str(input.name) ?? "", {
+        ...(input.since !== undefined ? { since: num(input.since) ?? 0 } : {}),
+        ...(input.fields !== undefined ? { fields: fieldsOf(input.fields) } : {}),
+        ...(input.format !== undefined ? { format: str(input.format) ?? "jsonl" } : {}),
+      }),
+  );
+
   // Not yet ported to the native build: writes, ingest, extract and enrich need the FSM,
   // the network and the LLM layer (see .agents/docs/scriptc-native.md).
   const unported = [
-    "collection_export",
     "browse_read", "browse_hosts", "ingest_run", "ingest_file", "ingest_text", "ingest_urls",
     "ingest_remote", "ingest_status", "extract_run", "enrich_run",
   ];

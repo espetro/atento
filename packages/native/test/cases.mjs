@@ -40,6 +40,8 @@ export const MCP_CASES = [
   { name: 'collection_read enriched', tool: 'collection_read', args: { name: 'enriched', fields: ['id', 'url', 'title'], limit: 3 } },
   { name: 'collection_read tsv', tool: 'collection_read', args: { name: 'triaged', format: 'tsv' } },
   { name: 'collection_read bad name', tool: 'collection_read', args: { name: 'nope' } },
+  { name: 'collection_export', tool: 'collection_export', args: { name: 'pending' }, write: true },
+  { name: 'collection_export tsv', tool: 'collection_export', args: { name: 'triaged', format: 'tsv', fields: ['id', 'url'] }, write: true },
   { name: 'links_sweep dry', tool: 'links_sweep', args: {} },
   { name: 'links_triage', tool: 'links_triage', args: { ids: [1, 2, 99999], action: 'discard' }, write: true },
   { name: 'links_triage empty ids', tool: 'links_triage', args: { ids: [], action: 'discard' } },

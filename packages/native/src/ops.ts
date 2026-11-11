@@ -22,6 +22,9 @@ import {
 } from "@atento/core";
 import { CutilsDriver } from "./cutils-driver.ts";
 import { loadPolicy } from "./config.ts";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 export const TRIAGE_ACTIONS = ["read_now", "schedule", "archive", "discard"];
 
@@ -265,6 +268,23 @@ function collectionTsv(rows: Record<string, unknown>[], fields: string[], cursor
   return lines.join("\n") + "\n" + "# cursor: " + cursor + "\n";
 }
 
+/** matchCollection from packages/app/src/collections.ts: links in one collection, id-ordered. */
+async function matchCollectionLinks(s: SqlStore, name: string, since: number | undefined): Promise<Link[]> {
+  let matched: Link[];
+  if (since !== undefined) {
+    const changed = await s.listChangedLinks(since);
+    matched = [];
+    for (const l of changed) if (collectionOfLink(l) === name) matched.push(l);
+  } else {
+    const states = LINK_STATES.filter((st) => st !== "deleted");
+    const live = await s.listByStates(states);
+    matched = [];
+    for (const l of live) if (collectionOfLink(l) === name) matched.push(l);
+  }
+  matched.sort((a, b) => a.id - b.id);
+  return matched;
+}
+
 export interface CollectionReadIn {
   since?: number;
   fields?: string[];
@@ -286,18 +306,7 @@ export async function collectionReadText(name: string, o: CollectionReadIn): Pro
   for (const f of fields) {
     if (COLLECTION_FIELD_NAMES.indexOf(f) < 0) throw new Error("unknown collection field: " + f);
   }
-  let matched: Link[];
-  if (o.since !== undefined) {
-    const changed = await s.listChangedLinks(o.since);
-    matched = [];
-    for (const l of changed) if (collectionOfLink(l) === name) matched.push(l);
-  } else {
-    const states = LINK_STATES.filter((st) => st !== "deleted");
-    const live = await s.listByStates(states);
-    matched = [];
-    for (const l of live) if (collectionOfLink(l) === name) matched.push(l);
-  }
-  matched.sort((a, b) => a.id - b.id);
+  const matched = await matchCollectionLinks(s, name, o.since);
   const page = matched.slice(offset, offset + limit);
   const hasMore = offset + limit < matched.length;
   const cursor = o.since !== undefined && hasMore ? o.since : await s.linkEventCursor();
@@ -311,5 +320,92 @@ export async function collectionReadText(name: string, o: CollectionReadIn): Pro
     total: matched.length,
     hasMore: hasMore,
     rows: rows,
+  });
+}
+
+// ---------------------------------------------------------------- collection export
+
+function tsvCell(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  const s = Array.isArray(v) ? (v as unknown[]).join(",") : String(v);
+  return s.replace(/[\t\n\r]/g, " ");
+}
+
+function mdCell(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  const s = Array.isArray(v) ? (v as unknown[]).join(", ") : String(v);
+  return s.replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
+
+/** serializeCollection from packages/app/src/collections.ts (rows pre-projected). */
+function serializeCollectionRows(rows: Record<string, unknown>[], fields: string[], format: string): string {
+  if (format === "jsonl") {
+    const parts: string[] = [];
+    for (const r of rows) parts.push(JSON.stringify(r));
+    return parts.join("\n") + (rows.length > 0 ? "\n" : "");
+  }
+  if (format === "tsv") {
+    const lines: string[] = [fields.join("\t")];
+    for (const row of rows) {
+      const cells: string[] = [];
+      for (const f of fields) cells.push(tsvCell(row[f]));
+      lines.push(cells.join("\t"));
+    }
+    return lines.join("\n") + "\n";
+  }
+  // markdown: a pipe table, one row per link.
+  const header = "| " + fields.join(" | ") + " |";
+  const sepFields: string[] = [];
+  for (const _f of fields) sepFields.push("---");
+  const sep = "| " + sepFields.join(" | ") + " |";
+  const body: string[] = [];
+  for (const row of rows) {
+    const cells: string[] = [];
+    for (const f of fields) cells.push(mdCell(row[f]));
+    body.push("| " + cells.join(" | ") + " |");
+  }
+  return [header, sep].concat(body).join("\n") + "\n";
+}
+
+export interface CollectionExportIn {
+  since?: number;
+  fields?: string[];
+  format?: string;
+}
+
+/**
+ * collections.export: write one collection (or delta) to
+ * <config dir>/exports/<name>-<cursor>.<ext>; returns the Node result shape.
+ */
+export async function collectionExportText(name: string, o: CollectionExportIn): Promise<string> {
+  if (!isCollectionName(name)) throw new Error("unknown collection: " + name);
+  const format = o.format !== undefined ? o.format : "jsonl";
+  if (format !== "jsonl" && format !== "md" && format !== "tsv") {
+    throw new Error("unknown export format: " + format);
+  }
+  const fields = o.fields !== undefined ? o.fields : DEFAULT_COLLECTION_FIELDS;
+  const s = await openStore();
+  const matched = await matchCollectionLinks(s, name, o.since);
+  const rows: Record<string, unknown>[] = [];
+  for (const l of matched) rows.push(projectCollectionRow(l, fields));
+  const body = serializeCollectionRows(rows, fields, format);
+  const bytes = new TextEncoder().encode(body).length;
+  const cursor = await s.linkEventCursor();
+  const ext = format === "jsonl" ? "jsonl" : format;
+  const file = name + "-" + cursor + "." + ext;
+  // Node MCP builds ops without dir/dbPath, so exportsDir resolves to
+  // <tmpdir>/atento-exports — match it exactly.
+  const dir = join(tmpdir(), "atento-exports");
+  await mkdir(dir, { recursive: true });
+  const path = join(dir, file);
+  await writeFile(path, body, "utf8");
+  return JSON.stringify({
+    collection: name,
+    path: path,
+    uri: "atento://exports/" + file,
+    count: rows.length,
+    bytes: bytes,
+    cursor: cursor,
+    format: format,
   });
 }
