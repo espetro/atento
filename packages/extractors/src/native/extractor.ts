@@ -2,6 +2,8 @@ import { HNode, findAll, findFirst, parseHtml, textOf } from "./dom.js";
 import { PageMeta, collapse, extractMeta } from "./meta.js";
 import { pickContent } from "./readable.js";
 import { toMarkdown } from "./markdown.js";
+import { FetchOptions, fetchPage } from "./fetcher.js";
+import { BrowserdConfig, captureHtml } from "./browserd.js";
 
 export class NativeExtract {
   markdown = "";
@@ -56,7 +58,6 @@ function baseOf(root: HNode, url: string): string {
   return url;
 }
 
-import { FetchOptions, fetchPage } from "./fetcher.js";
 
 /** Fetch then extract. Mirrors the Node router contract: 404/410 are final, 4xx/5xx and fetch errors need a browser. */
 export async function extractUrl(url: string, opts: FetchOptions): Promise<NativeExtract> {
@@ -83,5 +84,16 @@ export async function extractUrl(url: string, opts: FetchOptions): Promise<Nativ
   }
   const r = extractHtml(f.body, f.finalUrl);
   r.status = f.status;
+  return r;
+}
+
+/** Like extractUrl, but when the plain fetch needs a browser and one is configured, capture through browserd. */
+export async function extractUrlWithBrowser(url: string, opts: FetchOptions, browser: BrowserdConfig): Promise<NativeExtract> {
+  const first = await extractUrl(url, opts);
+  if (!first.needsBrowser || first.gone !== 0 || browser.script === "") return first;
+  const cap = captureHtml(browser, url);
+  if (!cap.ok) return first;
+  const r = extractHtml(cap.html, cap.finalUrl);
+  r.status = cap.status;
   return r;
 }
