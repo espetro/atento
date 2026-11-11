@@ -125,7 +125,9 @@ export async function listHostsNeedingLogin(
     })
   }
 
-  return [...rows.values()].sort((a, b) => a.host.localeCompare(b.host))
+  // Relational compare, not localeCompare: hostnames are ASCII and the
+  // scriptc build has no localeCompare on dynamically-typed strings.
+  return [...rows.values()].sort((a, b) => (a.host < b.host ? -1 : a.host > b.host ? 1 : 0))
 }
 
 /**

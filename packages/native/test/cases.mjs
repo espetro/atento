@@ -34,6 +34,8 @@ export const MCP_CASES = [
   { name: 'links_pipeline', tool: 'links_pipeline', args: { limit: 5 } },
   { name: 'collections_summary', tool: 'collections_summary', args: {} },
   { name: 'metrics_get', tool: 'metrics_get', args: { range: '30d' } },
+  { name: 'login_pending', tool: 'login_pending', args: {} },
+  { name: 'limits_status', tool: 'limits_status', args: {} },
   { name: 'links_sweep dry', tool: 'links_sweep', args: {} },
   { name: 'links_triage', tool: 'links_triage', args: { ids: [1, 2, 99999], action: 'discard' }, write: true },
   { name: 'links_triage empty ids', tool: 'links_triage', args: { ids: [], action: 'discard' } },

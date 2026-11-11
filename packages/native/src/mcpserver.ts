@@ -4,7 +4,7 @@ import { Server, tool, parseBody } from "@chttp/mcp";
 import * as v from "@chttp/val";
 import * as readline from "node:readline";
 import { str, num } from "./lib.ts";
-import { doTriage, doRestore, doSweepPlan, doApplySweep, planJson, metricsJson, TRIAGE_ACTIONS } from "./ops.ts";
+import { doTriage, doRestore, doSweepPlan, doApplySweep, planJson, metricsJson, loginPendingJson, limitsStatusJson, TRIAGE_ACTIONS } from "./ops.ts";
 import { ListOpts, listRows, projectJson, filterMatches, getRow, overviewMcpJson, pipelineJson, collectionsSummaryJson } from "./atento.ts";
 
 // InferOutput<object> degrades optional array fields (chttp#110), so coerce by hand.
@@ -107,13 +107,16 @@ export function startMcp(): void {
     metricsJson(str(input.range) ?? "7d"),
   );
 
+  tool(server, "login_pending", v.object({}), async () => loginPendingJson());
+
+  tool(server, "limits_status", v.object({}), async () => limitsStatusJson());
+
   // Not yet ported to the native build: writes, ingest, extract and enrich need the FSM,
   // the network and the LLM layer (see .agents/docs/scriptc-native.md).
   const unported = [
     "collection_read", "collection_export",
     "browse_read", "browse_hosts", "ingest_run", "ingest_file", "ingest_text", "ingest_urls",
-    "ingest_remote", "ingest_status", "extract_run", "enrich_run", "limits_status",
-    "login_pending",
+    "ingest_remote", "ingest_status", "extract_run", "enrich_run",
   ];
   for (const name of unported) {
     tool(server, name, v.object({}), async () => {
