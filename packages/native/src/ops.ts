@@ -21,9 +21,11 @@ import {
   type SweepPlan,
 } from "@atento/core";
 import { CutilsDriver } from "./cutils-driver.ts";
-import { loadPolicy } from "./config.ts";
+import { loadPolicy, configDir, dbPath } from "./config.ts";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { extname, join } from "node:path";
+import { createSpooledIngestJob, runIngestJob, type RawLink, type IngestJob } from "@atento/core";
+import { parseMarkdown, parseUrlList, parseJsonLinks, readTextFile } from "./importers.ts";
 import { tmpdir } from "node:os";
 
 export const TRIAGE_ACTIONS = ["read_now", "schedule", "archive", "discard"];
@@ -33,8 +35,7 @@ let cachedStore: SqlStore | null = null;
 /** Writable store, opened lazily and migrated like the Node openStore. */
 export async function openStore(): Promise<SqlStore> {
   if (cachedStore !== null) return cachedStore;
-  const path = process.env.ATENTO_DB ?? "/tmp/atento-spike/a.db";
-  const s = new SqlStore(CutilsDriver.open(path, false));
+  const s = new SqlStore(CutilsDriver.open(dbPath(), false));
   await s.migrate();
   cachedStore = s;
   return s;
@@ -408,4 +409,154 @@ export async function collectionExportText(name: string, o: CollectionExportIn):
     cursor: cursor,
     format: format,
   });
+}
+
+// ---------------------------------------------------------------- ingest
+
+const INGEST_URLS_MAX = 500;
+
+interface ParsedIngest {
+  raws: RawLink[];
+  warnings: string[];
+  source: string;
+}
+
+/** parseIngestText from packages/app/src/ingest-input.ts. */
+function parseIngestText(text: string): ParsedIngest {
+  const warnings: string[] = [];
+  const seen: string[] = [];
+  const raws: RawLink[] = [];
+  const push = (link: RawLink) => {
+    const key = link.url.trim();
+    if (key === "" || seen.indexOf(key) >= 0) return;
+    seen.push(key);
+    raws.push(link);
+  };
+  const md = parseMarkdown(text);
+  for (const w of md.warnings) warnings.push(w);
+  for (const link of md.links) push(link);
+  const ul = parseUrlList(text);
+  for (const w of ul.warnings) warnings.push(w);
+  for (const link of ul.links) push({ url: link.url, source: "ingest-text" });
+  if (raws.length === 0) warnings.push("No links found in text.");
+  return { raws: raws, warnings: warnings, source: "ingest:text" };
+}
+
+/** parseIngestUrls from packages/app/src/ingest-input.ts. */
+function parseIngestUrls(urls: string[], note: string | null, tags: string[] | null): ParsedIngest {
+  if (urls.length > INGEST_URLS_MAX) {
+    throw new Error(
+      "ingest_urls accepts at most " + INGEST_URLS_MAX + " urls per call; put larger lists in a file and use ingest_file",
+    );
+  }
+  const raws: RawLink[] = [];
+  for (const url of urls) {
+    const r: RawLink = { url: url.trim(), source: "ingest:urls" };
+    if (note !== null) r.note = note;
+    if (tags !== null) r.tags = tags;
+    raws.push(r);
+  }
+  return { raws: raws, warnings: [], source: "ingest:urls" };
+}
+
+export interface IngestUrlsIn {
+  urls: string[];
+  note?: string;
+  tags?: string[];
+}
+
+/** runIngestInput from packages/app/src/ingest-input.ts (file/text/urls kinds). */
+async function runIngest(store: SqlStore, parsed: ParsedIngest): Promise<string> {
+  const job = await createSpooledIngestJob(store, {
+    source: parsed.source,
+    spoolDir: join(configDir(), "spool"),
+    links: parsed.raws,
+  });
+  const result = await runIngestJob(store, job.id, {});
+  if (result.busy) {
+    return JSON.stringify({
+      jobId: job.id,
+      accepted: 0,
+      duplicates: 0,
+      rejected: 0,
+      status: "busy",
+      warnings: parsed.warnings,
+      busy: result.busy,
+    });
+  }
+  return JSON.stringify({
+    jobId: job.id,
+    accepted: result.okCount,
+    duplicates: result.duplicates,
+    rejected: result.errorCount,
+    status: result.job.status,
+    warnings: parsed.warnings,
+  });
+}
+
+export async function ingestTextJson(text: string): Promise<string> {
+  const s = await openStore();
+  return runIngest(s, parseIngestText(text));
+}
+
+export async function ingestUrlsJson(o: IngestUrlsIn): Promise<string> {
+  const s = await openStore();
+  return runIngest(s, parseIngestUrls(o.urls, o.note ?? null, o.tags ?? null));
+}
+
+/** Importer pick from packages/importers/src/index.ts (safari stays unported). */
+function fileImporterFor(path: string): string {
+  const ext = extname(path).toLowerCase();
+  if (ext === ".json") return "json";
+  if (ext === ".txt" || ext === ".urls" || ext === ".list") return "url-list";
+  if (ext === ".plist") return "safari";
+  return "markdown";
+}
+
+/** parseIngestInput 'file' kind from packages/app/src/ingest-input.ts. */
+async function parseIngestFile(path: string): Promise<ParsedIngest> {
+  const importer = fileImporterFor(path);
+  if (importer === "safari") {
+    throw new Error("ingest_file for .plist (Safari) is not available in the native build yet");
+  }
+  const { text, warning } = await readTextFile(path);
+  if (text === null) {
+    return { raws: [], warnings: [warning ?? `Cannot read ${path}.`], source: `ingest:file:${importer}` };
+  }
+  const parsed =
+    importer === "json"
+      ? parseJsonLinks(text)
+      : importer === "url-list"
+        ? parseUrlList(text)
+        : parseMarkdown(text);
+  return { raws: parsed.links, warnings: parsed.warnings, source: `ingest:file:${importer}` };
+}
+
+export async function ingestFileJson(path: string): Promise<string> {
+  const s = await openStore();
+  return runIngest(s, await parseIngestFile(path));
+}
+
+/** ingestStatusOf from packages/app/src/ingest-input.ts. */
+function ingestStatusOf(job: IngestJob): Record<string, unknown> {
+  return {
+    jobId: job.id,
+    source: job.source,
+    status: job.status,
+    total: job.total,
+    done: job.done,
+    cursor: job.cursor,
+    runId: job.runId,
+    error: job.error,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    finishedAt: job.finishedAt,
+  };
+}
+
+/** ingest.status: one job's progress, or {"job":null} for an unknown id. */
+export async function ingestStatusJson(jobId: string): Promise<string> {
+  const s = await openStore();
+  const job = await s.getIngestJob(jobId);
+  return JSON.stringify({ job: job === null ? null : ingestStatusOf(job) });
 }

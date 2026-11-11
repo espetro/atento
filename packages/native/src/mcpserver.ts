@@ -4,7 +4,7 @@ import { Server, tool, parseBody } from "@chttp/mcp";
 import * as v from "@chttp/val";
 import * as readline from "node:readline";
 import { str, num } from "./lib.ts";
-import { doTriage, doRestore, doSweepPlan, doApplySweep, planJson, metricsJson, loginPendingJson, limitsStatusJson, collectionReadText, collectionExportText, COLLECTION_FIELD_NAMES, TRIAGE_ACTIONS } from "./ops.ts";
+import { doTriage, doRestore, doSweepPlan, doApplySweep, planJson, metricsJson, loginPendingJson, limitsStatusJson, collectionReadText, collectionExportText, COLLECTION_FIELD_NAMES, TRIAGE_ACTIONS, ingestTextJson, ingestUrlsJson, ingestFileJson, ingestStatusJson } from "./ops.ts";
 import { ListOpts, listRows, projectJson, filterMatches, getRow, overviewMcpJson, pipelineJson, collectionsSummaryJson } from "./atento.ts";
 
 // InferOutput<object> degrades optional array fields (chttp#110), so coerce by hand.
@@ -149,11 +149,44 @@ export function startMcp(): void {
       }),
   );
 
-  // Not yet ported to the native build: writes, ingest, extract and enrich need the FSM,
-  // the network and the LLM layer (see .agents/docs/scriptc-native.md).
+  tool(server, "ingest_text", v.object({ text: v.pipe(v.string(), v.minLength(1)) }), async (input) =>
+    ingestTextJson(str(input.text) ?? ""),
+  );
+
+  tool(
+    server,
+    "ingest_urls",
+    v.object({
+      urls: v.pipe(v.array(v.pipe(v.string(), v.minLength(1))), v.minLength(1), v.maxLength(500)),
+      note: v.optional(v.string()),
+      tags: v.optional(v.array(v.string())),
+    }),
+    async (input) => {
+      return ingestUrlsJson({
+        urls: Array.isArray(input.urls) ? (input.urls as string[]) : [],
+        ...(input.note !== undefined ? { note: str(input.note) ?? "" } : {}),
+        ...(input.tags !== undefined ? { tags: Array.isArray(input.tags) ? (input.tags as string[]) : [] } : {}),
+      });
+    },
+  );
+
+  tool(
+    server,
+    "ingest_file",
+    v.object({ path: v.pipe(v.string(), v.minLength(1)) }),
+    async (input) => ingestFileJson(str(input.path) ?? ""),
+  );
+
+  tool(server, "ingest_status", v.object({ jobId: v.pipe(v.string(), v.minLength(1)) }), async (input) =>
+    ingestStatusJson(str(input.jobId) ?? ""),
+  );
+
+  // Not yet ported to the native build: multi-file ingest summaries, remote
+  // fetch, Safari plist import, browse and the LLM stages
+  // (see .agents/docs/scriptc-native.md).
   const unported = [
-    "browse_read", "browse_hosts", "ingest_run", "ingest_file", "ingest_text", "ingest_urls",
-    "ingest_remote", "ingest_status", "extract_run", "enrich_run",
+    "ingest_run", "ingest_remote", "browse_read", "browse_hosts",
+    "extract_run", "enrich_run",
   ];
   for (const name of unported) {
     tool(server, name, v.object({}), async () => {

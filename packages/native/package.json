@@ -11,10 +11,12 @@
     "@cutils/cli": "^0.6.0",
     "@cutils/sqlite": "^0.6.0",
     "scriptc": "^0.4.11",
+    "smol-toml": "^1.9.1",
     "@atento/db": "workspace:*",
     "@atento/core": "workspace:*"
   },
   "devDependencies": {
-    "better-sqlite3": "^13.0.3"
+    "better-sqlite3": "^13.0.3",
+    "@types/node": "^24.10.1"
   }
 }

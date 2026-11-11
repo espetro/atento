@@ -1,4 +1,7 @@
 // Parity cases: every entry runs against the Node CLI/MCP and the native binary.
+import { fileURLToPath } from 'node:url'
+
+const FIXTURE = fileURLToPath(new URL('./fixtures/ingest-sample.md', import.meta.url))
 export const CASES = [
   { name: 'list', cli: ['list'] },
   { name: 'list --json', cli: ['list', '--json'] },
@@ -42,6 +45,11 @@ export const MCP_CASES = [
   { name: 'collection_read bad name', tool: 'collection_read', args: { name: 'nope' } },
   { name: 'collection_export', tool: 'collection_export', args: { name: 'pending' }, write: true },
   { name: 'collection_export tsv', tool: 'collection_export', args: { name: 'triaged', format: 'tsv', fields: ['id', 'url'] }, write: true },
+  { name: 'ingest_text', tool: 'ingest_text', args: { text: '## Reading\n\n- [Example](https://example.com/a)\n- [No scheme](notaurl)\nhttps://bare.example.org/x\n# comment' }, write: true },
+  { name: 'ingest_urls', tool: 'ingest_urls', args: { urls: ['https://ingest.example.com/1', 'https://ingest.example.com/2'], note: 'n', tags: ['t1'] }, write: true },
+  { name: 'ingest_file', tool: 'ingest_file', args: { path: FIXTURE }, write: true },
+  { name: 'ingest_file missing', tool: 'ingest_file', args: { path: '/nonexistent/atento-parity.md' }, write: true },
+  { name: 'ingest_status unknown', tool: 'ingest_status', args: { jobId: 'job-nope' } },
   { name: 'links_sweep dry', tool: 'links_sweep', args: {} },
   { name: 'links_triage', tool: 'links_triage', args: { ids: [1, 2, 99999], action: 'discard' }, write: true },
   { name: 'links_triage empty ids', tool: 'links_triage', args: { ids: [], action: 'discard' } },

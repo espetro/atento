@@ -11,7 +11,7 @@ export class CutilsDriver implements SqlDriver {
 
   /** Open a database file; writable unless `readonly`. Same durability pragmas as the Node store. */
   static open(path: string, readonly: boolean): CutilsDriver {
-    const db = Database.open(path, readonly ? { readonly: true } : { fileMustExist: true });
+    const db = Database.open(path, readonly ? { readonly: true } : {});
     const d = new CutilsDriver(db);
     if (!readonly) {
       d.pragma("busy_timeout = 5000", false);

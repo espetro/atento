@@ -52,7 +52,7 @@ function runCli(impl, argv, fx, stdin) {
 
 const NOW_ISO = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g
 function maskNow(text) {
-  return text.replace(/range: \S+ \.\. \S+/g, 'range: <ts>').replace(/("(?:since|until)\\*": *\\*")[^"\\]+/g, '$1<ts>').replace(NOW_ISO, (m) => (Date.parse(m) >= START - 60_000 ? '<now>' : m))
+  return text.replace(/range: \S+ \.\. \S+/g, 'range: <ts>').replace(/("(?:since|until)\\*": *\\*")[^"\\]+/g, '$1<ts>').replace(NOW_ISO, (m) => (Date.parse(m) >= START - 60_000 ? '<now>' : m)).replace(/job-[\w-]+/g, '<job>')
 }
 function maskDeep(v, key) {
   if (typeof v === 'string') return maskNow(v)
@@ -69,6 +69,8 @@ function dumpDb(dbPath) {
     const text = (r.stdout ?? '').trim()
     let rows = text === '' ? [] : JSON.parse(text)
     if (t === 'ingest_jobs') rows = rows.map((x) => ({ ...x, id: '<job>', spool_path: '<spool>' }))
+    if (t === 'runs') rows = rows.map((x) => ({ ...x, duration_ms: x.duration_ms === null ? null : '<ms>', pid: x.pid === null ? null : '<pid>' }))
+    if (t === 'metrics') rows = rows.map((x) => (x.key === 'duration_ms' ? { ...x, value: '<ms>' } : x))
     if (t === 'meta') rows = rows.filter((x) => !String(x.key).startsWith('migration:'))
     out[t] = maskDeep(rows)
   }

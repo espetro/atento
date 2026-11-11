@@ -1,11 +1,11 @@
 /// <reference path="./shims.d.ts" />
 // Shared raw-SQL read layer against the real atento schema (stand-in for the drizzle store).
 import { Database } from "@cutils/sqlite/elf";
+import { dbPath } from "./config.ts";
 
-const dbPath = process.env.ATENTO_DB ?? "/tmp/atento-spike/a.db";
 let cached: Database | null = null;
 export function getDb(): Database {
-  if (cached === null) cached = Database.open(process.env.ATENTO_DB ?? dbPath, { readonly: true });
+  if (cached === null) cached = Database.open(dbPath(), { readonly: true });
   return cached;
 }
 
