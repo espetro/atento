@@ -588,7 +588,7 @@ export async function metricsSummary(
     }
   }
 
-  const stages = [...byStage.values()].sort((a, b) => a.stage.localeCompare(b.stage))
+  const stages = [...byStage.values()].sort((a, b) => (a.stage < b.stage ? -1 : a.stage > b.stage ? 1 : 0))
   const states = await store.countByState()
   return { since: since.toISOString(), until: now.toISOString(), stages, states }
 }

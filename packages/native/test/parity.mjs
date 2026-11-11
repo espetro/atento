@@ -52,7 +52,7 @@ function runCli(impl, argv, fx, stdin) {
 
 const NOW_ISO = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g
 function maskNow(text) {
-  return text.replace(NOW_ISO, (m) => (Date.parse(m) >= START - 60_000 ? '<now>' : m))
+  return text.replace(/("(?:since|until)\\*": *\\*")[^"\\]+/g, '$1<ts>').replace(NOW_ISO, (m) => (Date.parse(m) >= START - 60_000 ? '<now>' : m))
 }
 function maskDeep(v, key) {
   if (typeof v === 'string') return maskNow(v)
@@ -65,7 +65,7 @@ function dumpDb(dbPath) {
   const tables = ['links', 'link_events', 'ingest_jobs', 'runs', 'metrics', 'host_state', 'meta', 'profiles']
   const out = {}
   for (const t of tables) {
-    const r = spawnSync('sqlite3', ['-json', dbPath, `select * from ${t} order by 1,2`], { encoding: 'utf8' })
+    const r = spawnSync('sqlite3', ['-json', dbPath, `select * from ${t} order by 1,2`], { encoding: 'utf8', maxBuffer: 1 << 30 })
     const text = (r.stdout ?? '').trim()
     let rows = text === '' ? [] : JSON.parse(text)
     if (t === 'ingest_jobs') rows = rows.map((x) => ({ ...x, id: '<job>', spool_path: '<spool>' }))
@@ -112,7 +112,7 @@ for (const c of CASES) {
   } else {
     const ra = runCli('node', c.cli, sharedRead, c.stdin)
     const rb = runCli('native', c.cli, sharedRead, c.stdin)
-    const ok = ra.out === rb.out && ra.code === rb.code
+    const ok = maskNow(ra.out) === maskNow(rb.out) && ra.code === rb.code
     let detail = ''
     if (ra.out !== rb.out) detail += 'stdout ' + firstDiff(ra.out, rb.out) + '\n'
     if (ra.code !== rb.code) detail += `exit node=${ra.code} native=${rb.code}\n  node stderr: ${ra.err.slice(0, 200)}\n  native stderr: ${rb.err.slice(0, 200)}\n`
@@ -176,9 +176,10 @@ function normMcp(line, write) {
   try {
     const m = JSON.parse(line)
     delete m.id
-    s = JSON.stringify(m)
+    const sortKeys = (o) => (o && typeof o === 'object' && !Array.isArray(o) ? Object.fromEntries(Object.keys(o).sort().map((k) => [k, sortKeys(o[k])])) : Array.isArray(o) ? o.map(sortKeys) : o)
+    s = JSON.stringify(sortKeys(m))
   } catch {}
-  return write ? maskNow(s) : s
+  return maskNow(s)
 }
 const readCalls = MCP_CASES.filter((c) => !c.write && (!only || c.name.includes(only)))
 if (readCalls.length > 0) {

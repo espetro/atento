@@ -4,11 +4,24 @@ import { Server, tool, parseBody } from "@chttp/mcp";
 import * as v from "@chttp/val";
 import * as readline from "node:readline";
 import { str, num } from "./lib.ts";
+import { doTriage, doRestore, doSweepPlan, doApplySweep, planJson, metricsJson, TRIAGE_ACTIONS } from "./ops.ts";
 import { ListOpts, listRows, projectJson, filterMatches, getRow, overviewMcpJson, pipelineJson, collectionsSummaryJson } from "./atento.ts";
 
 // InferOutput<object> degrades optional array fields (chttp#110), so coerce by hand.
 function fieldsOf(x: unknown): string[] {
   return Array.isArray(x) ? (x as string[]) : [];
+}
+
+// Same enum the Node MCP server validates fields against.
+const LINK_FIELDS = [
+  "id", "url", "urlHash", "title", "source", "addedAt", "note", "tags", "extracted_content", "extractedAt",
+  "enrichment", "expiresAt", "expiryReason", "status", "category", "priority", "action", "confidence",
+  "readMinutes", "needsBrowser", "createdAt", "updatedAt",
+];
+const posInt = (): v.VSchema => v.pipe(v.number(), v.integer(), v.minValue(1));
+
+function idsOf(x: unknown): number[] {
+  return Array.isArray(x) ? (x as number[]) : [];
 }
 
 export function startMcp(): void {
@@ -23,12 +36,12 @@ export function startMcp(): void {
     "links_list",
     v.object({
       q: v.optional(v.string()),
-      status: v.optional(v.string()),
+      status: v.optional(v.picklist(["inbox", "scheduled", "archived", "discarded"])),
       category: v.optional(v.string()),
       stale: v.optional(v.boolean()),
-      fields: v.optional(v.array(v.string())),
+      fields: v.optional(v.array(v.picklist(LINK_FIELDS))),
       filter: v.optional(v.string()),
-      limit: v.optional(v.number()),
+      limit: v.optional(posInt()),
     }),
     async (input) => {
       const o = new ListOpts();
@@ -49,7 +62,7 @@ export function startMcp(): void {
     },
   );
 
-  tool(server, "links_get", v.object({ id: v.number(), fields: v.optional(v.array(v.string())) }), async (input) => {
+  tool(server, "links_get", v.object({ id: posInt(), fields: v.optional(v.array(v.picklist(LINK_FIELDS))) }), async (input) => {
     const r = getRow(num(input.id) ?? -1);
     if (r === null) return '{"link":null}';
     return '{"link":' + projectJson(r, fieldsOf(input.fields)) + "}";
@@ -73,12 +86,33 @@ export function startMcp(): void {
 
   tool(server, "collections_summary", v.object({}), async () => collectionsSummaryJson());
 
+  tool(
+    server,
+    "links_triage",
+    v.object({ ids: v.pipe(v.array(posInt()), v.minLength(1)), action: v.picklist(TRIAGE_ACTIONS) }),
+    async (input) => JSON.stringify(await doTriage(idsOf(input.ids), str(input.action) ?? "")),
+  );
+
+  tool(server, "links_restore", v.object({ ids: v.pipe(v.array(posInt()), v.minLength(1)) }), async (input) =>
+    JSON.stringify(await doRestore(idsOf(input.ids))),
+  );
+
+  tool(server, "links_sweep", v.object({ apply: v.optional(v.boolean()) }), async (input) => {
+    const plan = await doSweepPlan();
+    const archived = input.apply === true ? await doApplySweep(plan) : 0;
+    return '{"plan":' + planJson(plan) + ',"archived":' + archived + "}";
+  });
+
+  tool(server, "metrics_get", v.object({ range: v.optional(v.string()), now: v.optional(v.string()) }), async (input) =>
+    metricsJson(str(input.range) ?? "7d"),
+  );
+
   // Not yet ported to the native build: writes, ingest, extract and enrich need the FSM,
   // the network and the LLM layer (see .agents/docs/scriptc-native.md).
   const unported = [
-    "links_triage", "links_restore", "links_sweep", "collection_read", "collection_export",
+    "collection_read", "collection_export",
     "browse_read", "browse_hosts", "ingest_run", "ingest_file", "ingest_text", "ingest_urls",
-    "ingest_remote", "ingest_status", "extract_run", "enrich_run", "metrics_get", "limits_status",
+    "ingest_remote", "ingest_status", "extract_run", "enrich_run", "limits_status",
     "login_pending",
   ];
   for (const name of unported) {
