@@ -296,8 +296,12 @@ async function ingestJobPass(
   let processed = 0
 
   // Resume exactly at the cursor: lines [0, cursor) are already committed.
+  // The chunk is built by index (not slice) so the emitted JS stays inside
+  // the scriptc lowering subset for the native build.
   for (let offset = job.cursor; offset < links.length; offset += chunkSize) {
-    const chunk = links.slice(offset, Math.min(offset + chunkSize, links.length))
+    const end = Math.min(offset + chunkSize, links.length)
+    const chunk: RawLink[] = []
+    for (let i = offset; i < end; i++) chunk.push(links[i])
     const commit = await store.commitIngestChunk(jobId, chunk, { now: now() })
     processed += commit.items.length
     inserted += commit.inserted
