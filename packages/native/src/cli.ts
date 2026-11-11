@@ -1,9 +1,11 @@
 /// <reference path="./shims.d.ts" />
 // Native atento CLI over the real schema: list, show, overview, mcp.
-import { bool, command, int, run, str } from "@cutils/cli";
+import { bool, command, int, runAsync, str } from "@cutils/cli";
 import { startMcp } from "./mcpserver.ts";
+import { doTriage, doRestore, doSweepPlan, doApplySweep, metricsJson, closeStore, TRIAGE_ACTIONS } from "./ops.ts";
+import { renderSweepPlan, renderMetrics } from "./render.ts";
 import {
-  ListOpts, listRows, projectJson, splitFields, getRow, overviewCliJson, formatOverview, renderTable,
+  ListOpts, listRows, projectJson, filterMatches, splitFields, getRow, overviewCliJson, formatOverview, renderTable,
   shortDate, cell, stateCols, historyEntries, SHOW_FIELDS, STATE_LIST_FIELDS, STATES,
 } from "./atento.ts";
 
@@ -14,7 +16,7 @@ function fail(msg: string): void {
   process.exitCode = 1;
 }
 
-const code = run({
+const code = await runAsync({
   name: "atento",
   version: "0.1.0",
   description: "CLI/MCP-first link triage pipeline (native)",
@@ -120,6 +122,81 @@ const code = run({
         const j = overviewCliJson(50);
         if (opts.json) console.log(JSON.stringify(JSON.parse(j), null, 2));
         else console.log(formatOverview(j));
+      },
+    }),
+    triage: command("triage links (read_now, schedule, archive, discard)", {
+      args: [{ name: "ids", optional: true, variadic: true }],
+      options: {
+        action: str({ description: "read_now, schedule, archive or discard" }),
+        batch: bool({ description: "apply to every link matching --filter" }),
+        filter: str({ description: "batch filter" }),
+      },
+      handler: async (opts, args) => {
+        if (TRIAGE_ACTIONS.indexOf(opts.action) < 0) {
+          fail('unknown action "' + opts.action + '"; expected one of ' + TRIAGE_ACTIONS.join(", "));
+          return;
+        }
+        let ids: number[] = [];
+        for (const a of args[0]) ids.push(Number(a));
+        if (opts.batch) {
+          ids = [];
+          const o = new ListOpts();
+          for (const r of listRows(o)) {
+            const proj = projectJson(r, ["id", "status", "category", "title"]);
+            if (opts.filter === "" || filterMatches(JSON.parse(proj), opts.filter)) ids.push(JSON.parse(proj).id as number);
+          }
+          if (ids.length === 0) {
+            console.log("no links matched the filter");
+            return;
+          }
+        }
+        if (ids.length === 0) {
+          fail("triage needs at least one link id (or --batch with a filter)");
+          return;
+        }
+        const r = await doTriage(ids, opts.action);
+        console.log(r.updated + " link" + (r.updated === 1 ? "" : "s") + " -> " + r.status);
+        if (r.missing.length > 0) console.log("missing: " + r.missing.join(", "));
+        await closeStore();
+      },
+    }),
+    restore: command("restore archived, discarded or errored links to the inbox", {
+      args: [{ name: "ids", variadic: true }],
+      handler: async (_opts, args) => {
+        const ids: number[] = [];
+        for (const a of args[0]) ids.push(Number(a));
+        const r = await doRestore(ids);
+        console.log(r.updated + " link" + (r.updated === 1 ? "" : "s") + " restored to inbox");
+        if (r.missing.length > 0) console.log("missing: " + r.missing.join(", "));
+        if (r.blocked.length > 0) {
+          console.log("blocked (deleted or not restorable): " + r.blocked.join(", "));
+          process.exitCode = 1;
+        }
+        await closeStore();
+      },
+    }),
+    sweep: command("list stale links grouped by category (dry-run by default)", {
+      options: { apply: bool({ description: "archive the stale links" }) },
+      handler: async (opts, _args) => {
+        const plan = await doSweepPlan();
+        console.log(renderSweepPlan(plan));
+        if (opts.apply && plan.totals.archive > 0) {
+          const n = await doApplySweep(plan);
+          console.log("archived " + n + " link(s)");
+        }
+        await closeStore();
+      },
+    }),
+    metrics: command("per-stage counts, durations, tokens and cost", {
+      options: {
+        last: str({ default: "7d", description: "time range, e.g. 7d, 24h, 2w" }),
+        json: bool({ description: "print json" }),
+      },
+      handler: async (opts, _args) => {
+        const j = await metricsJson(opts.last);
+        if (opts.json) console.log(JSON.stringify(JSON.parse(j), null, 2));
+        else console.log(renderMetrics(j, opts.last));
+        await closeStore();
       },
     }),
     mcp: command("serve the MCP server over stdio", {

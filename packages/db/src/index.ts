@@ -1,4 +1,7 @@
 export * from './schema.js'
 export * from './migrations.js'
+export * from './sql-driver.js'
+export { BetterSqliteDriver } from './better-sqlite3-driver.js'
+export { SqlStore } from './sql-store.js'
 export * from './store.js'
 export { openStore, type OpenStoreOptions } from './open.js'
