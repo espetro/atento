@@ -428,28 +428,9 @@
     font-size: 22px;
     text-transform: capitalize;
   }
-  .filter-btn {
-    text-transform: capitalize;
-  }
   /* Pill search matches the topbar (Quiet.md reference). */
   /* A4: filter button on the left, search centered in the remaining space,
      spare slot on the right keeps the input visually centered. */
-  .filter-anchor {
-    display: contents;
-  }
-  .filter-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    white-space: nowrap;
-  }
-  .filter-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: var(--color-accent-blue);
-    flex: none;
-  }
   .chip-button {
     cursor: pointer;
     display: inline-flex;
@@ -565,15 +546,8 @@
   .listpane.density-compact .row-title {
     font-size: 13px;
   }
-  .listpane.density-compact .row-url {
-    font-size: 12px;
-  }
   .listpane.density-compact .row-reason {
     font-size: 11px;
-  }
-  .row-url {
-    font-size: 12.5px;
-    line-height: 1.45;
   }
   .row-reason {
     font-size: 11.5px;

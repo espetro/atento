@@ -467,6 +467,10 @@
     gap: 5px;
     white-space: nowrap;
     flex: none;
+    transition:
+      background-color 160ms var(--ease-out-expo),
+      color 160ms var(--ease-out-expo),
+      transform 160ms var(--ease-out-expo);
     padding: 4px 8px;
     border-radius: 7px;
     border: none;
@@ -482,6 +486,10 @@
   .sidebar-chip:hover {
     background: var(--color-sidebar-accent);
     color: var(--color-ink);
+    transform: translateY(-1px);
+  }
+  .sidebar-chip:active {
+    transform: translateY(0) scale(0.98);
   }
   .sidebar-chip.is-active {
     background: var(--color-sidebar-accent);
