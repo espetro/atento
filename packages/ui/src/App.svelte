@@ -39,7 +39,6 @@
     const q = url.q
     untrack(() => { if (q !== qInput) qInput = q })
   })
-  let searchEl = $state<HTMLInputElement | null>(null)
   let filterOpen = $state(false)
   function dismissFilter(e: Event) {
     if (!filterOpen) return
@@ -49,15 +48,9 @@
     }
     if (!(e.target as Element | null)?.closest('.filter-anchor')) filterOpen = false
   }
-  let searchTimer: ReturnType<typeof setTimeout> | null = null
-
-  function onSearchInput() {
-    if (searchTimer !== null) clearTimeout(searchTimer)
-    searchTimer = setTimeout(() => setUrl({ q: qInput }), 220)
-  }
   // The palette edits the same `qInput`; commit it to the URL when it changes.
   $effect(() => {
-    if (paletteOpen && qInput !== url.q) onSearchInput()
+    if (paletteOpen && qInput !== url.q) setUrl({ q: qInput })
   })
   const isMac = typeof navigator !== 'undefined' && /mac|iphone|ipad/i.test(navigator.platform)
   const paletteHint = isMac ? '⌘K' : 'Ctrl K'
@@ -113,7 +106,7 @@
     window.addEventListener('keydown', onAgentEsc)
     const onPaletteEvt = () => (paletteOpen = true)
     window.addEventListener('atento:palette', onPaletteEvt)
-    const onFocusSearch = () => { searchEl?.focus(); searchEl?.select() }
+    const onFocusSearch = () => (paletteOpen = true)
     window.addEventListener('atento:focus-search', onFocusSearch)
     // ⌘J toggles the agent panel (desktop shell only).
     const onAssistantKey = (e: KeyboardEvent) => {
@@ -155,20 +148,17 @@
           <Sidebar.Trigger aria-label={m.aria_open_collections()} data-testid="rail-toggle" />
           <span class="topbar-right">
             {#if url.view !== 'settings'}
-            <label class="topbar-search-wrap">
-              <IconSearch />
-              <input
-              bind:this={searchEl}
-              class="topbar-search"
-              type="search"
-              placeholder={m.search_title()}
+            <button
+              type="button"
+              class="topbar-btn topbar-search-btn"
               aria-label={m.search_aria()}
+              onclick={() => (paletteOpen = true)}
               data-testid="search-input"
-              bind:value={qInput}
-              oninput={onSearchInput}
-              />
+            >
+              <IconSearch />
+              <span class="topbar-search-label">{m.search_title()}</span>
               <kbd class="kbd topbar-kbd" aria-hidden="true">{paletteHint}</kbd>
-            </label>
+            </button>
             <span class="filter-anchor">
               <button
                 type="button"
@@ -399,52 +389,12 @@
     from { opacity: 0; transform: translateY(8px) scale(0.92); }
   }
   /* Minimal search: glyph + title, no field chrome; grows on focus. */
-  .topbar-search-wrap {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 30px;
-    padding: 0 8px;
-    border-radius: 8px;
-    color: var(--color-ink-soft);
-    cursor: text;
-    transition: background-color 140ms var(--ease-out-expo);
-  }
   .topbar-search-wrap:hover,
-  .topbar-search-wrap:focus-within {
-    background: var(--color-accent);
-    color: var(--color-ink);
-  }
-  .topbar-search-wrap :global(svg) {
-    width: 14px;
-    height: 14px;
-    flex: none;
-  }
-  .topbar-search {
-    width: 64px;
-    border: none;
-    outline: none;
-    background: transparent;
-    color: var(--color-ink);
-    font: inherit;
-    font-size: 12.5px;
-    font-weight: 500;
-    transition: width 220ms var(--ease-out-expo);
-  }
-  .topbar-search::placeholder {
-    color: currentColor;
-  }
   .topbar-search:focus,
-  .topbar-search:not(:placeholder-shown) {
-    width: 160px;
-  }
   .topbar-kbd {
     margin-left: 2px;
     border-bottom-width: 1px;
     background: transparent;
-  }
-  .topbar-search::-webkit-search-cancel-button {
-    display: none;
   }
   .filter-anchor {
     position: relative;
