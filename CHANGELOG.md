@@ -1,12 +1,13 @@
-# Changelog
+# atento
 
-## 0.1.0
-
-First public release.
+## 0.2.0
 
 ### Minor Changes
 
-- Link triage pipeline: ingest (markdown, JSON, URL lists, Safari Reading List and Bookmarks, text, remote files, browser capture), content extraction, one-call structured enrichment, expiry sweeps and restore.
-- `atento-mcp`: MCP server with 23 tools over stdio, plus the same operations over the `atento` CLI and the HTTP API.
-- Atento desktop app: three-pane inbox with native preview, command palette, collections, triage, and a floating ACP assistant panel with agent status in the footer.
-- Self-contained release tarballs for macOS and Linux, installable with `mise use -g github:espetro/atento`.
+- Native `atento` binary (scriptc): a single self-contained executable for macOS (arm64, x64) and Linux (x64, arm64) with the full read/write CLI — list, show, overview, triage, restore, sweep, prune, metrics, import, enrich, backup, status, breaker, ingest, collections — and the MCP server (`atento mcp`, 21 of 23 tools). Byte-for-byte parity with the Node CLI on the portable surface (72/72 harness cases); starts in ~10 ms with no Node runtime. Extract, run, retry, login, browse, serve and `browse_read`/`extract_run` still need the Node CLI (browser/DOM/media stack). Download `atento-native-<os>-<arch>` from the release assets.
+
+### Patch Changes
+
+- [`9fe5832`](https://github.com/espetro/atento/commit/9fe583295755d40dfad8b36d3a396c9b944bd75c) Thanks [@espetro](https://github.com/espetro)! - Add `atento mcp` (MCP server over stdio). The MCP server is an optional dependency of the CLI and is always included in the release tarballs; `atento-mcp` stays as a shortcut. Evals are now time-independent.
+
+- [`11ba766`](https://github.com/espetro/atento/commit/11ba7664b8705739aac4f015eda59e7dc91d35ae) Thanks [@espetro](https://github.com/espetro)! - Windows x64 builds: the CLI and MCP zip (`atento-<version>-windows-x64.zip`, installable with `mise use -g github:espetro/atento`) and the desktop app (`Atento-desktop-<version>-windows-x64.zip`, including `Atento-Setup.exe`). Desktop packaging is now a cross-platform TypeScript script.
