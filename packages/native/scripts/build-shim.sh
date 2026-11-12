@@ -1,8 +1,8 @@
 #!/bin/sh
 # Build the @cutils/sqlite shim (FTS5 on) for one target and write a matching ffi manifest.
 # usage: build-shim.sh <outdir> [clang --target triple]
-# Uses scripts/build-shim.mjs from @cutils/sqlite (sigilco/cutils#53). Until that is
-# released, point CUTILS_BUILD_SHIM at the script in a cutils checkout.
+# Uses scripts/build-shim.mjs from the installed @cutils/sqlite package, so a
+# release build needs nothing but the published dependency.
 set -e
 OUT=${1:?outdir}
 TARGET=${2:-}

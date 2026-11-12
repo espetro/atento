@@ -33,3 +33,9 @@ minimumReleaseAgeExclude:
   - '@scriptc/runtime-linux-x64-musl@0.4.11'
   - '@scriptc/runtime-win32-x64-msvc@0.4.11'
   - scriptc@0.4.11
+  - '@chttp/mcp@0.5.0'
+  - '@chttp/router@0.5.0'
+  - '@chttp/static@0.5.0'
+  - '@chttp/val@0.5.0'
+  - '@cutils/cli@0.8.0'
+  - '@cutils/sqlite@0.8.0'
