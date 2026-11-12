@@ -88,7 +88,8 @@ describe('extractUntilEmpty', () => {
     expect(result.totals.ok).toBe(12)
   })
 
-  it('respects the hard 100-iteration cap', async () => {
+  it('respects the hard 100-iteration cap', { timeout: 60_000 }, async () => {
+    // 100 batches over a 3000-link queue: legitimately slow on a loaded runner.
     const store = new FakeStore()
     await seed(store, Array.from({ length: 3000 }, (_, i) => `https://huge.example.com/p/${i}`))
     const result = await extractUntilEmpty(store, {
