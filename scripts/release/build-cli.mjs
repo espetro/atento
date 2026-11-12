@@ -46,6 +46,9 @@ cpSync(join(repo, 'packages/ui/dist'), join(lib, 'ui-dist'), { recursive: true }
 const nodeName = isWin ? 'node.exe' : 'node'
 copyFileSync(process.execPath, join(lib, nodeName))
 chmodSync(join(lib, nodeName), 0o755)
+// The CLI and MCP server report this version at run time (atentoVersion in
+// @atento/core walks up from its module looking for it).
+writeFileSync(join(lib, 'version.json'), `${JSON.stringify({ version })}\n`)
 
 // Resolve symlinks (mise and brew link into PATH) before locating lib/.
 const launcher = (entry, args = '') => `#!/bin/sh
