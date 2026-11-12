@@ -119,7 +119,7 @@ export function startMcp(): void {
   z.config(en());
   const server = new Server({
     name: "atento",
-    version: "0.1.0",
+    version: process.env.ATENTO_VERSION ?? "0.0.0",
     emitJsonSchema: () => ({ type: "object" }),
   });
 

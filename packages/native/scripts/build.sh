@@ -15,11 +15,14 @@ if [ ! -f "$SHIM/ffi.json" ]; then
 fi
 # flock keeps the heavy compile one-at-a-time on dev machines; it does not
 # exist on every platform, so fall back to running directly.
-if command -v flock >/dev/null 2>&1; then
-  exec flock /tmp/tsc.lock pnpm exec scriptc build "$ENTRY" \
+FLOCK=$(command -v flock 2>/dev/null || true)
+if [ -n "$FLOCK" ] && [ -x "$FLOCK" ]; then
+  exec "$FLOCK" /tmp/tsc.lock pnpm exec scriptc build "$ENTRY" \
     --npm-static @cutils/sqlite,@cutils/cli,@chttp/mcp,@chttp/val \
+    --define "process.env.ATENTO_VERSION=\"${ATENTO_VERSION:-0.0.0}\"" \
     --ffi "$SHIM/ffi.json" -o "$OUT" "$@"
 fi
 exec pnpm exec scriptc build "$ENTRY" \
   --npm-static @cutils/sqlite,@cutils/cli,@chttp/mcp,@chttp/val \
+  --define "process.env.ATENTO_VERSION=\"${ATENTO_VERSION:-0.0.0}\"" \
   --ffi "$SHIM/ffi.json" -o "$OUT" "$@"

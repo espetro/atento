@@ -36,11 +36,14 @@ if [ ! -f "$SHIM/ffi.json" ]; then
 fi
 
 export SCRIPTC_TARGET="$TARGET" SCRIPTC_RUNTIME_PACK="$RUNTIME"
-if command -v flock >/dev/null 2>&1; then
-  exec flock /tmp/tsc.lock pnpm exec scriptc build src/cli.ts \
+FLOCK=$(command -v flock 2>/dev/null || true)
+if [ -n "$FLOCK" ] && [ -x "$FLOCK" ]; then
+  exec "$FLOCK" /tmp/tsc.lock pnpm exec scriptc build src/cli.ts \
     --npm-static @cutils/sqlite,@cutils/cli,@chttp/mcp,@chttp/val \
+    --define "process.env.ATENTO_VERSION=\"${ATENTO_VERSION:-0.0.0}\"" \
     --ffi "$SHIM/ffi.json" -o "$OUT"
 fi
 exec pnpm exec scriptc build src/cli.ts \
   --npm-static @cutils/sqlite,@cutils/cli,@chttp/mcp,@chttp/val \
+  --define "process.env.ATENTO_VERSION=\"${ATENTO_VERSION:-0.0.0}\"" \
   --ffi "$SHIM/ffi.json" -o "$OUT"
