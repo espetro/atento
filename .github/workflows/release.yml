@@ -123,7 +123,7 @@ jobs:
         run: |
           # The artifacts land in assets/, with the native binaries under
           # assets/native/. A shell glob would pass that directory to gh.
-          mapfile -t FILES < <(find assets -type f ! -name SHA256SUMS | sort)
+          mapfile -t FILES < <(find assets -type f | sort)
           if [ "${#FILES[@]}" -eq 0 ]; then
             echo "no release assets were downloaded" >&2
             exit 1
