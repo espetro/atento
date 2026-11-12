@@ -1,6 +1,3 @@
-import { generateObject } from 'ai'
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
-import type { LanguageModelV3 } from '@ai-sdk/provider'
 import {
   EnrichmentSchema,
   STAGES,
@@ -11,28 +8,38 @@ import {
   type Enrichment,
   type Store,
 } from '@atento/core'
-import { buildPrompt } from './prompt.js'
+import { buildPrompt, type PromptLink } from './prompt.js'
+import { ENRICHMENT_JSON_SCHEMA, chatComplete, chatConfigFromEnv, parseEnrichment, type ChatConfig } from './chat.js'
 
 export type { EnrichmentInput } from '@atento/core'
 
-export type EnrichModel = LanguageModelV3
+/**
+ * A model is anything that turns (system, prompt) into JSON text plus token usage.
+ * The default implementation is a plain fetch call to an OpenAI-compatible endpoint.
+ */
+export interface EnrichModel {
+  readonly modelId: string
+  generate(req: {
+    system: string
+    prompt: string
+  }): Promise<{ text: string; tokensIn: number; tokensOut: number }>
+}
+
+/** A model over an OpenAI-compatible chat completions endpoint (no SDK). */
+export function createChatModel(cfg: ChatConfig): EnrichModel {
+  return {
+    modelId: cfg.model,
+    async generate(req) {
+      const reply = await chatComplete(cfg, req.system, req.prompt, 'enrichment', ENRICHMENT_JSON_SCHEMA)
+      if (!reply.ok) throw new Error(reply.error)
+      return { text: reply.text, tokensIn: reply.tokensIn, tokensOut: reply.tokensOut }
+    },
+  }
+}
 
 /** Env-configured model access. No hardcoded provider or model. */
 export function createModelFromEnv(env: NodeJS.ProcessEnv = process.env): EnrichModel {
-  const baseURL = env.OPENAI_COMPAT_BASE_URL
-  const apiKey = env.OPENAI_COMPAT_API_KEY
-  const modelId = env.ATENTO_MODEL
-  if (!baseURL || !modelId) {
-    throw new Error(
-      'createModelFromEnv requires OPENAI_COMPAT_BASE_URL and ATENTO_MODEL to be set',
-    )
-  }
-  const provider = createOpenAICompatible({
-    name: 'atento',
-    baseURL,
-    apiKey,
-  })
-  return provider(modelId)
+  return createChatModel(chatConfigFromEnv(env))
 }
 
 export interface EnrichDeps {
@@ -50,30 +57,27 @@ export type EnrichResult =
  * ONE structured-output call per link. Never throws on model or parse
  * failure; returns a typed error result instead.
  */
-export async function enrichLink(link: Parameters<typeof buildPrompt>[0]['link'], deps: EnrichDeps): Promise<EnrichResult> {
+export async function enrichLink(link: PromptLink, deps: EnrichDeps): Promise<EnrichResult> {
   const { system, user } = buildPrompt({ link, now: deps.now?.() })
+  const modelId = String(deps.model.modelId)
+  let reply: { text: string; tokensIn: number; tokensOut: number }
   try {
-    const result = await generateObject({
-      model: deps.model,
-      schema: EnrichmentSchema,
-      system,
-      prompt: user,
-    })
-    const enrichment = EnrichmentSchema.parse(result.object)
-    const usage = deps.usage ?? {
-      tokensIn: result.usage.inputTokens ?? 0,
-      tokensOut: result.usage.outputTokens ?? 0,
-    }
-    return {
-      ok: true,
-      enrichment,
-      usage,
-      modelId: String(deps.model.modelId),
-    }
+    reply = await deps.model.generate({ system, prompt: user })
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    const stage = message.includes('No object generated') ? 'parse' : 'model'
-    return { ok: false, error: message, stage, modelId: String(deps.model.modelId) }
+    return { ok: false, error: err instanceof Error ? err.message : String(err), stage: 'model', modelId }
+  }
+  const parsed = parseEnrichment(reply.text)
+  if (!parsed.ok) return { ok: false, error: parsed.error, stage: 'parse', modelId }
+  // The hand validator and the schema must agree; the schema stays the contract.
+  const checked = EnrichmentSchema.safeParse(parsed.value)
+  if (!checked.success) {
+    return { ok: false, error: `No object generated: ${checked.error.message}`, stage: 'parse', modelId }
+  }
+  return {
+    ok: true,
+    enrichment: checked.data,
+    usage: deps.usage ?? { tokensIn: reply.tokensIn, tokensOut: reply.tokensOut },
+    modelId,
   }
 }
 

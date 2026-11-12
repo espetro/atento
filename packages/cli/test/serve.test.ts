@@ -13,6 +13,9 @@ import {
 import { createContext, type CliContext } from '../src/context.js'
 import { runServe } from '../src/commands/metrics.js'
 import { loadConfig } from '../src/config.js'
+import { registerModules } from '../src/modules.js'
+import * as mcpModule from '@atento/mcp'
+import * as serverModule from '@atento/server'
 import { tempDb, unlimitedLimits, type TempDb } from './helpers.js'
 import type { EnrichFn, ExtractFn } from '@atento/core'
 
@@ -75,6 +78,8 @@ function startServer(
     })
   })
 }
+
+registerModules({ mcp: mcpModule, server: serverModule })
 
 describe('runServe: real serve path', () => {
   it('mounts /mcp and answers streamable-HTTP tools/list', async () => {

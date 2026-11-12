@@ -1,35 +1,22 @@
 /**
- * Logging setup. LogTape is the logging backend for the whole tool: a
- * JSON-lines file sink (one JSON object per line) plus a console sink.
+ * Logging setup. A JSON-lines file sink (one JSON object per line) plus a
+ * console sink, both written with direct node:fs / console calls.
  *
- * The core package depends on LogTape directly so the CLI and the future MCP
- * server share one configuration and one file format.
+ * No logging dependency on purpose: the previous LogTape backend pulled
+ * `@logtape/file`, which passes `fs.writeSync` and friends as function values
+ * and held a WeakRef-based logger tree, neither of which scriptc compiles
+ * natively. This module only uses calls scriptc lowers (appendFileSync,
+ * mkdirSync, JSON.stringify, Date), so it compiles to a native binary and
+ * runs unchanged under Node.
  */
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { mkdirSync } from 'node:fs'
-import {
-  configureSync,
-  disposeSync,
-  getConsoleSink,
-  getLogger,
-  jsonLinesFormatter,
-  withFilter,
-  type LogLevel,
-  type Logger,
-} from '@logtape/logtape'
-import { getFileSink } from '@logtape/file'
+import { appendFileSync, mkdirSync } from 'node:fs'
 import type { PipelineLogger } from './pipeline/types.js'
 
-/** A console object that writes every method to stderr. */
-const stderrConsole: Console = {
-  log: (...args: unknown[]) => console.error(...args),
-  info: (...args: unknown[]) => console.error(...args),
-  warn: (...args: unknown[]) => console.error(...args),
-  error: (...args: unknown[]) => console.error(...args),
-  debug: (...args: unknown[]) => console.error(...args),
-  trace: (...args: unknown[]) => console.error(...args),
-} as Console
+export type LogLevel = 'debug' | 'info' | 'warning' | 'error'
+
+const LEVEL_RANK: Record<LogLevel, number> = { debug: 0, info: 1, warning: 2, error: 3 }
 
 export const DEFAULT_LOG_PATH = join(homedir(), '.atento', 'log.jsonl')
 
@@ -44,6 +31,11 @@ export interface LoggingOptions {
   console?: boolean
 }
 
+/** Category-scoped logger. Structurally a PipelineLogger. */
+export interface Logger extends PipelineLogger {
+  readonly category: string
+}
+
 export interface LoggingSetup {
   logger: Logger
   path: string
@@ -51,6 +43,14 @@ export interface LoggingSetup {
   dispose(): void
 }
 
+interface Sinks {
+  path: string
+  fileRank: number
+  consoleRank: number
+  console: boolean
+}
+
+let sinks: Sinks | null = null
 let current: LoggingSetup | null = null
 
 /**
@@ -63,53 +63,72 @@ export function resolveLogPath(env: NodeJS.ProcessEnv = process.env): string {
   return DEFAULT_LOG_PATH
 }
 
+/** LogTape-style `{key}` placeholders filled from the properties. */
+function render(message: string, properties: Record<string, unknown> | undefined): string {
+  if (properties === undefined) return message
+  return message.replace(/\{([A-Za-z0-9_.]+)\}/g, (whole: string, key: string) => {
+    const value = properties[key]
+    if (value === undefined) return whole
+    return typeof value === 'string' ? value : JSON.stringify(value)
+  })
+}
+
+function emit(category: string, level: LogLevel, message: string, properties?: Record<string, unknown>): void {
+  const s = sinks
+  if (s === null) return
+  const rank = LEVEL_RANK[level]
+  if (rank >= s.fileRank) {
+    const line = JSON.stringify({
+      '@timestamp': new Date().toISOString(),
+      level: level === 'warning' ? 'WARN' : level.toUpperCase(),
+      message: render(message, properties),
+      logger: category,
+      properties: properties ?? {},
+    })
+    try {
+      appendFileSync(s.path, line + '\n')
+    } catch {
+      // A broken log file must never take the command down.
+    }
+  }
+  if (s.console && rank >= s.consoleRank) {
+    // Everything goes to stderr so command output (json, tables) stays clean
+    // on stdout.
+    console.error(`${new Date().toISOString()} [${level.toUpperCase()}] ${category}: ${render(message, properties)}`)
+  }
+}
+
+function makeLogger(category: string): Logger {
+  return {
+    category,
+    debug: (message, properties) => emit(category, 'debug', message, properties),
+    info: (message, properties) => emit(category, 'info', message, properties),
+    warn: (message, properties) => emit(category, 'warning', message, properties),
+    error: (message, properties) => emit(category, 'error', message, properties),
+  }
+}
+
 /**
- * Configure LogTape: a JSON-lines file sink plus a console sink. Idempotent:
- * calling it twice replaces the previous configuration (and disposes it).
+ * Configure the file and console sinks. Idempotent: calling it twice replaces
+ * the previous configuration.
  */
 export function setupLogging(options: LoggingOptions = {}): LoggingSetup {
   const path = options.path ?? resolveLogPath()
   mkdirSync(dirname(path), { recursive: true })
-
-  const fileLevel = options.fileLevel ?? 'debug'
-  const consoleLevel = options.consoleLevel ?? 'info'
-
-  const sinks: Record<string, (record: never) => void> = {
-    file: withFilter(
-      getFileSink(path, { formatter: jsonLinesFormatter }),
-      fileLevel,
-    ),
+  sinks = {
+    path,
+    fileRank: LEVEL_RANK[options.fileLevel ?? 'debug'],
+    consoleRank: LEVEL_RANK[options.consoleLevel ?? 'info'],
+    console: options.console !== false,
   }
-  if (options.console !== false) {
-    // Everything goes to stderr so command output (json, tables) stays clean
-    // on stdout.
-    sinks['console'] = withFilter(getConsoleSink({ console: stderrConsole }), consoleLevel)
-  }
-  const sinkIds = Object.keys(sinks)
-
-  configureSync({
-    reset: true,
-    sinks: sinks as never,
-    loggers: [
-      {
-        category: ['logtape', 'meta'],
-        sinks: sinkIds as never,
-        lowestLevel: 'error',
-      },
-      {
-        category: 'atento',
-        sinks: sinkIds as never,
-        lowestLevel: fileLevel,
-      },
-    ],
-  })
-
   const setup: LoggingSetup = {
-    logger: getLogger(['atento']),
+    logger: makeLogger('atento'),
     path,
     dispose() {
-      disposeSync()
-      if (current === setup) current = null
+      if (current === setup) {
+        sinks = null
+        current = null
+      }
     },
   }
   current = setup
@@ -118,25 +137,16 @@ export function setupLogging(options: LoggingOptions = {}): LoggingSetup {
 
 /** Dispose the active logging configuration, if any. */
 export function disposeLogging(): void {
-  if (current) {
-    current.dispose()
-    return
-  }
-  disposeSync()
+  sinks = null
+  current = null
 }
 
-/** Adapt a LogTape logger to the small PipelineLogger shape. */
+/** Kept for API compatibility: a Logger already is a PipelineLogger. */
 export function toPipelineLogger(logger: Logger): PipelineLogger {
-  return {
-    debug: (message, properties) => logger.debug(message, properties ?? {}),
-    info: (message, properties) => logger.info(message, properties ?? {}),
-    warn: (message, properties) => logger.warn(message, properties ?? {}),
-    error: (message, properties) => logger.error(message, properties ?? {}),
-  }
+  return logger
 }
 
-/** A pipeline logger that writes to a LogTape category. */
+/** A pipeline logger for a category under `atento`. */
 export function pipelineLogger(category: string): PipelineLogger {
-  const logger = getLogger(['atento', category])
-  return toPipelineLogger(logger)
+  return makeLogger(`atento.${category}`)
 }

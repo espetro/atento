@@ -1,9 +1,14 @@
 import type { Database } from 'better-sqlite3'
+import { BetterSqliteDriver, isBetterSqliteHandle } from './better-sqlite3-driver.js'
+import { runInTransaction, type SqlDriver } from './sql-driver.js'
 
 /**
  * Migration runner. Each migration is applied in order and recorded in the
  * `meta` table under `migration:<name>` so `migrate()` is idempotent.
  */
+/** Schema version recorded in `meta.schema_version` after migrating. */
+export const SCHEMA_VERSION = '10'
+
 export interface Migration {
   name: string
   sql: string
@@ -350,14 +355,16 @@ const META_TABLE = `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value
  * Apply pending migrations. Safe to call on every open. The `migrations`
  * parameter exists for tests; production callers always use MIGRATIONS.
  */
-export function runMigrations(sqlite: Database, migrations: Migration[] = MIGRATIONS): string[] {
-  sqlite.exec(META_TABLE)
+export function runMigrations(
+  handle: SqlDriver | Database,
+  migrations: Migration[] = MIGRATIONS,
+): string[] {
+  const db: SqlDriver = isBetterSqliteHandle(handle) ? new BetterSqliteDriver(handle) : handle
+  db.exec(META_TABLE)
   const applied: string[] = []
   const done = new Set<string>()
-  const rows = sqlite.prepare(`SELECT key FROM meta WHERE key LIKE 'migration:%'`).all() as Array<{
-    key: string
-  }>
-  for (const row of rows) done.add(row.key.slice('migration:'.length))
+  const rows = db.all(`SELECT key FROM meta WHERE key LIKE 'migration:%'`)
+  for (const row of rows) done.add(String(row['key']).slice('migration:'.length))
 
   for (const migration of migrations) {
     if (done.has(migration.name)) continue
@@ -365,13 +372,13 @@ export function runMigrations(sqlite: Database, migrations: Migration[] = MIGRAT
     // together or not at all. Without this a crash mid-migration (e.g.
     // during 0010's backfill) would leave objects behind with no meta row,
     // and the re-run would fail forever on duplicate rowids.
-    const apply = sqlite.transaction(() => {
-      sqlite.exec(migration.sql)
-      sqlite
-        .prepare(`INSERT INTO meta (key, value) VALUES (?, ?)`)
-        .run(`migration:${migration.name}`, new Date().toISOString())
+    runInTransaction(db, () => {
+      db.exec(migration.sql)
+      db.run(`INSERT INTO meta (key, value) VALUES (?, ?)`, [
+        `migration:${migration.name}`,
+        new Date().toISOString(),
+      ])
     })
-    apply()
     applied.push(migration.name)
   }
   return applied

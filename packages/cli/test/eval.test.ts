@@ -5,10 +5,15 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { capture, tempDb } from './helpers.js'
 import { createContext } from '../src/context.js'
 import { evalRunnerCandidates, runEval } from '../src/commands/metrics.js'
+import { registerModules } from '../src/modules.js'
+
+beforeAll(() => {
+  registerModules({ evalLoader: (url) => import(url) })
+})
 
 describe('cli eval', () => {
   it('reports that evals are not available when no runner exists', async () => {

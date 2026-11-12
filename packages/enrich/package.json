@@ -23,10 +23,7 @@
     "typecheck": "tsc -p tsconfig.test.json"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "^2.0.88",
-    "@ai-sdk/provider": "3.0.19",
     "@atento/core": "workspace:*",
-    "ai": "^6.0.318",
     "zod": "^4.1.13"
   },
   "devDependencies": {

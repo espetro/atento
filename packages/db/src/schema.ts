@@ -209,5 +209,3 @@ export type ProfileRow = typeof profiles.$inferSelect
 export type MetaRow = typeof meta.$inferSelect
 export type LinkEventRow = typeof linkEvents.$inferSelect
 export type IngestJobRow = typeof ingestJobs.$inferSelect
-
-export const SCHEMA_VERSION = '10'

@@ -1,0 +1,958 @@
+/// <reference path="./shims.d.ts" />
+// Native write and aggregate ops: the portable SqlStore (over @cutils/sqlite) plus the shared core functions.
+import { SqlStore } from "@atento/db/sql";
+import {
+  triage,
+  restore,
+  sweep,
+  applySweep,
+  metricsSummary,
+  enrich,
+  enrichUntilEmpty,
+  prune,
+  applyPrune,
+  guardReset,
+  DEFAULT_LIMITS,
+  DEFAULT_TTL_CONFIG,
+  listHostsNeedingLogin,
+  countReviewOnlyLinks,
+  guardDepsFromStore,
+  guardStatuses,
+  listShareHosts,
+  LLM_KEY,
+  collectionOfLink,
+  isCollectionName,
+  LINK_STATES,
+  type Link,
+  type TriageAction,
+  type SweepPlan,
+  type PrunePlan,
+  type GuardStatus,
+  type EnrichResult,
+  type UntilEmptyResult,
+  type GuardDeps,
+} from "@atento/core";
+import { CutilsDriver } from "./cutils-driver.ts";
+import { createNativeEnrichFn } from "./enrichfn.ts";
+import { loadPolicy, configDir, dbPath } from "./config.ts";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { dirname, extname, join } from "node:path";
+import { createSpooledIngestJob, runIngestJob, type RawLink, type IngestJob } from "@atento/core";
+import { parseMarkdown, parseUrlList, parseJsonLinks, readTextFile } from "./importers.ts";
+import { tmpdir } from "node:os";
+
+export const TRIAGE_ACTIONS = ["read_now", "schedule", "archive", "discard"];
+
+let cachedStore: SqlStore | null = null;
+
+/** Writable store, opened lazily and migrated like the Node openStore. */
+export async function openStore(): Promise<SqlStore> {
+  if (cachedStore !== null) return cachedStore;
+  const s = new SqlStore(CutilsDriver.open(dbPath(), false));
+  await s.migrate();
+  cachedStore = s;
+  return s;
+}
+
+export async function closeStore(): Promise<void> {
+  if (cachedStore !== null) await cachedStore.close();
+  cachedStore = null;
+}
+
+export interface TriageOut {
+  requested: number[];
+  updated: number;
+  status: string;
+  missing: number[];
+}
+
+export async function doTriage(ids: number[], action: string): Promise<TriageOut> {
+  const s = await openStore();
+  const r = await triage(s, ids, action as TriageAction);
+  return { requested: r.requested, updated: r.updated, status: r.status, missing: r.missing };
+}
+
+export interface RestoreOut {
+  requested: number[];
+  updated: number;
+  missing: number[];
+  blocked: number[];
+}
+
+export async function doRestore(ids: number[]): Promise<RestoreOut> {
+  const s = await openStore();
+  const r = await restore(s, ids);
+  return { requested: r.requested, updated: r.updated, missing: r.missing, blocked: r.blocked };
+}
+
+export async function doSweepPlan(): Promise<SweepPlan> {
+  const s = await openStore();
+  return sweep(s, DEFAULT_TTL_CONFIG);
+}
+
+export async function doApplySweep(plan: SweepPlan): Promise<number> {
+  const s = await openStore();
+  return applySweep(s, plan);
+}
+
+/** JSON.stringify of a plan, dates as ISO strings (same bytes as the Node JSON.stringify). */
+export function planJson(plan: SweepPlan): string {
+  const groups: string[] = [];
+  for (const g of plan.groups) {
+    const items: string[] = [];
+    for (const i of g.items) {
+      items.push(
+        '{"linkId":' + i.linkId + ',"url":' + JSON.stringify(i.url) + ',"title":' + (i.title === null ? "null" : JSON.stringify(i.title)) +
+          ',"category":' + (i.category === null ? "null" : JSON.stringify(i.category)) +
+          ',"expiresAt":' + JSON.stringify(i.expiresAt.toISOString()) +
+          ',"expiryReason":' + (i.expiryReason === null ? "null" : JSON.stringify(i.expiryReason)) +
+          ',"action":' + JSON.stringify(i.action) + ',"pruneEligible":' + (i.pruneEligible ? "true" : "false") + "}",
+      );
+    }
+    groups.push('{"category":' + JSON.stringify(g.category) + ',"action":' + JSON.stringify(g.action) + ',"items":[' + items.join(",") + "]}");
+  }
+  return '{"groups":[' + groups.join(",") + '],"totals":{"archive":' + plan.totals.archive + "}}";
+}
+
+export async function metricsJson(range: string): Promise<string> {
+  const s = await openStore();
+  const m = await metricsSummary(s, range);
+  return JSON.stringify(m);
+}
+
+/** Age of a saved profile in whole days, never negative (same as app pending-logins). */
+function profileAgeDays(updatedAt: Date, now: Date = new Date()): number {
+  const days = (now.getTime() - updatedAt.getTime()) / 86_400_000;
+  return Math.max(0, Math.floor(days));
+}
+
+/**
+ * login.pending: hosts still needing a browser login (waiting link counts,
+ * reasons) plus hosts that already have a saved profile with its age.
+ * Same report shape as packages/app buildLoginReport.
+ */
+export async function loginPendingJson(): Promise<string> {
+  const s = await openStore();
+  const pol = loadPolicy();
+  const policy = { limits: pol.limits, loginAllow: pol.login.allow };
+  const profiles = await s.listProfiles();
+  const profileHosts: string[] = [];
+  for (const p of profiles) profileHosts.push(p.host);
+  const pending = (await listHostsNeedingLogin(s, policy))
+    .filter((h) => profileHosts.indexOf(h.host) < 0)
+    .sort((a, b) => b.linkCount - a.linkCount || a.host.localeCompare(b.host));
+  const done = profiles
+    .map((p) => ({ host: p.host, profileAgeDays: profileAgeDays(p.updatedAt) }))
+    .sort((a, b) => a.host.localeCompare(b.host));
+  const reviewOnly = await countReviewOnlyLinks(s, policy);
+  const pjson: string[] = [];
+  for (const p of pending) {
+    pjson.push('{"host":' + JSON.stringify(p.host) + ',"links":' + p.linkCount + ',"reason":' + JSON.stringify(p.reason) + "}");
+  }
+  const djson: string[] = [];
+  for (const d of done) {
+    djson.push('{"host":' + JSON.stringify(d.host) + ',"profileAgeDays":' + d.profileAgeDays + "}");
+  }
+  return '{"pending":[' + pjson.join(",") + '],"done":[' + djson.join(",") + '],"reviewOnly":' + reviewOnly + "}";
+}
+
+/**
+ * limits.status: rate-limit budget and circuit breaker state per tracked
+ * host key plus the llm key. Read-only; same row shape as the Node tool.
+ */
+export async function limitsStatusJson(): Promise<string> {
+  const s = await openStore();
+  const states = await s.listHostStates();
+  const keys: string[] = [];
+  for (const st of states) {
+    if (keys.indexOf(st.key) < 0) keys.push(st.key);
+  }
+  if (keys.indexOf(LLM_KEY) < 0) keys.push(LLM_KEY);
+  keys.sort();
+  // Node limits_status goes through ops.guardDeps() with no overrides, i.e.
+  // DEFAULT_GUARD_CONFIG — user config.toml limits do not apply here.
+  const deps = guardDepsFromStore(s);
+  const rows = await guardStatuses(deps, keys);
+  const out: string[] = [];
+  for (const row of rows) {
+    const dailyCap = row.dailyCap === Number.POSITIVE_INFINITY ? "unlimited" : row.dailyCap;
+    const remaining =
+      row.remainingToday === Number.POSITIVE_INFINITY ? "unlimited" : row.remainingToday;
+    out.push(
+      '{"key":' + JSON.stringify(row.key) +
+        ',"breakerState":' + JSON.stringify(row.breakerState) +
+        ',"reopensAt":' + (row.reopensAt === null ? "null" : JSON.stringify(row.reopensAt)) +
+        ',"dailyCap":' + JSON.stringify(dailyCap) +
+        ',"remainingToday":' + JSON.stringify(remaining) +
+        ',"lastRequestAt":' + (row.lastRequestAt === null ? "null" : JSON.stringify(row.lastRequestAt)) +
+        ',"consecutiveFailures":' + row.consecutiveFailures +
+        ',"lastError":' + (row.lastError === null ? "null" : JSON.stringify(row.lastError)) +
+        ',"trialState":' + JSON.stringify(row.trialState) +
+        ',"trialReason":' + (row.trialReason === null ? "null" : JSON.stringify(row.trialReason)) +
+        ',"rateLimitedUntil":' + (row.rateLimitedUntil === null ? "null" : JSON.stringify(row.rateLimitedUntil)) +
+        ',"policy":' + JSON.stringify(row.policy) + "}",
+    );
+  }
+  return '{"hosts":[' + out.join(",") + "]}";
+}
+
+// ---------------------------------------------------------------- collections
+
+/** Collection fields a row can project (same list as the Node tool schema). */
+export const COLLECTION_FIELD_NAMES = [
+  "id", "url", "url_hash", "title", "source", "added_at", "note", "tags",
+  "category", "priority", "action", "confidence", "read_minutes", "status",
+  "state", "reason", "needs_browser", "expires_at", "expiry_reason",
+  "why_it_matters", "summary", "created_at", "updated_at",
+] as const;
+
+const DEFAULT_COLLECTION_FIELDS = ["id", "url", "title", "category", "priority", "summary"];
+const COLLECTION_READ_DEFAULT_LIMIT = 50;
+const COLLECTION_READ_MAX_LIMIT = 200;
+
+function isoOrNull(d: Date | null): string | null {
+  return d === null ? null : d.toISOString();
+}
+
+function stateReasonOf(link: Link): string | null {
+  const data = link.stateData;
+  if (data === null) return null;
+  const reason = data["reason"];
+  return typeof reason === "string" ? reason : null;
+}
+
+function whyItMattersOf(link: Link): string | null {
+  const enrichment = link.enrichment;
+  if (enrichment === null) return null;
+  return enrichment.why_it_matters;
+}
+
+/** projectCollectionRow from packages/app/src/collections.ts, field order preserved. */
+function projectCollectionRow(link: Link, fields: string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const field of fields) {
+    switch (field) {
+      case "id": out["id"] = link.id; break;
+      case "url": out["url"] = link.url; break;
+      case "url_hash": out["url_hash"] = link.urlHash; break;
+      case "title": out["title"] = link.title; break;
+      case "source": out["source"] = link.source; break;
+      case "added_at": out["added_at"] = isoOrNull(link.addedAt); break;
+      case "note": out["note"] = link.note; break;
+      case "tags": out["tags"] = link.tags; break;
+      case "category": out["category"] = link.category; break;
+      case "priority": out["priority"] = link.priority; break;
+      case "action": out["action"] = link.action; break;
+      case "confidence": out["confidence"] = link.confidence; break;
+      case "read_minutes": out["read_minutes"] = link.readMinutes; break;
+      case "status": out["status"] = link.status; break;
+      case "state": out["state"] = link.state; break;
+      case "reason": out["reason"] = stateReasonOf(link); break;
+      case "needs_browser": out["needs_browser"] = link.needsBrowser; break;
+      case "expires_at": out["expires_at"] = isoOrNull(link.expiresAt); break;
+      case "expiry_reason": out["expiry_reason"] = link.expiryReason; break;
+      case "why_it_matters": out["why_it_matters"] = whyItMattersOf(link); break;
+      case "summary": {
+        const summary = whyItMattersOf(link);
+        out["summary"] = summary === null ? null : summary.slice(0, 200);
+        break;
+      }
+      case "created_at": out["created_at"] = isoOrNull(link.createdAt); break;
+      case "updated_at": out["updated_at"] = isoOrNull(link.updatedAt); break;
+      default: break;
+    }
+  }
+  return out;
+}
+
+/** TSV body + `# cursor:` trailer, same bytes as serializeCollection + tsvWithCursor. */
+function collectionTsv(rows: Record<string, unknown>[], fields: string[], cursor: number): string {
+  const esc = (v: unknown): string => {
+    if (v === null || v === undefined) return "";
+    const s = Array.isArray(v) ? (v as unknown[]).join(",") : String(v);
+    return s.replace(/[\t\n\r]/g, " ");
+  };
+  const lines: string[] = [fields.join("\t")];
+  for (const row of rows) {
+    const cells: string[] = [];
+    for (const f of fields) cells.push(esc(row[f]));
+    lines.push(cells.join("\t"));
+  }
+  return lines.join("\n") + "\n" + "# cursor: " + cursor + "\n";
+}
+
+/** matchCollection from packages/app/src/collections.ts: links in one collection, id-ordered. */
+async function matchCollectionLinks(s: SqlStore, name: string, since: number | undefined): Promise<Link[]> {
+  let matched: Link[];
+  if (since !== undefined) {
+    const changed = await s.listChangedLinks(since);
+    matched = [];
+    for (const l of changed) if (collectionOfLink(l) === name) matched.push(l);
+  } else {
+    const states = LINK_STATES.filter((st) => st !== "deleted");
+    const live = await s.listByStates(states);
+    matched = [];
+    for (const l of live) if (collectionOfLink(l) === name) matched.push(l);
+  }
+  matched.sort((a, b) => a.id - b.id);
+  return matched;
+}
+
+export interface CollectionReadIn {
+  since?: number;
+  fields?: string[];
+  format?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * collections.read: paginated inline read of one collection (json or tsv).
+ * Returns the exact text payload the Node tool wraps in its json() result.
+ */
+export async function collectionReadText(name: string, o: CollectionReadIn): Promise<string> {
+  if (!isCollectionName(name)) throw new Error("unknown collection: " + name);
+  const s = await openStore();
+  const limit = Math.min(Math.max(1, o.limit ?? COLLECTION_READ_DEFAULT_LIMIT), COLLECTION_READ_MAX_LIMIT);
+  const offset = Math.max(0, o.offset ?? 0);
+  const fields = o.fields !== undefined ? o.fields : DEFAULT_COLLECTION_FIELDS;
+  for (const f of fields) {
+    if ((COLLECTION_FIELD_NAMES as readonly string[]).indexOf(f) < 0) throw new Error("unknown collection field: " + f);
+  }
+  const matched = await matchCollectionLinks(s, name, o.since);
+  const page = matched.slice(offset, offset + limit);
+  const hasMore = offset + limit < matched.length;
+  const cursor = o.since !== undefined && hasMore ? o.since : await s.linkEventCursor();
+  const rows: Record<string, unknown>[] = [];
+  for (const l of page) rows.push(projectCollectionRow(l, fields));
+  if (o.format === "tsv") return collectionTsv(rows, fields, cursor);
+  return JSON.stringify({
+    collection: name,
+    cursor: cursor,
+    count: page.length,
+    total: matched.length,
+    hasMore: hasMore,
+    rows: rows,
+  });
+}
+
+// ---------------------------------------------------------------- collection export
+
+function tsvCell(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  const s = Array.isArray(v) ? (v as unknown[]).join(",") : String(v);
+  return s.replace(/[\t\n\r]/g, " ");
+}
+
+function mdCell(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  const s = Array.isArray(v) ? (v as unknown[]).join(", ") : String(v);
+  return s.replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
+
+/** serializeCollection from packages/app/src/collections.ts (rows pre-projected). */
+function serializeCollectionRows(rows: Record<string, unknown>[], fields: string[], format: string): string {
+  if (format === "jsonl") {
+    const parts: string[] = [];
+    for (const r of rows) parts.push(JSON.stringify(r));
+    return parts.join("\n") + (rows.length > 0 ? "\n" : "");
+  }
+  if (format === "tsv") {
+    const lines: string[] = [fields.join("\t")];
+    for (const row of rows) {
+      const cells: string[] = [];
+      for (const f of fields) cells.push(tsvCell(row[f]));
+      lines.push(cells.join("\t"));
+    }
+    return lines.join("\n") + "\n";
+  }
+  // markdown: a pipe table, one row per link.
+  const header = "| " + fields.join(" | ") + " |";
+  const sepFields: string[] = [];
+  for (const _f of fields) sepFields.push("---");
+  const sep = "| " + sepFields.join(" | ") + " |";
+  const body: string[] = [];
+  for (const row of rows) {
+    const cells: string[] = [];
+    for (const f of fields) cells.push(mdCell(row[f]));
+    body.push("| " + cells.join(" | ") + " |");
+  }
+  return [header, sep].concat(body).join("\n") + "\n";
+}
+
+export interface CollectionExportIn {
+  since?: number;
+  fields?: string[];
+  format?: string;
+}
+
+async function collectionExportBody(name: string, o: CollectionExportIn, dir: string): Promise<string> {
+  if (!isCollectionName(name)) throw new Error("unknown collection: " + name);
+  const format = o.format !== undefined ? o.format : "jsonl";
+  if (format !== "jsonl" && format !== "md" && format !== "tsv") {
+    throw new Error("unknown export format: " + format);
+  }
+  const fields = o.fields !== undefined ? o.fields : DEFAULT_COLLECTION_FIELDS;
+  const s = await openStore();
+  const matched = await matchCollectionLinks(s, name, o.since);
+  const rows: Record<string, unknown>[] = [];
+  for (const l of matched) rows.push(projectCollectionRow(l, fields));
+  const body = serializeCollectionRows(rows, fields, format);
+  const bytes = new TextEncoder().encode(body).length;
+  const cursor = await s.linkEventCursor();
+  const ext = format === "jsonl" ? "jsonl" : format;
+  const file = name + "-" + cursor + "." + ext;
+  await mkdir(dir, { recursive: true });
+  const path = join(dir, file);
+  await writeFile(path, body, "utf8");
+  return JSON.stringify({
+    collection: name,
+    path: path,
+    uri: "atento://exports/" + file,
+    count: rows.length,
+    bytes: bytes,
+    cursor: cursor,
+    format: format,
+  });
+}
+
+/**
+ * collections.export (MCP): Node MCP builds ops without dir/dbPath, so
+ * exportsDir resolves to <tmpdir>/atento-exports — match it exactly.
+ */
+export async function collectionExportText(name: string, o: CollectionExportIn): Promise<string> {
+  return collectionExportBody(name, o, join(tmpdir(), "atento-exports"));
+}
+
+/** collections export (CLI): the app layer writes under <config dir>/exports. */
+export async function collectionExportCli(name: string, o: CollectionExportIn): Promise<string> {
+  return collectionExportBody(name, o, join(configDir(), "exports"));
+}
+
+// ---------------------------------------------------------------- ingest
+
+const INGEST_URLS_MAX = 500;
+
+interface ParsedIngest {
+  raws: RawLink[];
+  warnings: string[];
+  source: string;
+}
+
+/** parseIngestText from packages/app/src/ingest-input.ts. */
+function parseIngestText(text: string): ParsedIngest {
+  const warnings: string[] = [];
+  const seen: string[] = [];
+  const raws: RawLink[] = [];
+  const push = (link: RawLink) => {
+    const key = link.url.trim();
+    if (key === "" || seen.indexOf(key) >= 0) return;
+    seen.push(key);
+    raws.push(link);
+  };
+  const md = parseMarkdown(text);
+  for (const w of md.warnings) warnings.push(w);
+  for (const link of md.links) push(link);
+  const ul = parseUrlList(text);
+  for (const w of ul.warnings) warnings.push(w);
+  for (const link of ul.links) push({ url: link.url, source: "ingest-text" });
+  if (raws.length === 0) warnings.push("No links found in text.");
+  return { raws: raws, warnings: warnings, source: "ingest:text" };
+}
+
+/** parseIngestUrls from packages/app/src/ingest-input.ts. */
+function parseIngestUrls(urls: string[], note: string | null, tags: string[] | null): ParsedIngest {
+  if (urls.length > INGEST_URLS_MAX) {
+    throw new Error(
+      "ingest_urls accepts at most " + INGEST_URLS_MAX + " urls per call; put larger lists in a file and use ingest_file",
+    );
+  }
+  const raws: RawLink[] = [];
+  for (const url of urls) {
+    const r: RawLink = { url: url.trim(), source: "ingest:urls" };
+    if (note !== null) r.note = note;
+    if (tags !== null) r.tags = tags;
+    raws.push(r);
+  }
+  return { raws: raws, warnings: [], source: "ingest:urls" };
+}
+
+export interface IngestUrlsIn {
+  urls: string[];
+  note?: string;
+  tags?: string[];
+}
+
+/** runIngestInput from packages/app/src/ingest-input.ts (file/text/urls kinds). */
+async function runIngest(store: SqlStore, parsed: ParsedIngest): Promise<string> {
+  const job = await createSpooledIngestJob(store, {
+    source: parsed.source,
+    spoolDir: join(configDir(), "spool"),
+    links: parsed.raws,
+  });
+  const result = await runIngestJob(store, job.id, {});
+  if (result.busy) {
+    return JSON.stringify({
+      jobId: job.id,
+      accepted: 0,
+      duplicates: 0,
+      rejected: 0,
+      status: "busy",
+      warnings: parsed.warnings,
+      busy: result.busy,
+    });
+  }
+  return JSON.stringify({
+    jobId: job.id,
+    accepted: result.okCount,
+    duplicates: result.duplicates,
+    rejected: result.errorCount,
+    status: result.job.status,
+    warnings: parsed.warnings,
+  });
+}
+
+export async function ingestTextJson(text: string): Promise<string> {
+  const s = await openStore();
+  return runIngest(s, parseIngestText(text));
+}
+
+export async function ingestUrlsJson(o: IngestUrlsIn): Promise<string> {
+  const s = await openStore();
+  return runIngest(s, parseIngestUrls(o.urls, o.note ?? null, o.tags ?? null));
+}
+
+/** Importer pick from packages/importers/src/index.ts (safari stays unported). */
+function fileImporterFor(path: string): string {
+  const ext = extname(path).toLowerCase();
+  if (ext === ".json") return "json";
+  if (ext === ".txt" || ext === ".urls" || ext === ".list") return "url-list";
+  if (ext === ".plist") return "safari";
+  return "markdown";
+}
+
+/** parseIngestInput 'file' kind from packages/app/src/ingest-input.ts. */
+async function parseIngestFile(path: string): Promise<ParsedIngest> {
+  const importer = fileImporterFor(path);
+  if (importer === "safari") {
+    throw new Error("ingest_file for .plist (Safari) is not available in the native build yet");
+  }
+  const { text, warning } = await readTextFile(path);
+  if (text === null) {
+    return { raws: [], warnings: [warning ?? `Cannot read ${path}.`], source: `ingest:file:${importer}` };
+  }
+  const parsed =
+    importer === "json"
+      ? parseJsonLinks(text)
+      : importer === "url-list"
+        ? parseUrlList(text)
+        : parseMarkdown(text);
+  return { raws: parsed.links, warnings: parsed.warnings, source: `ingest:file:${importer}` };
+}
+
+export async function ingestFileJson(path: string): Promise<string> {
+  const s = await openStore();
+  return runIngest(s, await parseIngestFile(path));
+}
+
+// ---------------------------------------------------------------- ingest_remote
+
+const INGEST_REMOTE_MAX_BYTES = 10 * 1024 * 1024;
+const INGEST_REMOTE_TIMEOUT_MS = 30_000;
+
+/** Extension hint for a remote URL, used to pick the importer. */
+function remoteHint(url: string): string {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url;
+  }
+}
+
+/** parseIngestRemote from packages/app/src/ingest-input.ts. */
+async function parseIngestRemote(url: string): Promise<ParsedIngest> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), INGEST_REMOTE_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: { "user-agent": "atento-ingest/1.0" },
+    });
+  } catch (err) {
+    throw new Error(
+      "ingest_remote could not fetch " + url + ": " + (err instanceof Error ? err.message : String(err)),
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!response.ok) {
+    throw new Error("ingest_remote fetch of " + url + " failed: HTTP " + response.status);
+  }
+  const buf = await response.arrayBuffer();
+  if (buf.byteLength > INGEST_REMOTE_MAX_BYTES) {
+    throw new Error(
+      "ingest_remote payload exceeds " + INGEST_REMOTE_MAX_BYTES + " bytes; use ingest_file instead",
+    );
+  }
+  const text = new TextDecoder().decode(buf);
+  const ext = extname(remoteHint(url));
+  const name = "remote" + (ext === "" ? ".txt" : ext);
+  const importer = fileImporterFor(name);
+  if (importer === "safari") {
+    return {
+      raws: [],
+      warnings: ["plist import (Safari bookmarks) is not available in the native build"],
+      source: "ingest:remote:safari-reading-list",
+    };
+  }
+  const parsed =
+    importer === "json" ? parseJsonLinks(text) : importer === "url-list" ? parseUrlList(text) : parseMarkdown(text);
+  return { raws: parsed.links, warnings: parsed.warnings, source: "ingest:remote:" + importer };
+}
+
+export async function ingestRemoteJson(url: string): Promise<string> {
+  const s = await openStore();
+  return runIngest(s, await parseIngestRemote(url));
+}
+
+/** ingestStatusOf from packages/app/src/ingest-input.ts. */
+function ingestStatusOf(job: IngestJob): Record<string, unknown> {
+  return {
+    jobId: job.id,
+    source: job.source,
+    status: job.status,
+    total: job.total,
+    done: job.done,
+    cursor: job.cursor,
+    runId: job.runId,
+    error: job.error,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    finishedAt: job.finishedAt,
+  };
+}
+
+/** ingest.status: one job's progress, or {"job":null} for an unknown id. */
+export async function ingestStatusJson(jobId: string): Promise<string> {
+  const s = await openStore();
+  const job = await s.getIngestJob(jobId);
+  return JSON.stringify({ job: job === null ? null : ingestStatusOf(job) });
+}
+
+// ---------------------------------------------------------------- ingest_run
+
+/** resumeIngestJobs from packages/core/src/pipeline/ingest-job.ts. Returns the first busy run, if any. */
+async function resumeIngestJobsNative(store: SqlStore): Promise<{ runId: number; stage: string; pid: number | null } | null> {
+  const due = await store.listIngestJobs({ status: ["pending", "running"] });
+  for (const job of due) {
+    const result = await runIngestJob(store, job.id, {});
+    if (result.busy) {
+      return { runId: result.busy.runId, stage: result.busy.stage, pid: result.busy.pid };
+    }
+  }
+  return null;
+}
+
+interface ImportedFile {
+  links: RawLink[];
+  warnings: string[];
+  importer: string;
+}
+
+/** importFile from packages/importers/src/index.ts (plist stays unported). */
+async function importFileNative(path: string): Promise<ImportedFile> {
+  const ext = extname(path).toLowerCase();
+  if (ext === ".plist") {
+    return {
+      links: [],
+      warnings: ["plist import (Safari bookmarks) is not available in the native build"],
+      importer: "safari-reading-list",
+    };
+  }
+  const importer =
+    ext === ".json" ? "json" : ext === ".txt" || ext === ".urls" || ext === ".list" ? "url-list" : "markdown";
+  const { text, warning } = await readTextFile(path);
+  if (text === null) {
+    return { links: [], warnings: [warning ?? `Cannot read ${path}.`], importer: importer };
+  }
+  const parsed =
+    importer === "json" ? parseJsonLinks(text) : importer === "url-list" ? parseUrlList(text) : parseMarkdown(text);
+  return { links: parsed.links, warnings: parsed.warnings, importer: importer };
+}
+
+/** ops.ingestFiles + ingest() spooled path from packages/app/src/atento.ts. */
+export async function ingestRunJson(files: string[], limit: number | null): Promise<string> {
+  const store = await openStore();
+  // Crash resume first: a killed ingest job finishes before new work.
+  await resumeIngestJobsNative(store);
+  const warnings: string[] = [];
+  const importers: Record<string, number> = {};
+  const raws: RawLink[] = [];
+  for (const file of files) {
+    const r = await importFileNative(file);
+    for (const w of r.warnings) warnings.push(w);
+    for (const l of r.links) raws.push(l);
+    const have = Object.prototype.hasOwnProperty.call(importers, r.importer) ? importers[r.importer] : 0;
+    importers[r.importer] = have + r.links.length;
+  }
+  // limit applies before spooling, like ingestSpooled's slice.
+  const end = limit !== null ? (limit < raws.length ? limit : raws.length) : raws.length;
+  const effective: RawLink[] = [];
+  for (let i = 0; i < end; i++) effective.push(raws[i]);
+  const job = await createSpooledIngestJob(store, {
+    source: "ingest",
+    spoolDir: join(configDir(), "spool"),
+    links: effective,
+  });
+  const result = await runIngestJob(store, job.id, {});
+  if (result.busy) {
+    return JSON.stringify({
+      importers: importers,
+      warnings: warnings,
+      linkIds: [],
+      okCount: 0,
+      errorCount: 0,
+      skippedCount: raws.length,
+      duplicates: 0,
+      busy: result.busy,
+    });
+  }
+  return JSON.stringify({
+    importers: importers,
+    warnings: warnings,
+    linkIds: result.linkIds,
+    okCount: result.okCount,
+    errorCount: result.errorCount,
+    skippedCount: raws.length - result.inputCount,
+    duplicates: result.duplicates,
+  });
+}
+
+/** Shared enrich stage run; the MCP tool and the CLI format it differently. */
+export async function enrichRun(limit: number | null): Promise<EnrichResult> {
+  const s = await openStore();
+  const pol = loadPolicy();
+  return enrich(s, {
+    enrich: createNativeEnrichFn(),
+    limit: limit ?? undefined,
+    guard: guardDepsFromStore(s),
+    maxBatch: DEFAULT_LIMITS.maxBatch,
+    ttl: pol.ttl,
+  });
+}
+
+/** enrich_run: core enrich stage + the native EnrichFn (env-configured model). */
+export async function enrichRunJson(limit: number | null): Promise<string> {
+  const outcome = await enrichRun(limit);
+  return JSON.stringify({
+    linkIds: outcome.linkIds,
+    okCount: outcome.okCount,
+    errorCount: outcome.errorCount,
+    deferredCount: outcome.deferredCount,
+    retryAfter: outcome.retryAfter,
+    tokensIn: outcome.tokensIn,
+    tokensOut: outcome.tokensOut,
+    costUsd: outcome.costUsd,
+  });
+}
+
+/** browse_hosts: share-allowlist report over saved profiles. No browser needed. */
+export async function browseHostsJson(): Promise<string> {
+  const s = await openStore();
+  const pol = loadPolicy();
+  const profiles = await s.listProfiles();
+  const rows = await listShareHosts(profiles, pol.share);
+  const out: { hosts: unknown; note?: string } = { hosts: rows };
+  if (pol.share.hosts.length === 0) {
+    out.note = "the [share] hosts list is empty: nothing is shared until the owner opts in";
+  }
+  return JSON.stringify(out);
+}
+
+// ------------------------------------------------------------------- CLI ops
+
+export interface BusyInfo {
+  runId: number;
+  stage: string;
+  pid: number | null;
+}
+
+function busyOf(b: { runId: number; stage: string; pid: number | null } | undefined | null): BusyInfo | null {
+  if (b === undefined || b === null) return null;
+  return { runId: b.runId, stage: b.stage, pid: b.pid };
+}
+
+export class ImportFileRow {
+  file = "";
+  importer = "";
+  count = 0;
+}
+
+export class ImportOutcome {
+  files: ImportFileRow[] = [];
+  warnings: string[] = [];
+  okCount = 0;
+  errorCount = 0;
+  inputCount = 0;
+  duplicates = 0;
+  busy: BusyInfo | null = null;
+}
+
+/** `atento import <files...>`: per-file importer dispatch, crash resume, then the ingest stage. */
+export async function importFiles(files: string[], limit: number | null): Promise<ImportOutcome> {
+  const s = await openStore();
+  const out = new ImportOutcome();
+  const busy = await resumeIngestJobsNative(s);
+  if (busy !== null) {
+    out.busy = busy;
+    return out;
+  }
+  const raws: RawLink[] = [];
+  for (const file of files) {
+    const result = await importFileNative(file);
+    for (const w of result.warnings) out.warnings.push(w);
+    raws.push(...result.links);
+    const row = new ImportFileRow();
+    row.file = file;
+    row.importer = result.importer;
+    row.count = result.links.length;
+    out.files.push(row);
+  }
+  const effective: RawLink[] = [];
+  const end = limit !== null && raws.length > limit ? limit : raws.length;
+  for (let i = 0; i < end; i++) effective.push(raws[i]);
+  const job = await createSpooledIngestJob(s, {
+    source: "ingest",
+    spoolDir: join(configDir(), "spool"),
+    links: effective,
+  });
+  const result = await runIngestJob(s, job.id, {});
+  if (result.busy) {
+    out.busy = busyOf(result.busy);
+    return out;
+  }
+  out.okCount = result.okCount;
+  out.errorCount = result.errorCount;
+  out.inputCount = result.inputCount;
+  out.duplicates = result.duplicates;
+  return out;
+}
+
+/** `atento prune [--apply]`: the delete proposal (dry-run data for the CLI). */
+export async function prunePlanNative(): Promise<PrunePlan> {
+  const s = await openStore();
+  const pol = loadPolicy();
+  return prune(s, pol.ttl, {});
+}
+
+/** `atento prune --apply` after confirmation: the only delete path. */
+export async function applyPruneNative(plan: PrunePlan): Promise<number> {
+  const s = await openStore();
+  return applyPrune(s, plan);
+}
+
+/**
+ * `atento backup [--out <path>]`: a consistent snapshot via VACUUM INTO —
+ * the same point-in-time guarantee as the better-sqlite3 backup API the
+ * Node store uses, on a separate connection so the store stays untouched.
+ */
+export async function doBackup(dest: string): Promise<void> {
+  const dir = dirname(dest);
+  await mkdir(dir, { recursive: true });
+  // VACUUM INTO refuses an existing file; the better-sqlite3 backup API the
+  // Node store uses overwrites, so remove first for the same semantics.
+  await rm(dest, { force: true });
+  const driver = CutilsDriver.open(dbPath(), false);
+  try {
+    driver.exec("VACUUM INTO '" + dest.replace(/'/g, "''") + "'");
+  } finally {
+    driver.close();
+  }
+}
+
+/** Default backup destination: <config dir>/backups/atento-<timestamp>.db */
+export function defaultBackupPath(): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  return join(configDir(), "backups", "atento-" + stamp + ".db");
+}
+
+/** `atento status` rows: every tracked host-state key plus the llm key. */
+export async function guardStatusRows(): Promise<GuardStatus[]> {
+  const s = await openStore();
+  const states = await s.listHostStates();
+  const keys: string[] = [];
+  for (const st of states) {
+    if (keys.indexOf(st.key) < 0) keys.push(st.key);
+  }
+  if (keys.indexOf(LLM_KEY) < 0) keys.push(LLM_KEY);
+  keys.sort();
+  return guardStatuses(guardDepsFromStore(s), keys);
+}
+
+/** `atento breaker reset <host>`: force-close the breaker for a key. */
+export async function breakerResetNative(host: string): Promise<string> {
+  const s = await openStore();
+  const key = host === "llm" ? LLM_KEY : host.toLowerCase();
+  const state = await guardReset(guardDepsFromStore(s), key);
+  return state.key;
+}
+
+/** stageGuard from packages/app/src/atento.ts: user limits/pacing/login, undefined when disabled. */
+function stageGuardNative(s: SqlStore): GuardDeps | undefined {
+  const pol = loadPolicy();
+  if (pol.limits.disabled === true) return undefined;
+  return guardDepsFromStore(s, {
+    config: { limits: pol.limits, pacing: pol.pacing, login: pol.login },
+  });
+}
+
+/**
+ * `atento enrich`: the CLI variant — stageGuard (user config) and
+ * maxBatch from the configured limits, unlike the MCP tool's defaults.
+ */
+export async function enrichRunCli(limit: number | null): Promise<EnrichResult> {
+  const s = await openStore();
+  const pol = loadPolicy();
+  const guard = stageGuardNative(s);
+  if (guard === undefined) {
+    return enrich(s, {
+      enrich: createNativeEnrichFn(),
+      limit: limit ?? undefined,
+      maxBatch: pol.limits.maxBatch,
+      ttl: pol.ttl,
+    });
+  }
+  return enrich(s, {
+    enrich: createNativeEnrichFn(),
+    limit: limit ?? undefined,
+    maxBatch: pol.limits.maxBatch,
+    ttl: pol.ttl,
+    guard: guard,
+  });
+}
+
+/** `atento enrich --until-empty`: drain enrichable links through the enrich stage. */
+export async function enrichUntilEmptyRun(limit: number | null): Promise<UntilEmptyResult> {
+  const s = await openStore();
+  const pol = loadPolicy();
+  const guard = stageGuardNative(s);
+  if (guard === undefined) {
+    return enrichUntilEmpty(s, {
+      enrich: createNativeEnrichFn(),
+      limit: limit ?? undefined,
+      maxBatch: pol.limits.maxBatch,
+      ttl: pol.ttl,
+      sleep: async () => {},
+    });
+  }
+  return enrichUntilEmpty(s, {
+    enrich: createNativeEnrichFn(),
+    limit: limit ?? undefined,
+    maxBatch: pol.limits.maxBatch,
+    ttl: pol.ttl,
+    sleep: async () => {},
+    guard: guard,
+  });
+}

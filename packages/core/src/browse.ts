@@ -244,5 +244,5 @@ export async function listShareHosts(
         reason: shared ? undefined : 'not_shared',
       }
     })
-    .sort((a, b) => a.host.localeCompare(b.host))
+    .sort((a, b) => (a.host < b.host ? -1 : a.host > b.host ? 1 : 0))
 }

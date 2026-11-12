@@ -3,6 +3,9 @@
  * pipeline functions. These run the real command surface against a temp
  * database.
  */
+import { registerModules } from '../src/modules.js'
+import * as mcpModule from '@atento/mcp'
+import * as serverModule from '@atento/server'
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -94,6 +97,8 @@ async function runProgram(
     await program.parseAsync(['node', 'atento', ...args])
   })
 }
+
+registerModules({ mcp: mcpModule, server: serverModule })
 
 describe('program: run then list then triage', () => {
   it('runs the pipeline and lists the results', async () => {

@@ -45,12 +45,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm release:cli
+      - name: Native binary
+        if: matrix.target != 'windows-x64'
+        run: node packages/native/scripts/release.mjs --out dist-release/native
       - uses: actions/upload-artifact@v4
         with:
           name: cli-${{ matrix.target }}
           path: |
             dist-release/*.tar.gz
             dist-release/*.zip
+            dist-release/native/*
 
   desktop:
     name: desktop ${{ matrix.target }}
@@ -111,7 +115,7 @@ jobs:
           merge-multiple: true
       - name: Checksums and notes
         run: |
-          cd assets && sha256sum * > SHA256SUMS && cd ..
+          cd assets && find . -type f ! -name SHA256SUMS -exec sha256sum {} + > SHA256SUMS && cd ..
           node scripts/release/notes.mjs "$TAG" > notes.md
       - name: Create the release
         env:

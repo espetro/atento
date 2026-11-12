@@ -1,6 +1,6 @@
 {
   "name": "atento",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Atento release umbrella: carries the product version and the root CHANGELOG. Binaries ship through GitHub Releases.",
   "license": "Apache-2.0",
   "author": "Joaquin Terrasa and contributors",
