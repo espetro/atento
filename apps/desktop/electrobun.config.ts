@@ -10,7 +10,7 @@ export default {
 	app: {
 		name: "Atento",
 		identifier: "dev.atento.app",
-		version: "0.2.0",
+		version: "0.2.1",
 		description: "Atento: a link inbox that triages itself",
 	},
 	build: {
