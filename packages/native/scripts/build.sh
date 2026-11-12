@@ -8,6 +8,9 @@
 # manifest, so an incremental build does not recompile sqlite.
 set -e
 cd "$(dirname "$0")/.."
+# The scriptc toolchain payloads can come back non-executable from a restored
+# package cache; the compiler then fails with SC3004.
+node scripts/fix-toolchain-modes.mjs
 ENTRY=$1; OUT=$2; shift 2
 SHIM=${SHIM_DIR:-$(pwd)/out/shim-$(uname -s)-$(uname -m)}
 if [ ! -f "$SHIM/ffi.json" ]; then

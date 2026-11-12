@@ -9,6 +9,9 @@
 # and the final link target the same platform.
 set -e
 cd "$(dirname "$0")/.."
+# The scriptc toolchain payloads can come back non-executable from a restored
+# package cache; the compiler then fails with SC3004.
+node scripts/fix-toolchain-modes.mjs
 TARGET=$1; OUT=$2
 if [ -z "$TARGET" ] || [ -z "$OUT" ]; then
   echo "usage: build-cross.sh <target-triple> <out>" >&2
