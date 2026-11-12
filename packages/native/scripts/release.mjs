@@ -9,7 +9,7 @@
 // @chttp/mcp packages. It is shipped next to the Node tarball as
 // `atento-native-<os>-<arch>` so a user can pick the self-contained binary.
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -27,8 +27,17 @@ const out = join(outDir, `${name}${process.platform === 'win32' ? '.exe' : ''}`)
 mkdirSync(outDir, { recursive: true })
 rmSync(out, { force: true })
 
-console.log(`==> building ${name}`)
-execFileSync('sh', ['scripts/build.sh', 'src/cli.ts', out], { cwd: pkgDir, stdio: 'inherit' })
+// The binary reports the release version of the published package.
+const version = JSON.parse(
+  readFileSync(join(repo, 'packages/atento/package.json'), 'utf8'),
+).version
+
+console.log(`==> building ${name} (version ${version})`)
+execFileSync('sh', ['scripts/build.sh', 'src/cli.ts', out], {
+  cwd: pkgDir,
+  stdio: 'inherit',
+  env: { ...process.env, ATENTO_VERSION: version },
+})
 
 if (!existsSync(out)) throw new Error(`the build did not produce ${out}`)
 

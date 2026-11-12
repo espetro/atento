@@ -84,7 +84,7 @@ function promptYesNo(message: string): Promise<string> {
 
 const code = await runAsync({
   name: "atento",
-  version: "0.1.0",
+  version: process.env.ATENTO_VERSION ?? "0.0.0",
   description: "CLI/MCP-first link triage pipeline (native)",
   commands: {
     list: command("list links", {
