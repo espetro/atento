@@ -10,15 +10,21 @@ import {
   parseLimitsConfig,
   parseLoginConfig,
   parsePacingConfig,
+  parseTtlConfig,
+  parseShareConfig,
   type LimitsConfig,
   type LoginConfig,
   type PacingConfig,
+  type ShareConfig,
+  type TtlConfig,
 } from "@atento/core";
 
 export interface NativePolicy {
   limits: LimitsConfig;
   login: LoginConfig;
   pacing: PacingConfig;
+  ttl: TtlConfig;
+  share: ShareConfig;
 }
 
 export function configDir(): string {
@@ -48,6 +54,8 @@ export function loadPolicy(): NativePolicy {
     limits: parseLimitsConfig(text),
     login: parseLoginConfig(text),
     pacing: parsePacingConfig(text),
+    ttl: parseTtlConfig(text),
+    share: parseShareConfig(text),
   };
   return cached;
 }

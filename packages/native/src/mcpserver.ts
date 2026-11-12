@@ -11,7 +11,7 @@ import { z } from "zod/mini";
 import en from "zod/v4/locales/en.js";
 import { TOOL_SCHEMAS } from "./tool-schemas.ts";
 import { str, num } from "./lib.ts";
-import { doTriage, doRestore, doSweepPlan, doApplySweep, planJson, metricsJson, loginPendingJson, limitsStatusJson, collectionReadText, collectionExportText, COLLECTION_FIELD_NAMES, TRIAGE_ACTIONS, ingestTextJson, ingestUrlsJson, ingestFileJson, ingestStatusJson, ingestRunJson } from "./ops.ts";
+import { doTriage, doRestore, doSweepPlan, doApplySweep, planJson, metricsJson, loginPendingJson, limitsStatusJson, collectionReadText, collectionExportText, COLLECTION_FIELD_NAMES, TRIAGE_ACTIONS, ingestTextJson, ingestUrlsJson, ingestFileJson, ingestStatusJson, ingestRunJson, ingestRemoteJson, enrichRunJson, browseHostsJson } from "./ops.ts";
 import { ListOpts, listRows, projectJson, filterMatches, getRow, overviewMcpJson, pipelineJson, collectionsSummaryJson } from "./atento.ts";
 
 // InferOutput<object> degrades optional array fields (chttp#110), so coerce by hand.
@@ -43,20 +43,13 @@ const COLLECTION_FORMATS_EXPORT = ["jsonl", "md", "tsv"] as [string, ...string[]
 
 const optionalLimit = z.optional(z.number().check(z.int(), z.positive()));
 const optionalFields = z.optional(z.array(z.enum(LINK_FIELDS)));
-const collectionFieldsSchema = z.optional(z.array(z.enum(COLLECTION_FIELD_NAMES as unknown as [string, ...string[]])));
+const collectionFieldsSchema = z.optional(z.array(z.enum(COLLECTION_FIELD_NAMES)));
 const collectionNameSchema = z.enum(COLLECTION_NAMES);
 const sinceSchema = z.optional(z.number().check(z.int(), z.minimum(0)));
 
 interface StdIssue {
   path?: unknown;
   message?: unknown;
-}
-interface StdResult {
-  value?: unknown;
-  issues?: StdIssue[];
-}
-interface StdSchema {
-  "~standard": { validate: (input: unknown) => Promise<StdResult> };
 }
 
 // The MCP SDK's formatIssue + validateStandardSchema error text, verbatim.
@@ -82,15 +75,17 @@ function validationError(name: string, issues: StdIssue[]): { content: { type: s
 }
 
 // Register one tool whose wire schema is the Node zod/mini object. The
-// @chttp/mcp slot gets v.unknown() (a hand-built Standard Schema record is
-// not representable at the tool() boundary); validation runs in the handler
-// so failures take the SDK's isError shape, not a protocol error, and the
-// per-tool emitter advertises the precomputed Node inputSchema.
+// @chttp/mcp slot gets v.unknown() (handing it the zod schema would validate
+// through @chttp/mcp's own error envelope, not the SDK's isError shape), so
+// validation runs per call through z.parse — zod/mini's ~standard.validate
+// returns a plain object synchronously while its types claim a Promise,
+// which scriptc's erased signature rejects. The per-tool emitter advertises
+// the precomputed Node inputSchema.
 function ztool(
   server: Server,
   name: string,
   description: string,
-  schema: StdSchema,
+  schema: z.ZodMiniType,
   run: (args: Record<string, unknown>) => Promise<unknown>,
 ): void {
   tool(
@@ -99,20 +94,19 @@ function ztool(
     v.unknown(),
     async (input) => {
       const args = (input === null || input === undefined ? {} : input) as Record<string, unknown>;
-      // zod/mini's ~standard.validate is synchronous; the Standard Schema
-      // types claim a Promise. Route the function value through `unknown`
-      // first: a direct cast keeps the erased Promise signature and the
-      // runtime then rejects zod's plain-object result.
-      const stdUnknown: unknown = schema["~standard"];
-      const validateUnknown: unknown = (stdUnknown as Record<string, unknown>)["validate"];
-      const validate = validateUnknown as (value: unknown) => StdResult;
-      const parsed = validate(args);
-      const issues = parsed.issues;
-      if (issues !== undefined && issues !== null && issues.length > 0) {
-        return validationError(name, issues);
+      let parsed: unknown;
+      try {
+        parsed = z.parse(schema, args);
+      } catch (e) {
+        const rec = e as Record<string, unknown>;
+        const issues = rec["issues"];
+        if (issues !== undefined && issues !== null) {
+          const arr = issues as StdIssue[];
+          if (arr.length > 0) return validationError(name, arr);
+        }
+        throw e;
       }
-      const value = parsed.value;
-      return run((value === undefined || value === null ? {} : value) as Record<string, unknown>);
+      return run((parsed === null || parsed === undefined ? {} : parsed) as Record<string, unknown>);
     },
     { description: description, emit: () => TOOL_SCHEMAS[name] as Record<string, unknown> },
   );
@@ -143,7 +137,7 @@ export function startMcp(): void {
       fields: optionalFields,
       filter: z.optional(z.string()),
       limit: optionalLimit,
-    }) as unknown as StdSchema,
+    }),
     async (input) => {
       const o = new ListOpts();
       o.q = str(input.q);
@@ -172,7 +166,7 @@ export function startMcp(): void {
       "unknown), plus the busiest hosts with their per-state and per-reason " +
       "breakdown. Read-only: it never mutates state. Use it to see where " +
       "the whole corpus stands without listing every link.",
-    z.object({ topHosts: optionalLimit }) as unknown as StdSchema,
+    z.object({ topHosts: optionalLimit }),
     async (input) => overviewMcpJson(num(input.topHosts) ?? 50),
   );
 
@@ -189,7 +183,7 @@ export function startMcp(): void {
       q: z.optional(z.string()),
       limit: optionalLimit,
       offset: z.optional(z.number().check(z.int(), z.minimum(0))),
-    }) as unknown as StdSchema,
+    }),
     async (input) =>
       '{"links":' + pipelineJson(str(input.state), str(input.host), str(input.q), num(input.limit) ?? -1, num(input.offset) ?? 0) + "}",
   );
@@ -198,7 +192,7 @@ export function startMcp(): void {
     server,
     "links_get",
     "Get one link by id (spec name links.get). Extracted content only when fields includes it.",
-    z.object({ id: z.number().check(z.int(), z.positive()), fields: optionalFields }) as unknown as StdSchema,
+    z.object({ id: z.number().check(z.int(), z.positive()), fields: optionalFields }),
     async (input) => {
       const r = getRow(num(input.id) ?? -1);
       if (r === null) return '{"link":null}';
@@ -214,7 +208,7 @@ export function startMcp(): void {
     z.object({
       ids: z.array(z.number().check(z.int(), z.positive())).check(z.minLength(1)),
       action: z.enum(ACTIONS),
-    }) as unknown as StdSchema,
+    }),
     async (input) => JSON.stringify(await doTriage(idsOf(input.ids), str(input.action) ?? "")),
   );
 
@@ -225,7 +219,7 @@ export function startMcp(): void {
       "Deleted links are tombstones and are reported as blocked, never resurrected.",
     z.object({
       ids: z.array(z.number().check(z.int(), z.positive())).check(z.minLength(1)),
-    }) as unknown as StdSchema,
+    }),
     async (input) => JSON.stringify(await doRestore(idsOf(input.ids))),
   );
 
@@ -233,7 +227,7 @@ export function startMcp(): void {
     server,
     "links_sweep",
     "Sweep stale links (spec name links.sweep). Dry-run by default; apply archives. Never deletes.",
-    z.object({ apply: z.optional(z.boolean()) }) as unknown as StdSchema,
+    z.object({ apply: z.optional(z.boolean()) }),
     async (input) => {
       const plan = await doSweepPlan();
       const archived = input.apply === true ? await doApplySweep(plan) : 0;
@@ -248,7 +242,7 @@ export function startMcp(): void {
     z.object({
       files: z.array(z.string().check(z.minLength(1))).check(z.minLength(1)),
       limit: optionalLimit,
-    }) as unknown as StdSchema,
+    }),
     async (input) =>
       ingestRunJson(
         Array.isArray(input.files) ? (input.files as string[]) : [],
@@ -265,7 +259,7 @@ export function startMcp(): void {
       "agent runs on the same machine as the atento store. Returns only " +
       "the job summary { jobId, accepted, duplicates, rejected, status }, " +
       "never the links themselves.",
-    z.object({ path: z.string().check(z.minLength(1)) }) as unknown as StdSchema,
+    z.object({ path: z.string().check(z.minLength(1)) }),
     async (input) => ingestFileJson(str(input.path) ?? ""),
   );
 
@@ -275,7 +269,7 @@ export function startMcp(): void {
     "Bulk-ingest links found in long-form text (spec name ingest.text): " +
       "notes, chat dumps, pasted pages. URLs are pulled out with the " +
       "markdown and url-list importers. Returns only the job summary.",
-    z.object({ text: z.string().check(z.minLength(1)) }) as unknown as StdSchema,
+    z.object({ text: z.string().check(z.minLength(1)) }),
     async (input) => ingestTextJson(str(input.text) ?? ""),
   );
 
@@ -290,7 +284,7 @@ export function startMcp(): void {
       urls: z.array(z.string().check(z.minLength(1))).check(z.minLength(1), z.maxLength(500)),
       note: z.optional(z.string()),
       tags: z.optional(z.array(z.string())),
-    }) as unknown as StdSchema,
+    }),
     async (input) => {
       return ingestUrlsJson({
         urls: Array.isArray(input.urls) ? (input.urls as string[]) : [],
@@ -307,10 +301,8 @@ export function startMcp(): void {
       "gist or raw URL is fetched, then parsed with the importer its " +
       "extension selects (json, markdown, url list, plist). Returns only " +
       "the job summary.",
-    z.object({ url: z.url() }) as unknown as StdSchema,
-    async () => {
-      throw new Error("ingest_remote is not available in the native build yet");
-    },
+    z.object({ url: z.url() }),
+    async (input) => ingestRemoteJson(str(input.url) ?? ""),
   );
 
   ztool(
@@ -319,7 +311,7 @@ export function startMcp(): void {
     "Progress of one ingest job (spec name ingest.status): status, " +
       "total/done/cursor and the last error. Use it for large jobs; small " +
       "jobs are already done when ingest_* returns.",
-    z.object({ jobId: z.string().check(z.minLength(1)) }) as unknown as StdSchema,
+    z.object({ jobId: z.string().check(z.minLength(1)) }),
     async (input) => ingestStatusJson(str(input.jobId) ?? ""),
   );
 
@@ -327,7 +319,7 @@ export function startMcp(): void {
     server,
     "extract_run",
     "Run extraction on inbox links lacking content (spec name extract.run).",
-    z.object({ limit: optionalLimit }) as unknown as StdSchema,
+    z.object({ limit: optionalLimit }),
     async () => {
       throw new Error("extract_run is not available in the native build yet");
     },
@@ -337,17 +329,15 @@ export function startMcp(): void {
     server,
     "enrich_run",
     "Run enrichment (spec name enrich.run). Model identity comes from env config; nothing here names a provider.",
-    z.object({ limit: optionalLimit }) as unknown as StdSchema,
-    async () => {
-      throw new Error("enrich_run is not available in the native build yet");
-    },
+    z.object({ limit: optionalLimit }),
+    async (input) => enrichRunJson(num(input.limit)),
   );
 
   ztool(
     server,
     "metrics_get",
     "Per-stage metrics summary (spec name metrics.get), range like 24h, 7d, 2w.",
-    z.object({ range: z.optional(z.string()), now: z.optional(z.iso.datetime()) }) as unknown as StdSchema,
+    z.object({ range: z.optional(z.string()), now: z.optional(z.iso.datetime()) }),
     async (input) => metricsJson(str(input.range) ?? "7d"),
   );
 
@@ -356,7 +346,7 @@ export function startMcp(): void {
     "limits_status",
     "Rate limit budget and circuit breaker state per host (spec name limits.status). " +
       "Read-only: it never mutates state. Breaker reset stays CLI-only.",
-    z.object({}) as unknown as StdSchema,
+    z.object({}),
     async () => limitsStatusJson(),
   );
 
@@ -367,7 +357,7 @@ export function startMcp(): void {
       "Read-only: pending hosts with their waiting link counts, and the " +
       "hosts that already have a saved profile with its age. The browser " +
       "login itself is a CLI step (atento login): it needs a terminal.",
-    z.object({}) as unknown as StdSchema,
+    z.object({}),
     async () => loginPendingJson(),
   );
 
@@ -378,7 +368,7 @@ export function startMcp(): void {
       "needs_login (spec name collections.summary). This is the tool a " +
       "harness calls after a run: one line per host that still needs a " +
       "login. Read-only.",
-    z.object({}) as unknown as StdSchema,
+    z.object({}),
     async () => collectionsSummaryJson(),
   );
 
@@ -399,7 +389,7 @@ export function startMcp(): void {
       format: z.optional(z.enum(COLLECTION_FORMATS_READ)),
       limit: optionalLimit,
       offset: z.optional(z.number().check(z.int(), z.minimum(0))),
-    }) as unknown as StdSchema,
+    }),
     async (input) =>
       collectionReadText(str(input.name) ?? "", {
         ...(input.since !== undefined ? { since: num(input.since) ?? 0 } : {}),
@@ -423,7 +413,7 @@ export function startMcp(): void {
       since: sinceSchema,
       fields: collectionFieldsSchema,
       format: z.optional(z.enum(COLLECTION_FORMATS_EXPORT)),
-    }) as unknown as StdSchema,
+    }),
     async (input) =>
       collectionExportText(str(input.name) ?? "", {
         ...(input.since !== undefined ? { since: num(input.since) ?? 0 } : {}),
@@ -443,7 +433,7 @@ export function startMcp(): void {
       "login`. The read spends the same per-host budget as the pipeline: " +
       "human pacing, a daily cap, working hours and the circuit breaker. " +
       "Nothing is written to the link store.",
-    z.object({ url: z.url() }) as unknown as StdSchema,
+    z.object({ url: z.url() }),
     async () => {
       throw new Error("browse_read is not available in the native build yet");
     },
@@ -457,10 +447,8 @@ export function startMcp(): void {
       "from the [share] hosts allowlist. A host that is not shared can be " +
       "made shareable by the owner in the config; nothing is shared by " +
       "default.",
-    z.object({}) as unknown as StdSchema,
-    async () => {
-      throw new Error("browse_hosts is not available in the native build yet");
-    },
+    z.object({}),
+    async () => browseHostsJson(),
   );
 
   // stdio glue: line-delimited JSON-RPC (readline works; process.stdin.on("data") is SC0001).

@@ -1,5 +1,5 @@
 // Text renderers for the native write and aggregate commands, byte-compatible with the Node CLI.
-import type { SweepPlan } from "@atento/core";
+import type { SweepPlan, PrunePlan, GuardStatus } from "@atento/core";
 import { renderTable, shortDate } from "./atento.ts";
 
 export function renderSweepPlan(plan: SweepPlan): string {
@@ -71,4 +71,50 @@ export function renderMetrics(json: string, range: string): string {
   }
   out.push("\nrange: " + String(m["since"]) + " .. " + String(m["until"]));
   return out.join("\n");
+}
+
+/** renderPrunePlan from packages/cli/src/commands/maintenance.ts. */
+export function renderPrunePlan(plan: PrunePlan): string {
+  if (plan.totals.delete === 0) return "nothing to prune";
+  const rows: string[][] = [];
+  for (const i of plan.items) {
+    rows.push([String(i.linkId), String(i.ageDays) + "d", i.category === null ? "" : i.category, i.title === null ? "" : i.title, i.url]);
+  }
+  return renderTable(["id", "age", "category", "title", "url"], rows);
+}
+
+/** renderStatus from packages/cli/src/commands/resilience.ts. */
+export function renderStatus(rows: GuardStatus[]): string[] {
+  const out: string[] = [];
+  for (const row of rows) {
+    const cap = row.dailyCap === "unlimited" ? "unlimited" : String(row.remainingToday) + "/" + String(row.dailyCap) + " left";
+    const reopen = row.reopensAt !== null ? " reopens " + row.reopensAt : "";
+    const err = row.lastError !== null ? " last=" + row.lastError : "";
+    const trial = row.trialState !== "unknown" ? " trial=" + row.trialState + (row.trialReason !== null ? ":" + row.trialReason : "") : "";
+    out.push(row.key + ": breaker=" + row.breakerState + " budget=" + cap + reopen + err + trial);
+  }
+  return out;
+}
+
+/** formatBatchSummary / formatTotals from packages/core/src/pipeline/until-empty.ts (relational sort for scriptc). */
+export function formatBatchSummary(s: { iteration: number; okCount: number; inputCount: number; deferredCount: number; needsBrowserCount: number; errorCount: number }): string {
+  return (
+    "batch " + s.iteration + ": " + s.okCount + "/" + s.inputCount + " ok" +
+    (s.deferredCount > 0 ? ", " + s.deferredCount + " deferred" : "") +
+    (s.needsBrowserCount > 0 ? ", " + s.needsBrowserCount + " need browser" : "") +
+    (s.errorCount > 0 ? ", " + s.errorCount + " errors" : "")
+  );
+}
+
+export function formatTotals(result: {
+  totals: { ok: number; deferred: number; needsBrowser: number; errors: number };
+  byState: { [k: string]: number };
+}): string {
+  const keys = Object.keys(result.byState).filter((k) => result.byState[k] > 0).sort();
+  const hist: string[] = [];
+  for (const k of keys) hist.push(k + ": " + result.byState[k]);
+  const totals =
+    "ok: " + result.totals.ok + ", deferred: " + result.totals.deferred +
+    ", needs_browser: " + result.totals.needsBrowser + ", errored: " + result.totals.errors;
+  return totals + " | " + (hist.length > 0 ? hist.join(", ") : "no links");
 }

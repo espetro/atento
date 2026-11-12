@@ -7,6 +7,7 @@
 // masking "now" timestamps, then the resulting database state is dumped and compared the same way.
 import { spawn, spawnSync } from 'node:child_process'
 import { copyFileSync, mkdtempSync, rmSync, mkdirSync, existsSync, readFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -92,6 +93,23 @@ function firstDiff(a, b) {
   return 'no diff'
 }
 
+// ---- remote fixture server (shared by CLI and MCP cases) ----
+import { createServer } from 'node:http'
+const fixtureServer = createServer(async (req, res) => {
+  try {
+    const pathname = new URL(req.url, 'http://x').pathname
+    const p = join(fileURLToPath(new URL('./fixtures/', import.meta.url)), pathname)
+    const data = await readFile(p)
+    res.writeHead(200, { 'content-type': 'text/plain' })
+    res.end(data)
+  } catch {
+    res.writeHead(404)
+    res.end()
+  }
+})
+await new Promise((r) => fixtureServer.listen(0, '127.0.0.1', r))
+const remoteBase = 'http://127.0.0.1:' + fixtureServer.address().port
+
 // ---- CLI cases ----
 const sharedRead = freshDb('read')
 for (const c of CASES) {
@@ -99,10 +117,12 @@ for (const c of CASES) {
   if (c.write) {
     const a = freshDb('w-node-' + c.name.replace(/\W+/g, '_'))
     const b = freshDb('w-nat-' + c.name.replace(/\W+/g, '_'))
-    const ra = runCli('node', c.cli, a, c.stdin)
-    const rb = runCli('native', c.cli, b, c.stdin)
-    const oa = maskNow(ra.out)
-    const ob = maskNow(rb.out)
+    const ca = c.cli.map((x) => (typeof x === 'string' ? x.replaceAll('@REMOTE@', remoteBase) : x))
+    const cb = c.cli.map((x) => (typeof x === 'string' ? x.replaceAll('@REMOTE@', remoteBase) : x))
+    const ra = runCli('node', ca, a, c.stdin)
+    const rb = runCli('native', cb, b, c.stdin)
+    const oa = maskNow(ra.out).split(a.home).join('<home>')
+    const ob = maskNow(rb.out).split(b.home).join('<home>')
     const da = dumpDb(a.db)
     const db_ = dumpDb(b.db)
     const ok = oa === ob && ra.code === rb.code && da === db_
@@ -123,6 +143,12 @@ for (const c of CASES) {
 }
 
 // ---- MCP ----
+for (const c of MCP_CASES) {
+  if (c.args) for (const k of Object.keys(c.args)) {
+    if (typeof c.args[k] === 'string') c.args[k] = c.args[k].replaceAll('@REMOTE@', remoteBase)
+  }
+}
+
 function mcpSession(impl, fx, calls) {
   return new Promise((resolveP) => {
     const cmd = impl === 'node' ? process.execPath : nativeBin
@@ -204,6 +230,7 @@ for (const c of MCP_CASES.filter((x) => x.write && (!only || x.name.includes(onl
   record('mcp-w', c.name, ok, (oa !== ob ? 'reply ' + firstDiff(oa, ob) + '\n' : '') + (da !== db_ ? 'db state ' + firstDiff(da, db_) : ''))
 }
 
+fixtureServer.close()
 const failed = results.filter((r) => !r.ok)
 console.log(`\n${results.length - failed.length}/${results.length} identical`)
 if (!process.env.KEEP_WORK) rmSync(work, { recursive: true, force: true })

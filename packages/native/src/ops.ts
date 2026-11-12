@@ -7,11 +7,18 @@ import {
   sweep,
   applySweep,
   metricsSummary,
+  enrich,
+  enrichUntilEmpty,
+  prune,
+  applyPrune,
+  guardReset,
+  DEFAULT_LIMITS,
   DEFAULT_TTL_CONFIG,
   listHostsNeedingLogin,
   countReviewOnlyLinks,
   guardDepsFromStore,
   guardStatuses,
+  listShareHosts,
   LLM_KEY,
   collectionOfLink,
   isCollectionName,
@@ -19,11 +26,17 @@ import {
   type Link,
   type TriageAction,
   type SweepPlan,
+  type PrunePlan,
+  type GuardStatus,
+  type EnrichResult,
+  type UntilEmptyResult,
+  type GuardDeps,
 } from "@atento/core";
 import { CutilsDriver } from "./cutils-driver.ts";
+import { createNativeEnrichFn } from "./enrichfn.ts";
 import { loadPolicy, configDir, dbPath } from "./config.ts";
-import { mkdir, writeFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { dirname, extname, join } from "node:path";
 import { createSpooledIngestJob, runIngestJob, type RawLink, type IngestJob } from "@atento/core";
 import { parseMarkdown, parseUrlList, parseJsonLinks, readTextFile } from "./importers.ts";
 import { tmpdir } from "node:os";
@@ -191,7 +204,7 @@ export const COLLECTION_FIELD_NAMES = [
   "category", "priority", "action", "confidence", "read_minutes", "status",
   "state", "reason", "needs_browser", "expires_at", "expiry_reason",
   "why_it_matters", "summary", "created_at", "updated_at",
-];
+] as const;
 
 const DEFAULT_COLLECTION_FIELDS = ["id", "url", "title", "category", "priority", "summary"];
 const COLLECTION_READ_DEFAULT_LIMIT = 50;
@@ -211,8 +224,7 @@ function stateReasonOf(link: Link): string | null {
 function whyItMattersOf(link: Link): string | null {
   const enrichment = link.enrichment;
   if (enrichment === null) return null;
-  const value = (enrichment as unknown as Record<string, unknown>)["why_it_matters"];
-  return typeof value === "string" ? value : null;
+  return enrichment.why_it_matters;
 }
 
 /** projectCollectionRow from packages/app/src/collections.ts, field order preserved. */
@@ -305,7 +317,7 @@ export async function collectionReadText(name: string, o: CollectionReadIn): Pro
   const offset = Math.max(0, o.offset ?? 0);
   const fields = o.fields !== undefined ? o.fields : DEFAULT_COLLECTION_FIELDS;
   for (const f of fields) {
-    if (COLLECTION_FIELD_NAMES.indexOf(f) < 0) throw new Error("unknown collection field: " + f);
+    if ((COLLECTION_FIELD_NAMES as readonly string[]).indexOf(f) < 0) throw new Error("unknown collection field: " + f);
   }
   const matched = await matchCollectionLinks(s, name, o.since);
   const page = matched.slice(offset, offset + limit);
@@ -374,11 +386,7 @@ export interface CollectionExportIn {
   format?: string;
 }
 
-/**
- * collections.export: write one collection (or delta) to
- * <config dir>/exports/<name>-<cursor>.<ext>; returns the Node result shape.
- */
-export async function collectionExportText(name: string, o: CollectionExportIn): Promise<string> {
+async function collectionExportBody(name: string, o: CollectionExportIn, dir: string): Promise<string> {
   if (!isCollectionName(name)) throw new Error("unknown collection: " + name);
   const format = o.format !== undefined ? o.format : "jsonl";
   if (format !== "jsonl" && format !== "md" && format !== "tsv") {
@@ -394,9 +402,6 @@ export async function collectionExportText(name: string, o: CollectionExportIn):
   const cursor = await s.linkEventCursor();
   const ext = format === "jsonl" ? "jsonl" : format;
   const file = name + "-" + cursor + "." + ext;
-  // Node MCP builds ops without dir/dbPath, so exportsDir resolves to
-  // <tmpdir>/atento-exports — match it exactly.
-  const dir = join(tmpdir(), "atento-exports");
   await mkdir(dir, { recursive: true });
   const path = join(dir, file);
   await writeFile(path, body, "utf8");
@@ -409,6 +414,19 @@ export async function collectionExportText(name: string, o: CollectionExportIn):
     cursor: cursor,
     format: format,
   });
+}
+
+/**
+ * collections.export (MCP): Node MCP builds ops without dir/dbPath, so
+ * exportsDir resolves to <tmpdir>/atento-exports — match it exactly.
+ */
+export async function collectionExportText(name: string, o: CollectionExportIn): Promise<string> {
+  return collectionExportBody(name, o, join(tmpdir(), "atento-exports"));
+}
+
+/** collections export (CLI): the app layer writes under <config dir>/exports. */
+export async function collectionExportCli(name: string, o: CollectionExportIn): Promise<string> {
+  return collectionExportBody(name, o, join(configDir(), "exports"));
 }
 
 // ---------------------------------------------------------------- ingest
@@ -537,6 +555,68 @@ export async function ingestFileJson(path: string): Promise<string> {
   return runIngest(s, await parseIngestFile(path));
 }
 
+// ---------------------------------------------------------------- ingest_remote
+
+const INGEST_REMOTE_MAX_BYTES = 10 * 1024 * 1024;
+const INGEST_REMOTE_TIMEOUT_MS = 30_000;
+
+/** Extension hint for a remote URL, used to pick the importer. */
+function remoteHint(url: string): string {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url;
+  }
+}
+
+/** parseIngestRemote from packages/app/src/ingest-input.ts. */
+async function parseIngestRemote(url: string): Promise<ParsedIngest> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), INGEST_REMOTE_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: { "user-agent": "atento-ingest/1.0" },
+    });
+  } catch (err) {
+    throw new Error(
+      "ingest_remote could not fetch " + url + ": " + (err instanceof Error ? err.message : String(err)),
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!response.ok) {
+    throw new Error("ingest_remote fetch of " + url + " failed: HTTP " + response.status);
+  }
+  const buf = await response.arrayBuffer();
+  if (buf.byteLength > INGEST_REMOTE_MAX_BYTES) {
+    throw new Error(
+      "ingest_remote payload exceeds " + INGEST_REMOTE_MAX_BYTES + " bytes; use ingest_file instead",
+    );
+  }
+  const text = new TextDecoder().decode(buf);
+  const ext = extname(remoteHint(url));
+  const name = "remote" + (ext === "" ? ".txt" : ext);
+  const importer = fileImporterFor(name);
+  if (importer === "safari") {
+    return {
+      raws: [],
+      warnings: ["plist import (Safari bookmarks) is not available in the native build"],
+      source: "ingest:remote:safari-reading-list",
+    };
+  }
+  const parsed =
+    importer === "json" ? parseJsonLinks(text) : importer === "url-list" ? parseUrlList(text) : parseMarkdown(text);
+  return { raws: parsed.links, warnings: parsed.warnings, source: "ingest:remote:" + importer };
+}
+
+export async function ingestRemoteJson(url: string): Promise<string> {
+  const s = await openStore();
+  return runIngest(s, await parseIngestRemote(url));
+}
+
 /** ingestStatusOf from packages/app/src/ingest-input.ts. */
 function ingestStatusOf(job: IngestJob): Record<string, unknown> {
   return {
@@ -563,13 +643,16 @@ export async function ingestStatusJson(jobId: string): Promise<string> {
 
 // ---------------------------------------------------------------- ingest_run
 
-/** resumeIngestJobs from packages/core/src/pipeline/ingest-job.ts. */
-async function resumeIngestJobsNative(store: SqlStore): Promise<void> {
+/** resumeIngestJobs from packages/core/src/pipeline/ingest-job.ts. Returns the first busy run, if any. */
+async function resumeIngestJobsNative(store: SqlStore): Promise<{ runId: number; stage: string; pid: number | null } | null> {
   const due = await store.listIngestJobs({ status: ["pending", "running"] });
   for (const job of due) {
     const result = await runIngestJob(store, job.id, {});
-    if (result.busy) break;
+    if (result.busy) {
+      return { runId: result.busy.runId, stage: result.busy.stage, pid: result.busy.pid };
+    }
   }
+  return null;
 }
 
 interface ImportedFile {
@@ -644,5 +727,232 @@ export async function ingestRunJson(files: string[], limit: number | null): Prom
     errorCount: result.errorCount,
     skippedCount: raws.length - result.inputCount,
     duplicates: result.duplicates,
+  });
+}
+
+/** Shared enrich stage run; the MCP tool and the CLI format it differently. */
+export async function enrichRun(limit: number | null): Promise<EnrichResult> {
+  const s = await openStore();
+  const pol = loadPolicy();
+  return enrich(s, {
+    enrich: createNativeEnrichFn(),
+    limit: limit ?? undefined,
+    guard: guardDepsFromStore(s),
+    maxBatch: DEFAULT_LIMITS.maxBatch,
+    ttl: pol.ttl,
+  });
+}
+
+/** enrich_run: core enrich stage + the native EnrichFn (env-configured model). */
+export async function enrichRunJson(limit: number | null): Promise<string> {
+  const outcome = await enrichRun(limit);
+  return JSON.stringify({
+    linkIds: outcome.linkIds,
+    okCount: outcome.okCount,
+    errorCount: outcome.errorCount,
+    deferredCount: outcome.deferredCount,
+    retryAfter: outcome.retryAfter,
+    tokensIn: outcome.tokensIn,
+    tokensOut: outcome.tokensOut,
+    costUsd: outcome.costUsd,
+  });
+}
+
+/** browse_hosts: share-allowlist report over saved profiles. No browser needed. */
+export async function browseHostsJson(): Promise<string> {
+  const s = await openStore();
+  const pol = loadPolicy();
+  const profiles = await s.listProfiles();
+  const rows = await listShareHosts(profiles, pol.share);
+  const out: { hosts: unknown; note?: string } = { hosts: rows };
+  if (pol.share.hosts.length === 0) {
+    out.note = "the [share] hosts list is empty: nothing is shared until the owner opts in";
+  }
+  return JSON.stringify(out);
+}
+
+// ------------------------------------------------------------------- CLI ops
+
+export interface BusyInfo {
+  runId: number;
+  stage: string;
+  pid: number | null;
+}
+
+function busyOf(b: { runId: number; stage: string; pid: number | null } | undefined | null): BusyInfo | null {
+  if (b === undefined || b === null) return null;
+  return { runId: b.runId, stage: b.stage, pid: b.pid };
+}
+
+export class ImportFileRow {
+  file = "";
+  importer = "";
+  count = 0;
+}
+
+export class ImportOutcome {
+  files: ImportFileRow[] = [];
+  warnings: string[] = [];
+  okCount = 0;
+  errorCount = 0;
+  inputCount = 0;
+  duplicates = 0;
+  busy: BusyInfo | null = null;
+}
+
+/** `atento import <files...>`: per-file importer dispatch, crash resume, then the ingest stage. */
+export async function importFiles(files: string[], limit: number | null): Promise<ImportOutcome> {
+  const s = await openStore();
+  const out = new ImportOutcome();
+  const busy = await resumeIngestJobsNative(s);
+  if (busy !== null) {
+    out.busy = busy;
+    return out;
+  }
+  const raws: RawLink[] = [];
+  for (const file of files) {
+    const result = await importFileNative(file);
+    for (const w of result.warnings) out.warnings.push(w);
+    raws.push(...result.links);
+    const row = new ImportFileRow();
+    row.file = file;
+    row.importer = result.importer;
+    row.count = result.links.length;
+    out.files.push(row);
+  }
+  const effective: RawLink[] = [];
+  const end = limit !== null && raws.length > limit ? limit : raws.length;
+  for (let i = 0; i < end; i++) effective.push(raws[i]);
+  const job = await createSpooledIngestJob(s, {
+    source: "ingest",
+    spoolDir: join(configDir(), "spool"),
+    links: effective,
+  });
+  const result = await runIngestJob(s, job.id, {});
+  if (result.busy) {
+    out.busy = busyOf(result.busy);
+    return out;
+  }
+  out.okCount = result.okCount;
+  out.errorCount = result.errorCount;
+  out.inputCount = result.inputCount;
+  out.duplicates = result.duplicates;
+  return out;
+}
+
+/** `atento prune [--apply]`: the delete proposal (dry-run data for the CLI). */
+export async function prunePlanNative(): Promise<PrunePlan> {
+  const s = await openStore();
+  const pol = loadPolicy();
+  return prune(s, pol.ttl, {});
+}
+
+/** `atento prune --apply` after confirmation: the only delete path. */
+export async function applyPruneNative(plan: PrunePlan): Promise<number> {
+  const s = await openStore();
+  return applyPrune(s, plan);
+}
+
+/**
+ * `atento backup [--out <path>]`: a consistent snapshot via VACUUM INTO —
+ * the same point-in-time guarantee as the better-sqlite3 backup API the
+ * Node store uses, on a separate connection so the store stays untouched.
+ */
+export async function doBackup(dest: string): Promise<void> {
+  const dir = dirname(dest);
+  await mkdir(dir, { recursive: true });
+  // VACUUM INTO refuses an existing file; the better-sqlite3 backup API the
+  // Node store uses overwrites, so remove first for the same semantics.
+  await rm(dest, { force: true });
+  const driver = CutilsDriver.open(dbPath(), false);
+  try {
+    driver.exec("VACUUM INTO '" + dest.replace(/'/g, "''") + "'");
+  } finally {
+    driver.close();
+  }
+}
+
+/** Default backup destination: <config dir>/backups/atento-<timestamp>.db */
+export function defaultBackupPath(): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  return join(configDir(), "backups", "atento-" + stamp + ".db");
+}
+
+/** `atento status` rows: every tracked host-state key plus the llm key. */
+export async function guardStatusRows(): Promise<GuardStatus[]> {
+  const s = await openStore();
+  const states = await s.listHostStates();
+  const keys: string[] = [];
+  for (const st of states) {
+    if (keys.indexOf(st.key) < 0) keys.push(st.key);
+  }
+  if (keys.indexOf(LLM_KEY) < 0) keys.push(LLM_KEY);
+  keys.sort();
+  return guardStatuses(guardDepsFromStore(s), keys);
+}
+
+/** `atento breaker reset <host>`: force-close the breaker for a key. */
+export async function breakerResetNative(host: string): Promise<string> {
+  const s = await openStore();
+  const key = host === "llm" ? LLM_KEY : host.toLowerCase();
+  const state = await guardReset(guardDepsFromStore(s), key);
+  return state.key;
+}
+
+/** stageGuard from packages/app/src/atento.ts: user limits/pacing/login, undefined when disabled. */
+function stageGuardNative(s: SqlStore): GuardDeps | undefined {
+  const pol = loadPolicy();
+  if (pol.limits.disabled === true) return undefined;
+  return guardDepsFromStore(s, {
+    config: { limits: pol.limits, pacing: pol.pacing, login: pol.login },
+  });
+}
+
+/**
+ * `atento enrich`: the CLI variant — stageGuard (user config) and
+ * maxBatch from the configured limits, unlike the MCP tool's defaults.
+ */
+export async function enrichRunCli(limit: number | null): Promise<EnrichResult> {
+  const s = await openStore();
+  const pol = loadPolicy();
+  const guard = stageGuardNative(s);
+  if (guard === undefined) {
+    return enrich(s, {
+      enrich: createNativeEnrichFn(),
+      limit: limit ?? undefined,
+      maxBatch: pol.limits.maxBatch,
+      ttl: pol.ttl,
+    });
+  }
+  return enrich(s, {
+    enrich: createNativeEnrichFn(),
+    limit: limit ?? undefined,
+    maxBatch: pol.limits.maxBatch,
+    ttl: pol.ttl,
+    guard: guard,
+  });
+}
+
+/** `atento enrich --until-empty`: drain enrichable links through the enrich stage. */
+export async function enrichUntilEmptyRun(limit: number | null): Promise<UntilEmptyResult> {
+  const s = await openStore();
+  const pol = loadPolicy();
+  const guard = stageGuardNative(s);
+  if (guard === undefined) {
+    return enrichUntilEmpty(s, {
+      enrich: createNativeEnrichFn(),
+      limit: limit ?? undefined,
+      maxBatch: pol.limits.maxBatch,
+      ttl: pol.ttl,
+      sleep: async () => {},
+    });
+  }
+  return enrichUntilEmpty(s, {
+    enrich: createNativeEnrichFn(),
+    limit: limit ?? undefined,
+    maxBatch: pol.limits.maxBatch,
+    ttl: pol.ttl,
+    sleep: async () => {},
+    guard: guard,
   });
 }
