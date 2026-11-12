@@ -1047,28 +1047,40 @@ export class SqlStore implements Store {
   }
 
   async saveHostState(state: HostState): Promise<void> {
-    const vals: SqlValue[] = [
-      state.key,
-      state.lastRequestAt,
-      state.windowStart,
-      state.windowCount,
-      state.consecutiveFailures,
-      state.breakerState,
-      state.openedUntil,
-      state.cooldownLevel,
-      state.lastError,
-      state.trialState,
-      state.trialReason,
-      state.trialAt,
-      state.loginGated ? 1 : 0,
-      state.rateLimitedUntil,
-      state.pagesSinceBreak ?? null,
-      state.breakEvery ?? null,
-    ]
+    // drizzle skipped undefined values, so a partial HostState left the
+    // NOT NULL columns at their column default ('unknown' for trial_state).
+    // The raw SQL port must do the same: omit the column from the insert so
+    // the default applies, and leave it untouched on conflict.
+    const vals: SqlValue[] = []
+    const cols: string[] = []
+    const put = (col: string, value: SqlValue | undefined): void => {
+      if (value === undefined) return
+      cols.push(col)
+      vals.push(value)
+    }
+    put('key', state.key)
+    put('last_request_at', state.lastRequestAt)
+    put('window_start', state.windowStart)
+    put('window_count', state.windowCount)
+    put('consecutive_failures', state.consecutiveFailures)
+    put('breaker_state', state.breakerState)
+    put('opened_until', state.openedUntil)
+    put('cooldown_level', state.cooldownLevel)
+    put('last_error', state.lastError)
+    put('trial_state', state.trialState)
+    put('trial_reason', state.trialReason)
+    put('trial_at', state.trialAt)
+    put('login_gated', state.loginGated === undefined ? undefined : state.loginGated ? 1 : 0)
+    put('rate_limited_until', state.rateLimitedUntil)
+    put('pages_since_break', state.pagesSinceBreak ?? null)
+    put('break_every', state.breakEvery ?? null)
     const sets: string[] = []
-    for (let i = 1; i < HOST_STATE_COLS.length; i++) sets.push(`${HOST_STATE_COLS[i]} = excluded.${HOST_STATE_COLS[i]}`)
+    for (const col of cols) {
+      if (col === 'key') continue
+      sets.push(`${col} = excluded.${col}`)
+    }
     this.driver.run(
-      `INSERT INTO host_state (${HOST_STATE_COLS.join(', ')}) VALUES (${placeholders(HOST_STATE_COLS.length)}) ` +
+      `INSERT INTO host_state (${cols.join(', ')}) VALUES (${placeholders(cols.length)}) ` +
         `ON CONFLICT (key) DO UPDATE SET ${sets.join(', ')}`,
       vals,
     )
@@ -1220,25 +1232,6 @@ const LINK_INSERT_COLS = [
   'media_report',
   'created_at',
   'updated_at',
-]
-
-const HOST_STATE_COLS = [
-  'key',
-  'last_request_at',
-  'window_start',
-  'window_count',
-  'consecutive_failures',
-  'breaker_state',
-  'opened_until',
-  'cooldown_level',
-  'last_error',
-  'trial_state',
-  'trial_reason',
-  'trial_at',
-  'login_gated',
-  'rate_limited_until',
-  'pages_since_break',
-  'break_every',
 ]
 
 /** A link about to be inserted: every column resolved to its stored shape. */
