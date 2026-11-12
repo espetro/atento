@@ -1,5 +1,11 @@
 # atento
 
+## 0.2.1
+
+### Patch Changes
+
+- [#12](https://github.com/espetro/atento/pull/12) [`d385f78`](https://github.com/espetro/atento/commit/d385f78765c8d149bb261325b8368c4a267ad2d2) Thanks [@espetro](https://github.com/espetro)! - The CLI and the MCP server report the release version instead of a hard-coded `0.1.0`. `atento --version` and the MCP `serverInfo.version` now match the release they ship in.
+
 ## 0.2.0
 
 ### Minor Changes
