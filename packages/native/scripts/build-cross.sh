@@ -35,8 +35,12 @@ if [ ! -f "$SHIM/ffi.json" ]; then
     --out "$SHIM" --target "$ZIG"
 fi
 
-SCRIPTC_TARGET="$TARGET" SCRIPTC_RUNTIME_PACK="$RUNTIME" \
-exec flock /tmp/tsc.lock pnpm exec scriptc build src/cli.ts \
+export SCRIPTC_TARGET="$TARGET" SCRIPTC_RUNTIME_PACK="$RUNTIME"
+if command -v flock >/dev/null 2>&1; then
+  exec flock /tmp/tsc.lock pnpm exec scriptc build src/cli.ts \
+    --npm-static @cutils/sqlite,@cutils/cli,@chttp/mcp,@chttp/val \
+    --ffi "$SHIM/ffi.json" -o "$OUT"
+fi
+exec pnpm exec scriptc build src/cli.ts \
   --npm-static @cutils/sqlite,@cutils/cli,@chttp/mcp,@chttp/val \
-  --ffi "$SHIM/ffi.json" \
-  -o "$OUT"
+  --ffi "$SHIM/ffi.json" -o "$OUT"
