@@ -9,7 +9,8 @@
 // @chttp/mcp packages. It is shipped next to the Node tarball as
 // `atento-native-<os>-<arch>` so a user can pick the self-contained binary.
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -33,11 +34,22 @@ const version = JSON.parse(
 ).version
 
 console.log(`==> building ${name} (version ${version})`)
-execFileSync('sh', ['scripts/build.sh', 'src/cli.ts', out], {
-  cwd: pkgDir,
-  stdio: 'inherit',
-  env: { ...process.env, ATENTO_VERSION: version },
-})
+// Build in a scratch directory: the compiler writes intermediate files (the
+// LLVM IR) next to the output, and only the binary belongs in the release.
+const scratch = mkdtempSync(join(tmpdir(), 'atento-native-'))
+try {
+  const built = join(scratch, process.platform === 'win32' ? `${name}.exe` : name)
+  execFileSync('sh', ['scripts/build.sh', 'src/cli.ts', built], {
+    cwd: pkgDir,
+    stdio: 'inherit',
+    env: { ...process.env, ATENTO_VERSION: version },
+  })
+  if (!existsSync(built)) throw new Error(`the build did not produce ${built}`)
+  copyFileSync(built, out)
+  chmodSync(out, 0o755)
+} finally {
+  rmSync(scratch, { recursive: true, force: true })
+}
 
 if (!existsSync(out)) throw new Error(`the build did not produce ${out}`)
 

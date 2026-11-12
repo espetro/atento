@@ -23,9 +23,11 @@ if [ -n "$FLOCK" ] && [ -x "$FLOCK" ]; then
   exec "$FLOCK" /tmp/tsc.lock pnpm exec scriptc build "$ENTRY" \
     --npm-static @cutils/sqlite,@cutils/cli,@chttp/mcp,@chttp/val \
     --define "process.env.ATENTO_VERSION=\"${ATENTO_VERSION:-0.0.0}\"" \
+    --no-keep-llvm \
     --ffi "$SHIM/ffi.json" -o "$OUT" "$@"
 fi
 exec pnpm exec scriptc build "$ENTRY" \
   --npm-static @cutils/sqlite,@cutils/cli,@chttp/mcp,@chttp/val \
   --define "process.env.ATENTO_VERSION=\"${ATENTO_VERSION:-0.0.0}\"" \
+  --no-keep-llvm \
   --ffi "$SHIM/ffi.json" -o "$OUT" "$@"

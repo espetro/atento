@@ -121,9 +121,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The artifacts land in assets/, with the native binaries under
+          # assets/native/. A shell glob would pass that directory to gh.
+          mapfile -t FILES < <(find assets -type f ! -name SHA256SUMS | sort)
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "no release assets were downloaded" >&2
+            exit 1
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" assets/* --clobber
+            gh release upload "$TAG" "${FILES[@]}" --clobber
             gh release edit "$TAG" --notes-file notes.md
           else
-            gh release create "$TAG" assets/* --title "Atento ${TAG#v}" --notes-file notes.md --verify-tag
+            gh release create "$TAG" "${FILES[@]}" --title "Atento ${TAG#v}" --notes-file notes.md --verify-tag
           fi
