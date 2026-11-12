@@ -20,6 +20,7 @@ import { toJSONSchema } from 'zod/mini'
 import type { z } from 'zod/mini'
 import type { McpDeps } from './deps.js'
 import { TOOLS, callTool, type ToolDef } from './tools/index.js'
+import { atentoVersion } from '@atento/core'
 
 /**
  * Adapt a zod/mini schema to the StandardSchemaWithJSON interface SDK v2
@@ -72,7 +73,7 @@ function registerTool(server: McpServer, deps: McpDeps, tool: ToolDef): void {
 
 export function createMcpServer(deps: McpDeps): McpServer {
   const server = new McpServer(
-    { name: 'atento', version: '0.1.0' },
+    { name: 'atento', version: atentoVersion() },
     { capabilities: { tools: {} } },
   )
   registerToolDefs(server, deps)

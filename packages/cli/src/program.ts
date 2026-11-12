@@ -21,6 +21,7 @@ import { registerMcpCommand } from './commands/mcp.js'
 import { loadConfig } from './config.js'
 import type { EnrichFn, ExtractFn, TtlConfig } from '@atento/app'
 import type { MediaFn } from './media-fn.js'
+import { atentoVersion } from '@atento/core'
 
 export interface ProgramOptions extends ContextOptions {
   /** Override the config (tests). */
@@ -31,7 +32,7 @@ export function createProgram(options: ProgramOptions = {}): Command {  const pr
   program
     .name('atento')
     .description('CLI/MCP-first link triage pipeline')
-    .version('0.1.0')
+    .version(atentoVersion())
 
   const ctx = async (): Promise<CliContext> =>
     createContext({
