@@ -560,3 +560,89 @@ export async function ingestStatusJson(jobId: string): Promise<string> {
   const job = await s.getIngestJob(jobId);
   return JSON.stringify({ job: job === null ? null : ingestStatusOf(job) });
 }
+
+// ---------------------------------------------------------------- ingest_run
+
+/** resumeIngestJobs from packages/core/src/pipeline/ingest-job.ts. */
+async function resumeIngestJobsNative(store: SqlStore): Promise<void> {
+  const due = await store.listIngestJobs({ status: ["pending", "running"] });
+  for (const job of due) {
+    const result = await runIngestJob(store, job.id, {});
+    if (result.busy) break;
+  }
+}
+
+interface ImportedFile {
+  links: RawLink[];
+  warnings: string[];
+  importer: string;
+}
+
+/** importFile from packages/importers/src/index.ts (plist stays unported). */
+async function importFileNative(path: string): Promise<ImportedFile> {
+  const ext = extname(path).toLowerCase();
+  if (ext === ".plist") {
+    return {
+      links: [],
+      warnings: ["plist import (Safari bookmarks) is not available in the native build"],
+      importer: "safari-reading-list",
+    };
+  }
+  const importer =
+    ext === ".json" ? "json" : ext === ".txt" || ext === ".urls" || ext === ".list" ? "url-list" : "markdown";
+  const { text, warning } = await readTextFile(path);
+  if (text === null) {
+    return { links: [], warnings: [warning ?? `Cannot read ${path}.`], importer: importer };
+  }
+  const parsed =
+    importer === "json" ? parseJsonLinks(text) : importer === "url-list" ? parseUrlList(text) : parseMarkdown(text);
+  return { links: parsed.links, warnings: parsed.warnings, importer: importer };
+}
+
+/** ops.ingestFiles + ingest() spooled path from packages/app/src/atento.ts. */
+export async function ingestRunJson(files: string[], limit: number | null): Promise<string> {
+  const store = await openStore();
+  // Crash resume first: a killed ingest job finishes before new work.
+  await resumeIngestJobsNative(store);
+  const warnings: string[] = [];
+  const importers: Record<string, number> = {};
+  const raws: RawLink[] = [];
+  for (const file of files) {
+    const r = await importFileNative(file);
+    for (const w of r.warnings) warnings.push(w);
+    for (const l of r.links) raws.push(l);
+    const have = Object.prototype.hasOwnProperty.call(importers, r.importer) ? importers[r.importer] : 0;
+    importers[r.importer] = have + r.links.length;
+  }
+  // limit applies before spooling, like ingestSpooled's slice.
+  const end = limit !== null ? (limit < raws.length ? limit : raws.length) : raws.length;
+  const effective: RawLink[] = [];
+  for (let i = 0; i < end; i++) effective.push(raws[i]);
+  const job = await createSpooledIngestJob(store, {
+    source: "ingest",
+    spoolDir: join(configDir(), "spool"),
+    links: effective,
+  });
+  const result = await runIngestJob(store, job.id, {});
+  if (result.busy) {
+    return JSON.stringify({
+      importers: importers,
+      warnings: warnings,
+      linkIds: [],
+      okCount: 0,
+      errorCount: 0,
+      skippedCount: raws.length,
+      duplicates: 0,
+      busy: result.busy,
+    });
+  }
+  return JSON.stringify({
+    importers: importers,
+    warnings: warnings,
+    linkIds: result.linkIds,
+    okCount: result.okCount,
+    errorCount: result.errorCount,
+    skippedCount: raws.length - result.inputCount,
+    duplicates: result.duplicates,
+  });
+}

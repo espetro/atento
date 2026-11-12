@@ -11,7 +11,7 @@ import { z } from "zod/mini";
 import en from "zod/v4/locales/en.js";
 import { TOOL_SCHEMAS } from "./tool-schemas.ts";
 import { str, num } from "./lib.ts";
-import { doTriage, doRestore, doSweepPlan, doApplySweep, planJson, metricsJson, loginPendingJson, limitsStatusJson, collectionReadText, collectionExportText, COLLECTION_FIELD_NAMES, TRIAGE_ACTIONS, ingestTextJson, ingestUrlsJson, ingestFileJson, ingestStatusJson } from "./ops.ts";
+import { doTriage, doRestore, doSweepPlan, doApplySweep, planJson, metricsJson, loginPendingJson, limitsStatusJson, collectionReadText, collectionExportText, COLLECTION_FIELD_NAMES, TRIAGE_ACTIONS, ingestTextJson, ingestUrlsJson, ingestFileJson, ingestStatusJson, ingestRunJson } from "./ops.ts";
 import { ListOpts, listRows, projectJson, filterMatches, getRow, overviewMcpJson, pipelineJson, collectionsSummaryJson } from "./atento.ts";
 
 // InferOutput<object> degrades optional array fields (chttp#110), so coerce by hand.
@@ -249,9 +249,11 @@ export function startMcp(): void {
       files: z.array(z.string().check(z.minLength(1))).check(z.minLength(1)),
       limit: optionalLimit,
     }) as unknown as StdSchema,
-    async () => {
-      throw new Error("ingest_run is not available in the native build yet");
-    },
+    async (input) =>
+      ingestRunJson(
+        Array.isArray(input.files) ? (input.files as string[]) : [],
+        num(input.limit),
+      ),
   );
 
   ztool(

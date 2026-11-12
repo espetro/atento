@@ -49,6 +49,8 @@ export const MCP_CASES = [
   { name: 'ingest_urls', tool: 'ingest_urls', args: { urls: ['https://ingest.example.com/1', 'https://ingest.example.com/2'], note: 'n', tags: ['t1'] }, write: true },
   { name: 'ingest_file', tool: 'ingest_file', args: { path: FIXTURE }, write: true },
   { name: 'ingest_file missing', tool: 'ingest_file', args: { path: '/nonexistent/atento-parity.md' }, write: true },
+  { name: 'ingest_run', tool: 'ingest_run', args: { files: [FIXTURE] }, write: true },
+  { name: 'ingest_run limit', tool: 'ingest_run', args: { files: [FIXTURE], limit: 1 }, write: true },
   { name: 'ingest_status unknown', tool: 'ingest_status', args: { jobId: 'job-nope' } },
   { name: 'links_sweep dry', tool: 'links_sweep', args: {} },
   { name: 'links_triage', tool: 'links_triage', args: { ids: [1, 2, 99999], action: 'discard' }, write: true },
