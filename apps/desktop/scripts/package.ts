@@ -9,8 +9,8 @@
 //
 // The server runtime is packed into the app by electrobun.config.ts
 // (build.copy) as server.tar.gz, because build.copy flattens symlinks and
-// the launcher re-extracts Resources on first run. The shell unpacks it into
-// ~/.atento/runtime on first launch. Contents of the tarball:
+// the self-extracting wrapper re-extracts Resources on first run. The shell
+// unpacks it into ~/.atento/runtime on first launch. Contents of the tarball:
 //   server/node[.exe]            self-contained Node, same ABI as the build
 //   server/server-entry.mjs      sidecar entry point
 //   server/ui-dist/              built packages/ui
@@ -19,7 +19,8 @@
 // The sidecar exists because better-sqlite3 cannot run under the Bun runtime
 // that hosts the Electrobun main process.
 import { execFileSync } from "node:child_process";
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -86,30 +87,47 @@ console.log("==> building electrobun app");
 rmSync(BUILD, { recursive: true, force: true });
 run("hutch", ["run", "build"], APP_DIR);
 
-const bundle = findBundle();
-console.log(`==> bundle: ${bundle}`);
-
-if (OS === "darwin") {
-	console.log("==> ad-hoc signing");
-	try {
-		execFileSync("codesign", ["--force", "--deep", "--sign", "-", bundle], { stdio: "inherit" });
-	} catch {
-		console.warn("codesign failed, continuing unsigned");
-	}
-}
-
 mkdirSync(OUT, { recursive: true });
 const base = `Atento-desktop-${version}-${OS}-${ARCH}`;
-const parent = dirname(bundle);
-const name = bundle.slice(parent.length + 1);
+
 if (OS === "darwin") {
-	execFileSync("ditto", ["-c", "-k", "--keepParent", bundle, join(OUT, `${base}.zip`)], { stdio: "inherit" });
-} else if (OS === "windows") {
-	// bsdtar ships with Windows 10+ and writes zip with -a.
-	execFileSync("tar", ["-a", "-c", "-f", `${base}.zip`, name], { cwd: parent, stdio: "inherit" });
-	copyFileSync(join(parent, `${base}.zip`), join(OUT, `${base}.zip`));
-	rmSync(join(parent, `${base}.zip`));
+	// Ship the inner app bundle, not the self-extracting wrapper: the wrapper's
+	// first-run installer shows an "<App> Setup" progress window, which is
+	// pure friction for a drag-to-Applications zip. The payload archive is the
+	// same runnable .app the wrapper would install.
+	const payload = readdirSync(join(APP_DIR, "artifacts")).find(
+		(n) => n.startsWith(`stable-macos-${ARCH}-`) && n.endsWith(".app.tar.zst"),
+	);
+	if (!payload) {
+		throw new Error(`no stable-macos-${ARCH} payload in apps/desktop/artifacts`);
+	}
+	const stage = mkdtempSync(join(tmpdir(), "atento-pkg-"));
+	try {
+		execFileSync("tar", ["-xf", join(APP_DIR, "artifacts", payload)], { cwd: stage, stdio: "inherit" });
+		const inner = join(stage, "Atento.app");
+		if (!existsSync(inner)) throw new Error(`payload did not contain Atento.app`);
+		console.log("==> ad-hoc signing");
+		try {
+			execFileSync("codesign", ["--force", "--deep", "--sign", "-", inner], { stdio: "inherit" });
+		} catch {
+			console.warn("codesign failed, continuing unsigned");
+		}
+		execFileSync("ditto", ["-c", "-k", "--keepParent", inner, join(OUT, `${base}.zip`)], { stdio: "inherit" });
+	} finally {
+		rmSync(stage, { recursive: true, force: true });
+	}
 } else {
-	execFileSync("tar", ["-czf", join(OUT, `${base}.tar.gz`), name], { cwd: parent, stdio: "inherit" });
+	const bundle = findBundle();
+	console.log(`==> bundle: ${bundle}`);
+	const parent = dirname(bundle);
+	const name = bundle.slice(parent.length + 1);
+	if (OS === "windows") {
+		// bsdtar ships with Windows 10+ and writes zip with -a.
+		execFileSync("tar", ["-a", "-c", "-f", `${base}.zip`, name], { cwd: parent, stdio: "inherit" });
+		copyFileSync(join(parent, `${base}.zip`), join(OUT, `${base}.zip`));
+		rmSync(join(parent, `${base}.zip`));
+	} else {
+		execFileSync("tar", ["-czf", join(OUT, `${base}.tar.gz`), name], { cwd: parent, stdio: "inherit" });
+	}
 }
 console.log(`==> ${OUT}`);
