@@ -1,5 +1,11 @@
 # atento
 
+## 0.2.2
+
+### Patch Changes
+
+- [#14](https://github.com/espetro/atento/pull/14) [`4225280`](https://github.com/espetro/atento/commit/4225280ceade5fbbe6244c674d768ea0ba87296b) Thanks [@espetro](https://github.com/espetro)! - The macOS desktop download no longer shows the "Atento Setup" installer window on first launch. The release zip now contains the app bundle directly instead of Electrobun's self-extracting wrapper, so dragging Atento.app to Applications and opening it is the whole install.
+
 ## 0.2.1
 
 ### Patch Changes
